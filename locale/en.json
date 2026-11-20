@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Delivery cockpit",
+    "description": "One page that answers where the project stands, what blocks it, what to do next and which capability to use. Writes only .dsh/plugin-state/ and registers typed tools (cockpit_report / cockpit_init)."
+  }
+}

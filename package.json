@@ -1,0 +1,63 @@
+{
+  "name": "@hunyed15/delivery-cockpit",
+  "version": "0.1.0",
+  "description": "Project delivery cockpit for DeepSeek Harness: one page that answers where the project stands, what blocks it, what to do next and which capability to use. Writes only .dsh/plugin-state/ and registers typed tools (cockpit_report / cockpit_init).",
+  "license": "MIT",
+  "author": "hunyed15",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hunyed15/dsh-project-cockpit.git"
+  },
+  "homepage": "https://github.com/hunyed15/dsh-project-cockpit#readme",
+  "bugs": {
+    "url": "https://github.com/hunyed15/dsh-project-cockpit/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "project-cockpit",
+    "delivery",
+    "playbook",
+    "trellis"
+  ],
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": {
+    "dsh": ">=0.2.2-rc.3 <0.3.0"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./lib/*.js": "./lib/*.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "templates",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "docs/DETAIL.md",
+    "docs/IMPLEMENTATION.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  }
+}

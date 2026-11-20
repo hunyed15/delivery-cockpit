@@ -1,0 +1,562 @@
+/**
+ * Host 半：驾驶舱的写入口（两个强类型工具）+ 读入口（只读面板路由）。
+ *
+ * 三条硬约束（写在这里防以后忘）：
+ * 1. 每个工具必须声明 `output: { schema, render }`。漏了不是"少个字段"，是整个插件激活失败。
+ * 2. 插件自己只写 `.dsh/plugin-state/`（外加 init 建 `.trellis/` 空目录）；项目别的文件一律不碰。
+ * 3. 读不到就说读不到：所有降级都由 lib/evidence.js 聚合，这里不补默认值。
+ */
+import { readFile } from 'node:fs/promises'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { approvePrototype } from './lib/approvals.js'
+import { readEvidence } from './lib/evidence.js'
+import { applyInit, planInit } from './lib/init.js'
+import { buildDetailModel, buildOverviewRow } from './lib/model.js'
+import { entryForStage, loadPlaybook, resolveCapabilities, STAGE_DEFS } from './lib/playbook.js'
+import { appendReceipt } from './lib/receipts.js'
+import { createApproveHandler, createInitHandler, createRoutes } from './lib/route.js'
+
+export const name = 'delivery-cockpit'
+
+// 只有 tools 是硬依赖：面板路由、技能探测、MCP 探测在非 Web / 精简 profile 里都可能不存在，
+// 声明成硬依赖会让插件在那些 profile 里直接不激活，连 cockpit_report 都丢。
+export const inject = ['tools']
+
+const HERE = dirname(fileURLToPath(import.meta.url))
+const TEMPLATES = join(HERE, 'templates')
+const ROUTE_PREFIX = '/delivery-cockpit/api'
+
+const DEFAULT_CONFIG = {
+  panelRetryAttempts: 10,
+  panelRetryMs: 500,
+  panelWatchdogMs: 15_000,
+  reviewStorage: 'auto',
+}
+
+const REPORT_STAGES = ['init', 'scaffold', 'brainstorm', 'prototype', 'coding', 'code_review', 'verification', 'release']
+const REPORT_STATUSES = ['in_progress', 'completed', 'blocked', 'failed', 'dropped']
+
+const COCKPIT_REPORT = {
+  name: 'cockpit_report',
+  description:
+    'Agent 向 Project Cockpit 上报当前阶段推进状态与回执。每完成（或卡住）一步就写一条：' +
+    'summary_for_human 是一两句人话，写不出来说明这一步不算做完。回执只追加，不改历史。',
+  parameters: {
+    type: 'object',
+    required: ['iteration_id', 'stage', 'status', 'summary_for_human'],
+    properties: {
+      iteration_id: { type: 'string', description: '迭代版本号；冷启动阶段固定传 "bootstrap"' },
+      stage: { type: 'string', enum: REPORT_STAGES },
+      status: { type: 'string', enum: REPORT_STATUSES },
+      summary_for_human: { type: 'string', description: '一两句人话：做完了什么 / 卡在哪' },
+      used_skill_or_mcp: { type: 'string' },
+      artifacts: { type: 'array', items: { type: 'string' } },
+      task_ref: { type: 'string', description: '改代码时必填' },
+      write_scope: { type: 'array', items: { type: 'string' }, description: '改代码时必填' },
+      needs_human_decision: {
+        type: 'object',
+        required: ['title'],
+        properties: {
+          title: { type: 'string' },
+          options: { type: 'array', items: { type: 'string' } },
+          recommended: { type: 'string' },
+        },
+      },
+    },
+    additionalProperties: false,
+  },
+  output: {
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        receiptId: { type: 'string' },
+        at: { type: 'string' },
+      },
+      required: ['ok', 'receiptId'],
+    },
+    render(args, value) {
+      const summary = typeof args?.summary_for_human === 'string' ? args.summary_for_human.trim() : ''
+      const id = typeof value?.receiptId === 'string' ? value.receiptId : ''
+      return [{ type: 'text', text: id ? `${summary}（回执 ${id}）` : summary || '已记录回执' }]
+    },
+  },
+}
+
+const COCKPIT_INIT = {
+  name: 'cockpit_init',
+  description:
+    '初始化项目驾驶舱状态：创建 .trellis/ 与 .dsh/plugin-state/，释放 RULES.md / project.json / playbook.json / acceptance.json。' +
+    '幂等，已存在的文件不覆盖；dryRun 默认 true，只预览将写什么而不落盘。不修改 .gitignore，只给一行可复制提示。',
+  parameters: {
+    type: 'object',
+    properties: {
+      cwd: { type: 'string', description: '项目根目录，默认当前会话工作目录' },
+      dryRun: { type: 'boolean', description: '默认 true；显式传 false 才真的写盘' },
+    },
+    additionalProperties: false,
+  },
+  output: {
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        dryRun: { type: 'boolean' },
+        applied: { type: 'boolean' },
+        projectPath: { type: 'string' },
+        created: { type: 'array', items: { type: 'string' } },
+        skipped: { type: 'array', items: { type: 'string' } },
+        errors: { type: 'array', items: { type: 'string' } },
+        gitignoreHint: { type: 'string' },
+      },
+      required: ['ok', 'dryRun', 'projectPath'],
+    },
+    render(_args, value) {
+      const verb = value?.dryRun ? '将创建' : value?.applied ? '已创建' : '已存在'
+      const names = Array.isArray(value?.created) && value.created.length > 0 ? value.created.join('、') : '无'
+      return [{ type: 'text', text: `${verb}：${names}${value?.dryRun ? '（dry-run，未写盘）' : ''}` }]
+    },
+  },
+}
+
+/**
+ * 工具定义与 ctx 绑定：形状常量保持纯数据（契约测试直接断言 schema/render），
+ * execute 在工厂里闭包 ctx，避免模块级执行体引用一个不存在的 ctx。
+ *
+ * options.authorizeWrite：显式路径的写授权（与 HTTP 层共用同一口径）。默认原样放行，
+ * 仅供契约测试使用；真正注册时由 apply 注入"必须是 DSH 已登记工作区"的实现。
+ */
+export function createToolDefinitions(ctx, options = {}) {
+  const authorizeWrite = typeof options.authorizeWrite === 'function' ? options.authorizeWrite : async (path) => path
+  return [
+    {
+      ...COCKPIT_REPORT,
+      async execute(args, exec) {
+        // 回执没有 cwd 参数：目标永远是会话自己的工作目录，模型无法凭空指定别的目录。
+        const projectPath = requireCwd(agentCwd(ctx, exec), 'cockpit_report')
+        const result = await appendReceipt(projectPath, args)
+        // 写失败必须让调用方看见：静默丢数据比报错更糟（面板会显示"没发生过"）。
+        if (!result.ok) throw new Error(`cockpit_report: ${result.error}`)
+        return { ok: true, receiptId: result.receipt.id, at: result.receipt.at }
+      },
+    },
+    {
+      ...COCKPIT_INIT,
+      async execute(args, exec) {
+        const options = args ?? {}
+        const explicit = typeof options.cwd === 'string' && options.cwd.trim() !== '' ? options.cwd : null
+        const base = requireCwd(agentCwd(ctx, exec, explicit ?? undefined), 'cockpit_init')
+        // 显式 cwd 是模型可控参数：必须过写授权，否则提示注入能把状态写去任意目录。
+        const projectPath = explicit === null ? base : await authorizeWrite(base)
+        const plan = await planInit(projectPath, { templatesDir: TEMPLATES })
+        const fatal = (plan.errors ?? []).filter((item) => !String(item).includes('模板'))
+        if (fatal.length > 0 && (plan.files ?? []).length === 0) {
+          throw new Error(`cockpit_init: ${fatal.join('；')}`)
+        }
+        const dryRun = options.dryRun !== false
+        if (dryRun) {
+          return {
+            ok: true,
+            dryRun: true,
+            applied: false,
+            projectPath,
+            created: (plan.files ?? []).filter((file) => file.status === 'create').map((file) => file.name),
+            skipped: (plan.files ?? []).filter((file) => file.status === 'exists').map((file) => file.name),
+            errors: plan.errors ?? [],
+            gitignoreHint: plan.gitignoreHint ?? '',
+          }
+        }
+        const applied = await applyInit(projectPath, plan)
+        return {
+          ok: (applied.errors ?? []).length === 0,
+          dryRun: false,
+          applied: applied.applied === true,
+          projectPath,
+          created: applied.created ?? [],
+          skipped: applied.skipped ?? [],
+          errors: applied.errors ?? [],
+          gitignoreHint: applied.gitignoreHint ?? '',
+        }
+      },
+    },
+  ]
+}
+
+// 供 test/tool-contract.test.js 断言形状；execute 不在这里调用，ctx 传 undefined 是安全的。
+export const TOOL_DEFINITIONS = createToolDefinitions(undefined)
+
+function attempt(fn) {
+  try {
+    return fn()
+  } catch {
+    return undefined
+  }
+}
+
+function requireCwd(path, toolName) {
+  // 不再回退 process.cwd()：把回执写到 DSH 进程启动目录，会让整块状态落到一个没人看的项目里。
+  if (typeof path !== 'string' || path.trim() === '') {
+    throw new Error(`${toolName}: 无法确定项目目录（会话没有工作目录，也没有显式 cwd）；请先确认工作目录`)
+  }
+  return path
+}
+
+function agentCwd(ctx, exec, explicit) {
+  if (typeof explicit === 'string' && explicit.trim() !== '') return resolve(explicit)
+  const wd = attempt(() => ctx.get('workingDirectory'))
+  if (wd && typeof wd.get === 'function') {
+    try {
+      const fromSession = wd.get(exec?.agent)
+      if (typeof fromSession === 'string' && fromSession !== '') return fromSession
+    } catch {
+      // 落到下面几个兜底来源
+    }
+  }
+  const fromHeader = exec?.agent?.session?.header?.cwd
+  if (typeof fromHeader === 'string' && fromHeader !== '') return fromHeader
+  return null
+}
+
+// 内置 playbook 很小，读一次缓存住；读失败按空文本交给 loadPlaybook，它会如实降级。
+let builtinPlaybookPromise
+function readBuiltinPlaybook() {
+  if (!builtinPlaybookPromise) {
+    builtinPlaybookPromise = readFile(join(TEMPLATES, 'playbook.json'), 'utf8').catch(() => '')
+  }
+  return builtinPlaybookPromise
+}
+
+/**
+ * 能力存在性：读不到返回 null（= 未知），绝不返回空集合。
+ * 空集合会让界面说"没装这个技能"，而"读不到"和"没装"是两件不同的事。
+ */
+async function readSkillNames(ctx, cwd) {
+  const skills = attempt(() => ctx.get('skills'))
+  if (!skills || typeof skills.list !== 'function') return null
+  try {
+    const list = await skills.list({ cwd })
+    return new Set((Array.isArray(list) ? list : []).map((item) => String(item?.name ?? '')).filter(Boolean))
+  } catch {
+    return null
+  }
+}
+
+function readToolNames(ctx) {
+  const tools = attempt(() => ctx.get('tools'))
+  if (!tools || typeof tools.definitions !== 'function') return null
+  try {
+    return new Set(tools.definitions().map((definition) => String(definition?.name ?? '')).filter(Boolean))
+  } catch {
+    return null
+  }
+}
+
+function readMcpNames(ctx) {
+  const mcp = attempt(() => ctx.get('mcpManager'))
+  if (!mcp || typeof mcp.list !== 'function') return null
+  try {
+    // present = "装了这个 MCP"（配置里存在），不把"当前连接状态"混进存在性：
+    // 一个正在重连的 MCP 仍然是装着的，界面该显示它、由状态字段说明可用性。
+    return new Set(mcp.list().map((server) => String(server?.name ?? '')).filter(Boolean))
+  } catch {
+    return null
+  }
+}
+
+const samePath = (left, right) => {
+  try {
+    const a = resolve(String(left))
+    const b = resolve(String(right))
+    // Windows 路径大小写不敏感：直接比较会把同一目录判成两个。
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
+  } catch {
+    return false
+  }
+}
+
+const toWorkspace = (item) => ({
+  id: String(item?.id ?? item?.path ?? ''),
+  title: String(item?.title ?? item?.path ?? ''),
+  path: String(item?.path ?? ''),
+})
+
+const isInsidePath = (child, parent) => {
+  try {
+    const rel = relative(resolve(parent), resolve(child))
+    return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 显式路径的写授权（fail-closed）。
+ *
+ * 为什么必须有：工具参数是模型可控的，没有这道校验时一句提示注入就能把
+ * `.dsh/plugin-state/` 与一个 `.trellis/` 建到任意目录。会话自身的工作目录不经过这里
+ * （它不是模型参数）；只有显式传进来的 cwd 才需要证明"它属于某个已登记项目"。
+ *
+ * 为什么 fail-closed：空登记、读不到、服务不可用都不是"已确认合法"，而是"无法确认"。
+ * 写操作在无法确认归属时必须拒绝。
+ *
+ * 与 HTTP 层（route.js 的 authorize）的差别：写层额外允许"工作区里的子目录"（会话可能
+ * 就在子目录里工作），读层只认精确登记路径。两道闸门都只放行已登记工作区范围内的路径。
+ */
+export function createAuthorizeWrite({ resolveWorkspace, listWorkspaces }) {
+  return async function authorizeWrite(projectPath) {
+    const resolved = resolve(projectPath)
+    const deny = (reason) => {
+      throw new Error(`拒绝写盘：${resolved} 不在任何 DSH 已登记工作区内（${reason}）`)
+    }
+
+    let workspace = null
+    try {
+      workspace = await resolveWorkspace(resolved)
+    } catch {
+      workspace = null
+    }
+    if (workspace && typeof workspace.path === 'string' && workspace.path !== '') {
+      // resolveByPath 说"认这个路径"还不够：必须确认解析结果真的落在它返回的工作区里，
+      // 否则两分支的归属判定就不同语义，一个奇怪的解析实现就成了旁路。
+      if (samePath(workspace.path, resolved) || isInsidePath(resolved, workspace.path)) return resolved
+    }
+
+    let list = null
+    try {
+      list = await listWorkspaces()
+    } catch {
+      list = null
+    }
+    if (!Array.isArray(list)) deny('无法读取已登记工作区列表')
+    const roots = list.map((item) => String(item?.path ?? '')).filter((path) => path !== '')
+    if (roots.length === 0) deny('还没有任何已登记工作区')
+    if (!roots.some((root) => samePath(root, resolved) || isInsidePath(resolved, root))) {
+      deny('不在任何已登记工作区内')
+    }
+    return resolved
+  }
+}
+
+export function apply(ctx, config = {}) {
+  const settings = { ...DEFAULT_CONFIG }
+  for (const key of Object.keys(DEFAULT_CONFIG)) {
+    if (config[key] !== undefined) settings[key] = config[key]
+  }
+
+  const logWarn = (message) => {
+    try {
+      if (ctx.logger && typeof ctx.logger.warn === 'function') ctx.logger.warn(`[delivery-cockpit] ${message}`)
+      else console.warn(`[delivery-cockpit] ${message}`)
+    } catch {
+      // 日志永远不能影响插件
+    }
+  }
+
+  const service = (serviceName) => {
+    // 未解析的服务在 cordis Proxy 上可能抛错而不是返回 undefined，取服务必须包住。
+    try {
+      return ctx.get(serviceName)
+    } catch {
+      return undefined
+    }
+  }
+
+  const listWorkspaces = async () => {
+    const registry = service('workspaceRegistry')
+    if (!registry || typeof registry.list !== 'function') return []
+    const list = await registry.list()
+    return (Array.isArray(list) ? list : []).map(toWorkspace).filter((item) => item.path !== '')
+  }
+
+  const resolveWorkspace = async (path) => {
+    const registry = service('workspaceRegistry')
+    if (!registry) return null
+    if (typeof registry.resolveByPath === 'function') {
+      const hit = await registry.resolveByPath(String(path))
+      if (hit) return toWorkspace(hit)
+    }
+    if (typeof registry.list === 'function') {
+      const all = await registry.list()
+      const hit = (Array.isArray(all) ? all : []).find((item) => samePath(item?.path, path))
+      if (hit) return toWorkspace(hit)
+    }
+    return null
+  }
+
+  /**
+   * 显式路径的写授权：与 HTTP 层同一口径 —— 只能写在 DSH 已登记的工作区（或其子目录）里。
+   * 实现见模块级 createAuthorizeWrite：fail-closed，无法确认归属就拒绝。
+   */
+  const authorizeWrite = createAuthorizeWrite({ resolveWorkspace, listWorkspaces })
+
+  const capabilityServices = async (projectPath, playbook) => ({
+    skills: await readSkillNames(ctx, projectPath),
+    tools: readToolNames(ctx),
+    mcp: readMcpNames(ctx),
+    missingHints: playbook?.missingHints ?? {},
+  })
+
+  const readDetail = async (projectPath) => {
+    const evidence = await readEvidence(projectPath, { reviewStorage: settings.reviewStorage })
+    const loaded = await loadPlaybook(projectPath, await readBuiltinPlaybook())
+    // 覆盖文件坏了也要让人看见：合并进 evidence 的 warnings，由模型统一上报。
+    for (const warning of loaded.warnings ?? []) {
+      evidence.warnings = Array.isArray(evidence.warnings) ? evidence.warnings : []
+      evidence.warnings.push(warning)
+    }
+    const services = await capabilityServices(projectPath, loaded.playbook)
+    const stageCapabilities = {}
+    for (const stage of STAGE_DEFS) {
+      stageCapabilities[stage.id] = await resolveCapabilities(entryForStage(loaded.playbook, stage.id), services)
+    }
+    const generatedAt = new Date().toISOString()
+    return buildDetailModel({ evidence, playbook: loaded.playbook, stageCapabilities, generatedAt })
+  }
+
+  const readOverview = async () => {
+    const generatedAt = new Date().toISOString()
+    const workspaces = await listWorkspaces()
+    const projects = await Promise.all(
+      workspaces.map(async (workspace) => {
+        try {
+          const evidence = await readEvidence(workspace.path, { reviewStorage: settings.reviewStorage })
+          return buildOverviewRow({ ...workspace, evidence, generatedAt })
+        } catch (error) {
+          // 一个项目读挂了不能拖垮整张总览：给它一行明说"读不到"的降级行。
+          return {
+            id: workspace.id,
+            title: workspace.title,
+            path: workspace.path,
+            initialized: false,
+            stageId: null,
+            stageName: '—',
+            nextKind: 'confirm-data',
+            nextTitle: '读取失败，先确认数据',
+            degraded: true,
+            hasDecision: false,
+            updatedAt: null,
+            error: String(error?.message ?? error),
+          }
+        }
+      }),
+    )
+    return { projects, generatedAt }
+  }
+
+  // ---- 工具 ----
+  for (const definition of createToolDefinitions(ctx, { authorizeWrite })) {
+    ctx.effect(() => ctx.tools.register(definition))
+  }
+
+  // ---- 面板路由（可选能力，失败不影响工具）----
+  const routes = createRoutes({
+    listWorkspaces,
+    resolveWorkspace,
+    readOverview,
+    readDetail,
+    planInit: (projectPath) => planInit(projectPath, { templatesDir: TEMPLATES }),
+    applyInit: async (projectPath) => applyInit(projectPath, await planInit(projectPath, { templatesDir: TEMPLATES })),
+  })
+  const writeDeps = {
+    listWorkspaces,
+    resolveWorkspace,
+    readOverview,
+    readDetail,
+    planInit: (projectPath) => planInit(projectPath, { templatesDir: TEMPLATES }),
+    applyInit: async (projectPath) => applyInit(projectPath, await planInit(projectPath, { templatesDir: TEMPLATES })),
+    approvePrototype: (projectPath, iterationId) => approvePrototype(projectPath, iterationId),
+  }
+  const initHandler = createInitHandler(writeDeps)
+  const approveHandler = createApproveHandler(writeDeps)
+
+  const retryAttempts = Number.isFinite(settings.panelRetryAttempts) ? Math.max(1, Math.trunc(settings.panelRetryAttempts)) : 10
+  const retryMs = Number.isFinite(settings.panelRetryMs) ? Math.max(1, Math.trunc(settings.panelRetryMs)) : 500
+  const watchdogMs = Number.isFinite(settings.panelWatchdogMs) ? Math.max(1, Math.trunc(settings.panelWatchdogMs)) : 15_000
+
+  let panelReady = false
+  const watchdog = setTimeout(() => {
+    if (!panelReady) logWarn(`${watchdogMs}ms 内未注册面板路由（webServer 未就绪），本次不启用面板；cockpit_report 不受影响`)
+  }, watchdogMs)
+  if (typeof watchdog?.unref === 'function') watchdog.unref()
+  ctx.effect(() => () => clearTimeout(watchdog))
+
+  const registerPanel = (scope) => {
+    const webServer = attempt(() => scope.webServer ?? scope.get?.('webServer'))
+    if (!webServer || typeof webServer.register !== 'function') return false
+    scope.effect(() =>
+      webServer.register({
+        kind: 'prefix',
+        path: ROUTE_PREFIX,
+        resource: (request) => routes.handle(request),
+      }),
+    )
+    // 写接口必须用 handler 路由：resource 路由在 DSH 里只放行 GET/HEAD。
+    scope.effect(() =>
+      webServer.register({
+        kind: 'exact',
+        path: `${ROUTE_PREFIX}/init`,
+        handler: initHandler,
+      }),
+    )
+    scope.effect(() =>
+      webServer.register({
+        kind: 'exact',
+        path: `${ROUTE_PREFIX}/approve-prototype`,
+        handler: approveHandler,
+      }),
+    )
+    return true
+  }
+
+  const installPanel = (scope, attempt) => {
+    try {
+      if (registerPanel(scope)) {
+        panelReady = true
+        if (attempt > 1) logWarn(`面板路由第 ${attempt} 次尝试注册成功（webServer 晚于插件就绪）`)
+        return true
+      }
+    } catch (error) {
+      const message = String(error?.message ?? error)
+      if (/duplicate|already|collision|exists/i.test(message)) {
+        panelReady = true
+        logWarn(`面板路由已存在，沿用现有注册：${message}`)
+        return true
+      }
+      logWarn(`面板路由注册异常（第 ${attempt} 次，已忽略）：${message}`)
+    }
+    if (attempt >= retryAttempts) {
+      logWarn(`webServer 在 ${attempt} 次尝试内仍不可用，本次不启用面板（cockpit_report 不受影响）`)
+      return false
+    }
+    const timer = setTimeout(() => installPanel(scope, attempt + 1), retryMs)
+    if (typeof timer?.unref === 'function') timer.unref()
+    ctx.effect(() => () => clearTimeout(timer))
+    return false
+  }
+
+  const startPanel = () => {
+    if (typeof ctx.inject === 'function') {
+      try {
+        ctx.inject(['webServer'], (scope) => {
+          try {
+            installPanel(scope ?? ctx, 1)
+          } catch (error) {
+            logWarn(`面板路由注册异常（已忽略）：${String(error?.message ?? error)}`)
+          }
+        })
+        return
+      } catch (error) {
+        logWarn(`ctx.inject 不可用，改用轮询注册面板：${String(error?.message ?? error)}`)
+      }
+    }
+    installPanel(ctx, 1)
+  }
+
+  try {
+    startPanel()
+  } catch (error) {
+    logWarn(`面板启动失败（已忽略）：${String(error?.message ?? error)}`)
+  }
+}

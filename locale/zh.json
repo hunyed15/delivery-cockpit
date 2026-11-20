@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "交付驾驶舱",
+    "description": "一屏回答：做到哪了、卡在哪、下一步做什么、用什么能力。只写 .dsh/plugin-state/，并注册强类型工具（cockpit_report / cockpit_init）。",
+    "detail": "docs/DETAIL.md"
+  }
+}

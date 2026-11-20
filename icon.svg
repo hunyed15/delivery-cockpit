@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Delivery cockpit">
+  <rect x="3" y="3" width="58" height="58" rx="14" fill="#0f3d5c"/>
+  <path d="M17 42a15 15 0 0 1 30 0" fill="none" stroke="#7fd1ff" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M32 42 42 28" fill="none" stroke="#f5c451" stroke-width="4.5" stroke-linecap="round"/>
+  <circle cx="32" cy="42" r="4.5" fill="#f5c451"/>
+  <rect x="21" y="47" width="9" height="3.2" rx="1.6" fill="#9fe3b5"/>
+  <rect x="33" y="47" width="6" height="3.2" rx="1.6" fill="#9fe3b5"/>
+  <rect x="42" y="47" width="3" height="3.2" rx="1.5" fill="#5f93b3"/>
+</svg>

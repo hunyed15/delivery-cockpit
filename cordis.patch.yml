@@ -1,0 +1,12 @@
+- insert:
+    - id: delivery-cockpit
+      name: '@hunyed15/delivery-cockpit'
+      config:
+        # 面板路由注册重试：webServer 可能晚于插件就绪（同上游插件的实测结论）。
+        panelRetryAttempts: 10
+        panelRetryMs: 500
+        # 看门狗：这么久仍未注册成功就记一条告警（工具不受影响）。
+        panelWatchdogMs: 15000
+        # 审核账本口径：auto = 有 .trellis 任务账本用 trellis，否则用本地 .dsh/claude-review/ledger。
+        # 驾驶舱只读账本，不写；读不到就不做功过判定，绝不猜。
+        reviewStorage: auto

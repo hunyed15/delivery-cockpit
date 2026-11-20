@@ -1,0 +1,14 @@
+{
+  "name": "@hunyed15/delivery-cockpit-preview",
+  "private": true,
+  "description": "本机预览工具：真实 React + 真实 CSS 渲染 client.js，用 CDP 在精确 CSS 宽度下截图。仅用于本地验证，不进入插件运行时。",
+  "type": "module",
+  "scripts": {
+    "serve": "node server.mjs",
+    "shot": "node shot.mjs"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}
