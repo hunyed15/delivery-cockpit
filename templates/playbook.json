@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "type": "web",
+  "_comment": "阶段能力路由。capabilities[].kind: skill | tool | mcp | inline。mode: full = 直接复用不改它 / inline = 我们自己的规则，不指向任何 skill / skip = 明确不用。插件内置这份默认值，项目里的 .dsh/plugin-state/playbook.json 可覆盖。",
+
+  "stages": {
+    "初始化": {
+      "goal": "建好工作区骨架与项目规则，之后所有阶段都站在它上面",
+      "capabilities": [
+        { "kind": "skill", "name": "trellis-start", "mode": "full" },
+        { "kind": "inline", "name": "plugin-init", "mode": "inline", "note": "释放 RULES.md / project.json / playbook.json / acceptance.json；幂等，dry-run 可预览" }
+      ],
+      "promptTemplate": "初始化这个工作区：{capabilities}。完成后确认 `.trellis/` 与 `.dsh/plugin-state/RULES.md` 都存在，并写一条执行回执。",
+      "exitGate": "`.trellis/` 存在 且 `.dsh/plugin-state/RULES.md` 存在",
+      "redLines": ["不写任何业务代码", "不碰 AGENTS.md 的 TRELLIS 区块", "不自动改 .gitignore，只给可复制的一行"]
+    },
+
+    "想清楚": {
+      "goal": "把模糊想法收敛成一份需求文档：给谁用、核心流程、不做什么",
+      "capabilities": [
+        { "kind": "skill", "name": "trellis-brainstorm", "mode": "full" }
+      ],
+      "promptTemplate": "用 {capabilities} 把这个想法收敛成 `prd.md`：目标用户、核心流程（3-5 条）、**不做什么**。有不清楚的地方先问我，不要自行假设。",
+      "exitGate": "`prd.md` 存在，且包含「目标用户 / 核心流程 / 不做什么」三段",
+      "redLines": ["不写代码", "不选具体框架或技术栈", "不生成界面设计"]
+    },
+
+    "定规格": {
+      "goal": "确定长什么样、数据怎么流转，冻结设计稿与接口契约",
+      "capabilities": [
+        { "kind": "skill", "name": "ui-ux-pro-max", "mode": "full" },
+        { "kind": "skill", "name": "frontend-design", "mode": "full" },
+        { "kind": "skill", "name": "trellis-spec-bootstrap", "mode": "full" }
+      ],
+      "promptTemplate": "用 {capabilities} 产出两份东西：① 页面结构与视觉规范（落 `docs/specs/`）；② 接口与数据模型契约。定稿即冻结，之后任何改动都要单独提一次。",
+      "exitGate": "`docs/specs/` 下有定稿的设计/契约文档",
+      "redLines": ["不动手实现功能", "不建数据库、不写接口实现", "契约冻结后不得顺手改字段"]
+    },
+
+    "搭骨架": {
+      "goal": "选对技术栈，搭出能本地启动的空壳",
+      "capabilities": [
+        { "kind": "skill", "name": "trellis-before-dev", "mode": "full" },
+        { "kind": "mcp", "name": "context7", "mode": "full", "optional": true, "note": "查最新框架文档，防旧语法" },
+        { "kind": "inline", "name": "scaffold", "mode": "inline", "note": "用终端跑脚手架命令（npx/npm create 等），不另造工具" }
+      ],
+      "promptTemplate": "先 {capabilities}，再搭出能本地启动的空白首页；启动一次确认没有报错，然后把技术栈与启动命令写进 `project.json`。",
+      "exitGate": "本地能一键启动空壳首页，且 `project.json` 的技术栈/预览命令已填",
+      "redLines": ["首页能亮、路由能通就停", "不顺手把功能写进去", "不在这一步改契约"]
+    },
+
+    "写代码": {
+      "goal": "按任务逐个实现，一次只做一条",
+      "capabilities": [
+        { "kind": "skill", "name": "trellis-before-dev", "mode": "full" },
+        { "kind": "skill", "name": "ponytail", "mode": "full" },
+        { "kind": "skill", "name": "test-driven-development", "mode": "full" },
+        { "kind": "skill", "name": "systematic-debugging", "mode": "full" },
+        { "kind": "inline", "name": "task-loop", "mode": "inline", "note": "认领 → 派一个 subagent 只做这一条 → 完成时跑 claude_review(mode:range) → 写回执；不登记 subagent-driven-development" }
+      ],
+      "promptTemplate": "按 `.trellis/tasks/` 里的任务逐个推进，用 {capabilities}。**一次只做一个任务**：先认领（Agent Teams 或 trellis task），做完跑一次 `claude_review(mode:\"range\", base=<本任务起始>)`，通过后写执行回执再下一个。",
+      "exitGate": "任务状态全部 completed，且每个任务都有一次通过的 range 审核 + 执行回执",
+      "redLines": ["一次只做一个任务", "认领后才动手（否则面板看不见谁在做什么）", "不跨 write_scope 改文件", "不用 dispatching-parallel-agents / executing-plans 另起一套编排"]
+    },
+
+    "挑毛病": {
+      "goal": "找出隐患与规范违背，修到账本干净",
+      "capabilities": [
+        { "kind": "tool", "name": "claude_review", "mode": "full" },
+        { "kind": "skill", "name": "trellis-check", "mode": "full" }
+      ],
+      "promptTemplate": "跑 {capabilities}：用 `claude_review(mode:\"gate\")` 出结论，用 `trellis-check` 查规范违背。只修有证据的问题，修完用 `claude_review_disposition` 标记处置再复核。",
+      "exitGate": "审核账本无未处置 blocking，且 gate 通过",
+      "redLines": ["只修账本里的 blocking", "不顺手重构无关代码", "不加新需求"]
+    },
+
+    "验效果": {
+      "goal": "在真实环境里点一遍，确认能用、好看",
+      "capabilities": [
+        { "kind": "mcp", "name": "playwright", "mode": "full", "note": "本机未安装时降级为人工执行 + 截图" },
+        { "kind": "skill", "name": "verification-before-completion", "mode": "full" }
+      ],
+      "promptTemplate": "按 `acceptance.json` 逐条执行，用 {capabilities}：每条填 `result`（pass/fail/blocked），pass 必须附截图存 `shots/`，最后写一条执行回执。验收表为空时，先按 `prd.md` 起草条目给我确认。",
+      "exitGate": "`items` 非空、每条 result 非 null、每条 pass 都有 evidence",
+      "redLines": ["不看代码就填 pass —— 必须有截图证据", "空表不算通过", "发现 fail 要记下来，不许改写期望值凑过"]
+    },
+
+    "发出去": {
+      "goal": "打出可用的版本，记下版本号或访问链接",
+      "capabilities": [
+        { "kind": "skill", "name": "finishing-a-development-branch", "mode": "full" },
+        { "kind": "skill", "name": "trellis-finish-work", "mode": "full" }
+      ],
+      "promptTemplate": "跑生产构建，用 {capabilities} 收尾分支，把版本号/访问链接写进执行回执。push 与上线由 DSH 的工具审批把关，不要绕过。",
+      "exitGate": "有构建产物 + 版本号或可访问链接",
+      "redLines": ["不绕过 DSH 审批自动 push 或上线", "构建失败不许跳过", "不留未清理的临时分支"]
+    }
+  },
+
+  "missingHints": {
+    "mcp": "该阶段需要的 MCP 未安装：{name}。装上后重新检测，或先用人工方式完成这一步。",
+    "skill": "该阶段需要的技能未安装：{name}。可以从技能市场安装，或跳过它用人工方式完成。"
+  }
+}
