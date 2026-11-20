@@ -236,9 +236,13 @@ SuJinCRM             写代码       0    1     09:12
 | `skill` | ✅ | 用了什么能力（自由字符串） |
 | `status` | ✅ | `progress` / `waiting` / `ready` / `blocked` / `failed` / `dropped` |
 | `summary_for_human` | ✅ | **一句人话**：发生了什么、人需要知道什么 |
+| `task_ref` | 改代码时必填 | 对应哪个任务（Agent Teams 任务 id 或 trellis task id） |
+| `write_scope` | 改代码时必填 | 实际改到的目录/文件前缀 |
 | `artifacts` | — | 产物路径（截图、报告、构建物） |
 | `blocking_issues` | — | 阻塞项（自由文本数组） |
 | `needs_human_decision` | — | **结构化**声明"要人拍板" |
+
+> **为什么必须有 `task_ref` / `write_scope`**：宿主侧**没有** Agent Teams / Team 任务的服务接口（服务的完整目录里查无此项），插件读不到任务板。所以"谁在做什么"只能靠 agent 在回执里自报。这是自报数据，不是权威记录——文档与界面都要如实标注。
 
 规则：
 
@@ -341,41 +345,85 @@ SuJinCRM             写代码       0    1     09:12
 
 ## 8. 阶段能力路由（Playbook）
 
-解决"每个阶段该用哪个社区 Skill / MCP"。**插件只推荐，不执行。**
+解决"每个阶段该用哪个 Skill / MCP"。**插件只推荐，不执行。**
 
-- 文件：`.dsh/plugin-state/playbook.json`（可缺省，缺省用内置默认表）
-- 结构：按**项目类型**（`web` / `desktop` / `mobile` / `miniapp` / `cli`）分，每阶段给 `skills[]` + `promptTemplate`
+### 8.1 唯一判据：全用还是部分用
 
-```json
-{
-  "type": "web",
-  "stages": {
-    "想清楚": { "skills": ["brainstorming"], "promptTemplate": "用 {skills} 把需求收敛成 prd.md：目标用户、核心流程、不做什么" },
-    "定规格": { "skills": ["ux-design", "api-contract"], "promptTemplate": "用 {skills} 产出页面线框与接口契约，落到 docs/specs/" },
-    "搭骨架": { "skills": ["scaffold"], "promptTemplate": "用 {skills} 初始化可运行空壳，并启动一次确认" },
-    "写代码": { "skills": ["trellis"], "promptTemplate": "按任务逐个实现，任务状态流转到 completed" },
-    "挑毛病": { "skills": ["claude_review"], "promptTemplate": "跑 claude_review(mode:\"gate\")，修完未处置 blocking" },
-    "验效果": { "skills": ["playwright"], "promptTemplate": "按验收表跑核心路径，截图归档，写一条执行回执" },
-    "发出去": { "skills": ["build"], "promptTemplate": "构建生产包，记录版本号与可访问链接" }
-  }
-}
-```
+不是"编排 vs 能力"，而是：
 
-默认表（内置，仅给**能力类型**；具体 skill 名由项目配置）：
+> **需要它全部 → 直接复用（不 fork、不复制、不改它）；只需要一部分 → 不登记它，把那几句重写进我们自己的规则。**
 
-| 阶段 | 人话要确认的事 | 能力类型 | 退出门禁（证据/产物） |
-|---|---|---|---|
-| 想清楚 | 做什么、不做什么 | 需求收敛/PRD | `prd.md` |
-| 定规格 | 长什么样、数据怎么走 | UI/UX 设计、接口契约 | 线框 + 契约文档 |
-| 搭骨架 | 技术栈对不对、空壳能跑吗 | 脚手架 | 能启动的空白页 + 名片 |
-| 写代码 | 功能逐个实现 | 任务拆解与执行 | 任务 completed |
-| 挑毛病 | 有隐患吗、合规吗 | 代码/视觉/安全评审 | 账本无未处置 blocking |
-| 验效果 | 真实点一遍能用吗 | 浏览器自动化 / 移动端测试 | 验收表全绿 + 截图 |
-| 发出去 | 能上线吗 | 构建部署 | 版本号 / 链接 |
+为什么"部分用"必须重写而不能半登记：skill 是一份指令文档，登记后 agent 会**整份执行**。你无法"只用它的第 3 步"。所以只取部分的场景，做法是**用自己的话写进 `RULES.md` 或 `promptTemplate`**。
 
-「下一步」的指令原文由 **当前阶段 + Playbook** 组装，例如：
+| 类别 | 处理 | 例子 |
+|---|---|---|
+| **全用** | `mode: full`，直接推荐，不改它 | `test-driven-development`、`systematic-debugging`、`impeccable`、`frontend-design`、`ui-ux-pro-max`（79 风格/192 调色板的数据库，只能整用）、`ponytail`、`verification-before-completion`、`using-git-worktrees`、`finishing-a-development-branch`、trellis 各技能 |
+| **部分用** | `mode: inline`，不登记那个 skill，规则内联 | `subagent-driven-development`（只要"任务级评审 + 修复循环"）、`dispatching-parallel-agents`（只要"一任务一 agent"）、`writing-plans` / `executing-plans`（trellis 已覆盖） |
+| **不用** | `mode: skip` | `writing-skills` |
 
-> 用 `playwright` 按验收表跑「下单主流程」，通过后截图存 `shots/`，并写一条执行回执（stage=验效果, status=ready）。
+### 8.2 能力来源与三层架构
+
+本机技能来源很杂，必须先分清（判据来自实际路径与 `.trellis/.template-hashes.json`）：
+
+| 来源 | 内容 | 判据 |
+|---|---|---|
+| **DSH 内置** | 少量（如 `dsh-doc`） | 位于安装包 `app.asar\…\dsh-agent-preset\skills\` |
+| **trellis 生成** | 12 个，全是 `trellis-*` | 被 `.trellis/.template-hashes.json` 托管（`.claude/skills` 9 + `.dsh/skills` 3） |
+| **cc-switch 技能库** | 17 个符号链接 | `~/.dsh/skills/*` → `C:\Users\<user>\.cc-switch\skills\*` |
+| **独立安装** | `ui-ux-pro-max` | 真实目录 + `skill.json`（作者 NextLevelBuilder，MIT） |
+| **自建** | `claude-code-review` | 本插件配套的评审闭环 skill |
+
+**三层 + 裁决顺序**（同一件事多层都有能力时按此顺序；跨场景例外）：
+
+| 层 | 是什么 | 典型能力 |
+|---|---|---|
+| 1 | **DSH 内核** | 会话与执行、沙箱与审批、`subagent`、Agent Teams（`team_task_*`） |
+| 2 | **trellis** | 任务与规范、`trellis-check`、`trellis-channel`（跨进程协作） |
+| 3 | **第三方 skill / MCP** | 设计类 skill、Playwright / Context7 MCP |
+
+跨场景例外：**同会话短任务并行用层 1 的 subagent；跨进程/长期驻留 worker 用层 2 的 `trellis-channel`**——二者不可互换。
+
+### 8.3 默认路由（本机已验证的名字）
+
+每阶段四件套：`goal`（人话目标）、`capabilities[]`、`promptTemplate`、`exitGate`（退出门禁）、`redLines`（红线）。
+能力条目带 `kind`（`skill` / `tool` / `mcp` / `inline`）与 `mode`（`full` / `inline` / `skip`），面板据此做存在性检测。
+
+| 阶段 | 能力 | 退出门禁 |
+|---|---|---|
+| 初始化 | `trellis-start`(full) + `plugin-init`(inline) | `.trellis/` 且 `RULES.md` 齐备 |
+| 想清楚 | `trellis-brainstorm`(full) | `prd.md` 含目标用户/核心流程/不做什么 |
+| 定规格 | `ui-ux-pro-max`(full)、`frontend-design`(full)、`trellis-spec-bootstrap`(full) | `docs/specs/` 有定稿契约 |
+| 搭骨架 | `trellis-before-dev`(full) + `scaffold`(inline) + `context7`(mcp, 可选) | 本地能启动空壳 + 名片已填 |
+| 写代码 | `trellis-before-dev`、`ponytail`、`test-driven-development`、`systematic-debugging`(全 full) + `task-loop`(inline) | 任务 completed + 每任务一次通过的 range 审核 + 回执 |
+| 挑毛病 | `claude_review`(tool, full)、`trellis-check`(full) | 账本无未处置 blocking 且 gate 通过 |
+| 验效果 | `playwright`(mcp, full) + `verification-before-completion`(full) | 验收表非空、每条有结果、pass 有截图 |
+| 发出去 | `finishing-a-development-branch`(full)、`trellis-finish-work`(full) | 构建产物 + 版本号/链接 |
+
+`task-loop` 的内联规则（替代 `subagent-driven-development`）：**认领 → 派一个 subagent 只做这一条 → 完成时 `claude_review(mode:"range", base=<任务起始>)` → 通过后写回执**。
+
+### 8.4 能力缺失与"防绕过"
+
+**能力缺失**：能力条目分 `kind`，可精确检测。缺了就显示"该阶段需要的 MCP 未安装：playwright"，**不下发注定失败的指令**。
+
+**关于"skill 自动触发绕过编排"**，先把事实说清：
+
+| 说法 | 核查结论 |
+|---|---|
+| 项目 `.claude/settings.json` 里的 hooks 会自动触发 | 那是 **Claude Code 的 hook 协议**（SessionStart / PreToolUse / UserPromptSubmit），由 trellis 生成给 Claude Code；**DSH profile 无任何 hook 配置，DSH 也没有这套机制** → 在 DSH 里不执行 |
+| skill 会被自动用上 | 真实机制是：技能目录常驻系统提示 → **模型自己判断**是否调用 `skill` 工具；再叠加 `using-superpowers` 的"1% 可能就必须调用" |
+
+所以这是**行为层强制**，不是可关闭的开关。四层对策，由弱到强：
+
+| 层 | 做法 | 强度 |
+|---|---|---|
+| 1 | `RULES.md` 声明：技能只决定"怎么做"，不得改变"做哪一步"；冲突以 RULES 为准 | 弱 |
+| 2 | **回执必填 `skill` 字段** + 面板提示"用了未登记的能力" | 中（偏离可见） |
+| 3 | **断开不用的 skill 链接**（`~/.dsh/skills` 是符号链接，只删链接不动源） | 强（模型看不见） |
+| 4 | agent preset 级限制技能集 | 最强（未验证） |
+
+已执行层 3：断开 `using-superpowers`（强制调用开关）与 `brainstorming`（与 `trellis-brainstorm` 重叠）。三个编排类（`subagent-driven-development` / `executing-plans` / `dispatching-parallel-agents`）待定是否一并断开。
+
+**本质**：编排不被绕过，靠的不是禁止，而是**偏离看得见**——插件每次下发都带当前阶段的边界，每次执行都必须留回执。
 
 ## 9. 下一步状态机（覆盖全部阶段）
 
@@ -475,17 +523,22 @@ L2 全自动依赖路径 B；L1 用路径 A 即可。**没有验证过的路径�
 
 **硬约束**：视图层不得 import 任何适配器；新增数据源只允许新增适配器（优先用回执协议而不是新写格式解析）。
 
-### 11.1 派活底座：Agent Teams（点名，不另造）
+### 11.1 派活底座：DSH 内核的能力，加上一条诚实的数据边界
 
-多 agent 的"派活 / 谁在做什么 / 写作用域冲突"**不再自己设计协议**，直接站在 DSH 的 Agent Teams 上：
+"派活 / 认领 / 写作用域"**不另造协议**，直接用 DSH 内核已有的东西：
 
-| 现成能力 | 插件怎么用 |
-|---|---|
-| `team_task_create` / `team_task_update`（认领、`write_scopes`、`blocked_by`、CAS 更新） | 作为**任务与认领的权威记录**；插件只读，不自己存一份 |
-| `subagents`（启动 / 名单 / 层级） | 并行执行单元；插件只"看见"与"发目标"，不负责启停 |
-| Agent Teams 的 `owner`（agent 名） | 用来把"会话 ↔ 任务"对上，从而回答"谁在做什么" |
+| 内核能力 | 谁用 | 插件能看到吗 |
+|---|---|---|
+| `subagent` / `subagent_fork`（同会话并行执行单元） | agent 派活时用 | 能看见**会话**（`sessionQuery` + `sessions`） |
+| `team_task_*`（认领、`write_scopes`、`blocked_by`） | agent 认领时用 | **看不到**——宿主侧没有 Team 任务服务接口 |
+| `subagents` 服务（`startActivation` / `listDescendants` / `namesOf`） | 插件可读，用于会话层级与活跃度 | 能看见**会话树** |
+| 沙箱策略 + 工具审批 | 强制边界（push/删除/改账本） | 不归插件，也不复制 |
 
-因此插件**不引入新协议**：认领用任务板、派活用 subagent、冲突用 `write_scopes` 交集判断。缺了 Agent Teams 时（例如 profile 未启用）分区显示原因并降级，不伪造。
+**关键限制（必须如实标注）**：宿主服务目录里**没有** `agentTeams` 一类的接口，所以**插件读不到 Team 任务板**。因此：
+
+> **"谁在做什么"只能来自 agent 在回执里自报的 `task_ref` / `write_scope`**——这是自报数据，不是权威记录。界面上要标明来源，不能伪装成系统事实。
+
+如果将来宿主补了任务板接口，再改成读权威记录；在那之前不假装看得到。
 
 ## 12. 降级矩阵
 
@@ -511,13 +564,13 @@ L2 全自动依赖路径 B；L1 用路径 A 即可。**没有验证过的路径�
 | 步 | 内容 | 验收标准 |
 |---|---|---|
 | **M0**（已具备） | 下一步（基础分支）/ 可信度三态 / 生命周期 / 缺陷计数 / 并行 / 提醒 / 摘要 | 现有 437 条断言全绿；真机路由与插槽正常 |
-| **M1** | **初始化工作区**（释放规则与模板，幂等 + dry-run）+ 项目名片（自动探测 + 手填两字段）+ 项目总览（工作区列表，空目录可见，冷热分层 + profile 级缓存） | 点一次初始化后 `.dsh/plugin-state/` 出现四个文件且二次执行不覆盖；新建空工作区出现「未初始化」行；名片技术栈与预览命令无需手写即可显示 |
+| **M1** | **初始化工作区**（释放 `RULES.md` + `playbook.json` 等项目模板，幂等 + dry-run）+ 项目名片（自动探测 + 手填两字段）+ 项目总览（工作区列表，空目录可见，冷热分层 + profile 级缓存） | 点一次初始化后 `.dsh/plugin-state/` 出现四个文件且二次执行不覆盖；新建空工作区出现「未初始化」行；名片技术栈与预览命令无需手写即可显示 |
 | **M2** | 执行回执协议 + 1 个协议适配器 + "最近回执时间" | 手工追加一行回执 → 面板出现该事件；无回执时显示"该步无记录"而非猜测 |
-| **M3** | Playbook + 下一步状态机补全（10 条分支） | 每个阶段点开都能得到"该用哪个能力"的指令原文；缺 Playbook 时用默认表 |
+| **M3** | Playbook（内置默认 + 项目覆盖）+ 下一步状态机补全（13 条分支） | 每个阶段点开都能得到"该用哪个能力"的指令原文；缺 Playbook 时用默认表 |
 | **M4** | 验效果 v1：验收表 JSON + 结果/证据记录 + 截图归档 | 每条有「操作/期望」；**`items` 为空时判「生成验收清单」而不是通过**；`null` 不等于 pass；`pass` 必须有 evidence |
 | **M5** | 自动驾驶 L1：下发目标级指令（阶段+目标+能力+完成标准+边界），人点一次即可自主跑 | 点一次能连续完成多个技能动作并写出多条回执；遇到 `needs_human_decision` 会停下等人 |
 | **M6** | 功能账人话化 + AI 自动归类（手工指派兜底） | 缺陷默认不露 `文件:行`；AI 归类写入 assignments.json 后可撤销 |
-| **M7** | 任务板接入 + 并行防撞 + 派活 | 认领后可看到"谁在做什么"；scope 有交集 → 预警 |
+| **M7** | 并行协同：读回执自报的 `task_ref`/`write_scope` → 回答"谁在做什么"（标注为自报数据）+ scope 交集预警 | 同一目录双活报撞车；两个 scope 有交集报冲突；不依赖 Team 任务板（宿主无该接口） |
 | **M8** | 自动驾驶 L2：`ctx.subagents.startActivation` 免人手启动 | 实现首日先用真实 API 跑通一次（约 10 分钟）；跑不通就退回 L1 并说明原因，不硬凑 |
 | **M9** | 外部源（如 dsh-todos）按需 | 每加一源必须有降级分支与单测 |
 
@@ -532,6 +585,9 @@ L2 全自动依赖路径 B；L1 用路径 A 即可。**没有验证过的路径�
 | 技术栈探测误判 | 标签标「探测」，可被 `project.json` 覆盖 |
 | 验收表变成形式主义 | 必须有截图/记录作为证据，否则该步不算完成 |
 | 数字造假（历史教训：读错路径导致 blocking 恒 0） | 禁止默认值兜底；每个字段读取路径要有真实样本回归测试 |
+| 已装 skill 自动触发、绕过编排 | 三层：`RULES.md` 声明优先级 + 回执必填 `skill`（偏离可见）+ 断开不用的 skill 链接；已断 `using-superpowers`、`brainstorming` |
+| 借鉴后自成分支，拿不到上游修复 | 记录来源与参考版本（便于日后对照）；只随自己使用感受更新，出问题自己修 |
+| 能力缺失被误判为"插件坏了" | 每个能力条目带 `kind` 做存在性检测；缺失时明确显示"缺 MCP/skill"，不下发注定失败的指令 |
 
 ## 16. 参考
 
