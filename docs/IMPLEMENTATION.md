@@ -351,7 +351,9 @@ export function buildDetailModel({ evidence, playbook, stageCapabilities, genera
     receipts: [{ id, at, iterationId, stage, stageName, status, summary, artifacts, usedSkill, needsDecision, taskRef, writeScope }],
     total, truncated, badLines, missing, lastAt,
   },                              // receipts 最多 20 条（时间倒序），total 是全量条数
-  acceptance: { total, withResult, passed, failed, blocked, empty, badJson, truncated, items: [{id, featureRef, title, steps, expect, result, evidence, at}] },  // items ≤ 100
+  acceptance: { total, withResult, passed, failed, blocked, empty, badJson, truncated,
+    items: [{ id, featureRef, title, steps, expect, result, evidence, at,
+              shotDiffs: [{ at, verdict, baseline, diffFile, ratio, changedPixels, totalPixels, width, height, reason }] }] },  // items ≤ 100；shotDiffs ≤ 5
   review: { available, reason, rounds, blocking, fixed, issues },  // issues 最多 3
   tasks: { available, total, open, completed, items },             // items 最多 20
   warnings: [{source,message}],   // 最多 20
@@ -394,7 +396,7 @@ export function createRoutes(deps) // -> { handle(request): Promise<Response> }
 | POST | `/init` | body `{path, confirm:true}`；`confirm!==true` ⇒ 400 `confirm-required`；未授权 ⇒ 403；成功 `{ok:true, applied, created, skipped, gitignoreHint}` |
 | POST | `/approve-prototype` | body `{path, iteration_id}`；未授权 ⇒ 403；迭代为空/bootstrap ⇒ 400 `iteration-required`；找不到 `prototype.html` ⇒ 409 `prototype-missing`；成功 `{ok:true, approval:{iterationId, prototypeApprovedAt, prototype}}` |
 | POST | `/acceptance-result` | body `{path, item_id, result:'pass'\|'fail'\|'blocked'\|null, evidence?: string[]}`；400 `item-required`/`bad-result`/`bad-evidence`/`evidence-required`；404 `item-not-found`；409 `evidence-not-found`/`acceptance-broken`/`iteration-mismatch`/`iteration-required`；成功 `{ok:true, item}`（`null` = 撤销，清空 result/at/evidence） |
-| POST | `/acceptance-screenshot` | body `{path, item_id, url?}`（url 缺省用项目名片 `commands.previewUrl`）；只允许回环 http(s)；成功 `{ok:true, item, shot:{file,width,height,url}, added}`；400 `item-required`/`no-url`/`invalid-url`/`url-not-loopback`；404 `item-not-found`；409 `browser-not-found`/`acceptance-broken`/`iteration-*`；504 `timeout`；502 `browser-failed`/`capture-failed`。**只挂证据、不改 result** |
+| POST | `/acceptance-screenshot` | body `{path, item_id, url?}`（url 缺省用项目名片 `commands.previewUrl`）；只允许回环 http(s)；成功 `{ok:true, item, shot:{file,width,height,url,comparison}, added}`；400 `item-required`/`no-url`/`invalid-url`/`url-not-loopback`；404 `item-not-found`；409 `browser-not-found`/`acceptance-broken`/`iteration-*`；504 `timeout`；499 `aborted`；502 `browser-failed`/`capture-failed`。**只挂证据、不改 result**；`shot.comparison` 是本次自动视觉回归结果 |
 | GET | `/shot?path=&file=` | 证据图片字节（png/jpeg/webp/gif，≤10 MiB，`cache-control:no-store`）；415 `not-image`/413 `file-too-large`/404 `shot-not-found`/403 未授权 |
 | 其他 | — | 404 `not found` |
 
@@ -580,7 +582,23 @@ features: {
 - 读图（`readShot`）：只允许项目内、图片扩展名、≤10 MiB；路径穿越/非图片/超大一律拒绝。桌面端 `GET /shot` 用它，客户端据此渲染缩略图。
 - 配置（`cordis.patch.yml` 可覆盖）：`browserPath`（''=自动探测）、`screenshotWidth`（1280）、`screenshotHeight`（900）、`screenshotTimeoutMs`（30000）。
 
-## 4. 验收（真机）
+### 3.17 Lead · `lib/png.js` + `lib/visual-diff.js`（视觉回归）
+
+- `lib/png.js`：最小 PNG 编解码，**只支持 8-bit 非隔行 RGB/RGBA**（Chrome `Page.captureScreenshot` 实测输出 colorType=2）；其他格式返回 `unsupported`，不"尽力猜"。
+- `lib/visual-diff.js`：
+  - `compareScreenshots(before, after, {tolerance=8, maxRatio=0.001, minChangedPixels=24})`：逐像素逐通道；单通道差 ≤ tolerance 视为同一像素；
+    **两条判据取更敏感的**：变化占比 > maxRatio，**或**变化像素数 ≥ minChangedPixels ⇒ `changed`。
+    为什么要 minChangedPixels：只看占比会漏掉小面积真实改动（1280×900 下 0.1% ≈ 1152 像素，一个按钮换色/一行文案改字可能只有几十像素）。返回 `changedPixels/totalPixels/ratio/bbox/mask`；尺寸不同 ⇒ `different-size`（**ratio/changedPixels/totalPixels 在数据源头就是 null**，只留宽高差异）；解析失败 ⇒ `uncomparable`。
+  - `renderDiffPng(after, mask)`：变化像素标红 `(255,0,72)`、其余压成 55% 灰，用于一眼看出改哪了；mask 不匹配直接拒绝，不给假 diff。
+- 组合（`index.js` 的 `compareWithBaseline`）：基线 = **该条证据里最后一张能当基线的图**（`pickBaselineEvidence`：URL 优先于 `.png` 后缀判定，所以带查询串的 `.png` URL 也算 URL 证据；跳过普通文本证据）：
+  - 没有图片证据 ⇒ `new`（建立基线）；
+  - 基线是 http(s) URL ⇒ `uncomparable` + `baseline-url`（不抓远端图来比较）；
+  - 基线是 jpg/webp/gif ⇒ `uncomparable` + `baseline-not-png`（只支持 PNG 像素对比）；
+  - 基线越界/文件不存在/超过 10 MiB/CRC 坏 ⇒ `uncomparable` + `baseline-outside-project` / `baseline-missing` / `baseline-too-large` / `baseline-bad-png`；
+  - `changed` 时把 diff 图写进 `.dsh/plugin-state/shots/diff-<item>-<stamp>.png`，路径记在 `shotDiffs[].diffFile`（**不进 evidence 列表**，避免污染证据）。
+- 落盘：`addAcceptanceEvidence(projectPath, {item_id, evidence, shotDiff})` 一次原子写同时追加证据与对比记录（`shot_diffs`，最多 20 条）；挂证据失败会删掉刚写的截图与 diff（不留孤儿）。
+- 配置：`screenshotDiffTolerance`（8）、`screenshotDiffMaxRatio`（0.001）、`screenshotDiffMinChangedPixels`（24）。
+
 
 1. `npm test`（= `node --test "test/*.test.js"`）全绿。
 2. `plugin_manager(action:"install_bundle", target:<本目录绝对路径>)` → `application: applied`（不是 failed/restart-required）。
@@ -592,7 +610,7 @@ features: {
 
 实测记录（2026-11-20/21，DSH 0.2.2-rc.5 / Node 24.20）：
 
-- 1/2/3/4/6 全部通过；`npm test` = 288 用例全绿。
+- 1/2/3/4/6 全部通过；`npm test` = 322 用例全绿。
 - 安装返回 `application: applied`；`listTools` 可见 `cockpit_report` / `cockpit_init`；`Slots.listSubTree` 在 live 页面里看到 `main` 与 `sidebar.panellist` 都有 `delivery-cockpit`（active）。
 - HTTP 实测（本机 `Invoke-WebRequest`）：未登记路径 403、缺 path 400、无原型批准 409、同源 POST 200、跨源 POST 403、二次 init `applied:false / created:[]`。
 - **功能账 live 实测**（临时夹具：PRD 4 条 FR + 3 条回执 + 验收表 + 审核账本 1 条归属 bug、1 条未归属）：FR-1 = 有阻塞（bug 归属到 `web/orders/list.ts`）、FR-2/FR-3 = 进行中、FR-4 = 未开始且待修列 `—`（known=false）、未归属 1 条、功能进度 0/4。夹具用完已清理，未留在仓库。
@@ -604,6 +622,9 @@ features: {
   - 直接走工具的 execute 路径：首次 `added=2`，再次 `skipped=1`（幂等、不重复），写出的条目 `result:null / evidence:[]`。
   - 技能可见性修正前后：`verification-before-completion` 由 `no` → `yes`，`missing` 只剩真正没装的 `playwright`。
 - **V1.0.3 live 实测**（临时夹具，验完已清理）：`POST /acceptance-result` 无证据 400、证据不存在 409、真实截图 200（证据归一化为 `shots/a1.png`、写入 `at`）、撤销 200 清空、未授权路径 403；面板随之把 FR-1 变「已完成」、功能进度 1/1。修复后复测：**漏传 `result` 字段 400 且 `acceptance.json` 一个字节未变**，显式 `null` 才走撤销。
+- **V1.0.4 live 实测**（临时夹具，验完已清理）：真实 Chrome headless 截图 3s 出图、落盘 `.dsh/plugin-state/shots/`、自动挂到证据、`GET /shot` 回 `image/png`，`result` 保持空；卡死页面 `timeoutMs=6000` ⇒ 6.3s 返回 `timeout`；客户端 1.5s 断开 ⇒ 2.2s 返回 `aborted`；两次异常后 **0 残留临时 profile、0 僵尸 chrome 进程**。
+- **V1.0.5 live 实测**（临时夹具，验完已清理）：同一验收项连拍四次——① 无基线 ⇒ `new`；② 同页面 ⇒ `same`（0/1,152,000 像素变化，证明渲染确定性够用）；③ 改了页面（换文案 + 加搜索框）⇒ `changed`（3,535 像素 = 0.31%，diff 图正确把"变化的文字行 + 新增输入框"标红、其余压灰）；④ 又是同页面 ⇒ `same`。面板 `acceptance.items[].shotDiffs` 按序下发 4 条记录，`result` 始终保持为空（截图不判通过）。
+- **小改动回归实测**（评审修复后）：只把「保存按钮在右下角」改成「左下角」——151 像素、占比 0.01%，修复前会被占比阈值判成 `same`，现在正确报 `changed` 并出 diff 图；同页面重拍仍 `same`。
 - 第 5 条的 **页面内点击** 属人工确认项（agent 打不开带鉴权的 GUI）；视觉由 `tools/preview` 的真实 React + CDP 截图覆盖：`features.png`（功能账主视图）/ `features-prd-missing.png` / `features-no-fr.png` / `degraded.png` / `overview.png` / `features-360.png`（360px 无横向溢出）。
 - 改动 Host 代码后需要**重载插件**（disable→enable 或重启 DSH）才生效；只改 `client.js` 需要**刷新页面**。
 
@@ -676,6 +697,16 @@ features: {
 - 缩略图经 `GET /shot` 读取：只允许项目内图片、≤10 MiB，路径穿越/非图片一律拒绝（避免变成任意文件下载器）。
 - **独立评审第 1 轮 2 条 important 已修**：① Windows 上杀整个进程树（taskkill /T）+ 临时 profile 延迟重删；② 单一 deadline 贯穿 + 客户端断开经 AbortSignal 中止（断开时不写盘、不挂证据）。
 - **第 2 轮 3 条 minor 已修**：截图返回前再查一次 abort（断开不写盘）；挂证据失败时删除已写的孤儿截图；`SCREENSHOT_STATUS` 补 `evidence-not-found`→409 / `bad-evidence`→400；客户端截图超时改 90s 常量并注明必须大于 Host 的 `screenshotTimeoutMs`。
+
+**功能账（V1.0.5 补：截图自动对比上一版）**
+
+- 比较的是**该条验收项证据里的最后一张图片**（截图按顺序追加）。为什么不做"按文件名版本号"：证据顺序就是人看到的顺序，不受重命名影响。
+- 变化占比的阈值（`maxRatio`）默认 0.1%：纯像素全等会被字体栅格/抗锯齿噪声打破，用比例抗抖动；单通道差 ≤ 8 再过滤一层。
+- **小面积改动不能漏**（独立评审第 1 轮 important）：只按占比判会漏掉"一个按钮换色、一行文案改字"（几十个像素、占比 0.00x%），所以加了 `minChangedPixels=24` 下限——变化 ≥ 24 像素就判 `changed`，与占比阈值取"更敏感"的那条。想更敏感可把下限调到 1（代价：抗锯齿噪声可能误报）。
+- 尺寸不同单独给 `different-size`，**不能**折成比例（否则"页面长高了"会被判成 0 差异）。
+- 基线是 URL / 文件已删 / 格式不支持 ⇒ `uncomparable` + reason，绝不"假装比过"。
+- 只有 `changed` 才生成 diff 图，存 `.dsh/plugin-state/shots/diff-*.png`，只记在 `shotDiffs[].diffFile`，**不进证据列表**（证据只放真实截图）。
+- `shot_diffs` 每次截图一条、最多保留 20 条；面板只展示最近 5 条（Host 下发已截断）。
 
 **接线层**
 

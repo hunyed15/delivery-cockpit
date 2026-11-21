@@ -322,6 +322,56 @@ const ACCEPTANCE_ITEMS = [
   },
 ]
 
+// 视觉回归：每条验收项的最近几次像素对比（Host 语义：正序、最后一条最新、最多 5 条）。
+// 覆盖 new / same / changed / different-size / uncomparable 五种结论。
+const SHOT_DIFFS_BY_ITEM = {
+  A1: [
+    {
+      at: ago(140),
+      verdict: 'same',
+      baseline: '.dsh/plugin-state/shots/a1.png',
+      diffFile: null,
+      ratio: 0,
+      changedPixels: 0,
+      totalPixels: 1152000,
+      width: 1280,
+      height: 900,
+      reason: null,
+    },
+    {
+      at: ago(20),
+      verdict: 'changed',
+      baseline: '.dsh/plugin-state/shots/a1.png',
+      diffFile: '.dsh/plugin-state/shots/diff-A1-preview.png',
+      ratio: 0.0031,
+      changedPixels: 3535,
+      totalPixels: 1152000,
+      width: 1280,
+      height: 900,
+      reason: null,
+    },
+  ],
+  A2: [
+    { at: ago(90), verdict: 'new', baseline: null, diffFile: null, ratio: null, changedPixels: null, totalPixels: null, width: 1280, height: 900, reason: null },
+    { at: ago(30), verdict: 'same', baseline: 'shots/dup.png', diffFile: null, ratio: 0, changedPixels: 0, totalPixels: 1152000, width: 1280, height: 900, reason: null },
+  ],
+  A4: [
+    { at: ago(200), verdict: 'new', baseline: null, diffFile: null, ratio: null, changedPixels: null, totalPixels: null, width: 1280, height: 900, reason: null },
+    { at: ago(60), verdict: 'uncomparable', baseline: 'https://ci.example.com/runs/42', diffFile: null, ratio: null, changedPixels: null, totalPixels: null, width: 1280, height: 900, reason: 'baseline-url' },
+  ],
+  A5: [
+    { at: ago(150), verdict: 'new', baseline: null, diffFile: null, ratio: null, changedPixels: null, totalPixels: null, width: 1280, height: 900, reason: null },
+    { at: ago(45), verdict: 'different-size', baseline: '.dsh/plugin-state/shots/a5.png', diffFile: null, ratio: null, changedPixels: null, totalPixels: null, width: 1280, height: 1320, reason: null },
+  ],
+  A6: [
+    { at: ago(120), verdict: 'new', baseline: null, diffFile: null, ratio: null, changedPixels: null, totalPixels: null, width: 1280, height: 900, reason: null },
+  ],
+}
+
+for (const item of ACCEPTANCE_ITEMS) {
+  if (SHOT_DIFFS_BY_ITEM[item.id]) item.shotDiffs = SHOT_DIFFS_BY_ITEM[item.id]
+}
+
 function makePanel(overrides = {}) {
   const base = {
     ok: true,

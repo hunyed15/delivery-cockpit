@@ -162,7 +162,9 @@ const HARNESS = `(function () {
       if (input) setReactInput(input, 'http://127.0.0.1:5173')
       clickInRow(id, '截图并附到证据')
       if (scenario === 'acceptance-shot') {
-        waitForRowText(id, '已截图并附到证据', function () { document.title = 'ready:' + scenario })
+        waitForRowText(id, '已截图', function () { document.title = 'ready:' + scenario })
+      } else if (scenario === 'visual-toast') {
+        waitForRowText(id, '与上一版有变化', function () { document.title = 'ready:' + scenario })
       } else if (scenario === 'acceptance-shotting') {
         waitForRowText(id, '截图中…', function () { document.title = 'ready:' + scenario })
       } else {
@@ -271,9 +273,16 @@ const HARNESS = `(function () {
         if (
           scenario === 'acceptance-shot' ||
           scenario === 'acceptance-shotting' ||
-          scenario === 'acceptance-shot-error'
+          scenario === 'acceptance-shot-error' ||
+          scenario === 'visual-toast'
         ) {
           if (openShotBoxAndSetUrl('A4')) return
+        }
+        // visual-regression：把每行的「历史」都展开，一张图看全五种结论与历史列表。
+        if (scenario === 'visual-regression') {
+          ;['A1', 'A2', 'A4', 'A5', 'A6'].forEach(function (id) { clickInRow(id, '历史') })
+          setTimeout(function () { document.title = 'ready:' + scenario }, 600)
+          return
         }
         document.title = 'ready:' + scenario
       })
@@ -290,6 +299,8 @@ let approved = false
 let acceptanceOverrides = new Map()
 // 截图场景的错误注入：?shotError=browser-not-found 之类，模拟 Host 的失败码。
 let currentShotError = null
+// 视觉回归注入：?shotCompare=same|changed|new|different-size|uncomparable，模拟截图返回的 shot.comparison。
+let currentShotCompare = null
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -317,6 +328,37 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body))
 }
 
+// 模拟 Host 的像素对比结果（shot.comparison / shotDiffs 的最新一条）。
+function makeComparison(itemId, mode) {
+  const base = {
+    at: new Date().toISOString(),
+    baseline: `.dsh/plugin-state/shots/${itemId}.png`,
+    diffFile: null,
+    ratio: null,
+    changedPixels: null,
+    totalPixels: null,
+    width: 1280,
+    height: 900,
+    reason: null,
+  }
+  if (mode === 'new') return { ...base, verdict: 'new', baseline: null }
+  if (mode === 'changed') {
+    return {
+      ...base,
+      verdict: 'changed',
+      diffFile: `.dsh/plugin-state/shots/diff-${itemId}-preview.png`,
+      ratio: 0.0123,
+      changedPixels: 14170,
+      totalPixels: 1152000,
+    }
+  }
+  if (mode === 'different-size') {
+    return { ...base, verdict: 'different-size', width: 1280, height: 1320 }
+  }
+  if (mode === 'uncomparable') return { ...base, verdict: 'uncomparable', reason: 'baseline-url' }
+  return { ...base, verdict: 'same', ratio: 0, changedPixels: 0, totalPixels: 1152000 }
+}
+
 async function readBody(req) {
   const chunks = []
   for await (const chunk of req) chunks.push(chunk)
@@ -337,6 +379,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname === '/') approved = false
   if (url.pathname === '/') acceptanceOverrides = new Map()
   if (url.pathname === '/') currentShotError = url.searchParams.get('shotError') || null
+  if (url.pathname === '/') currentShotCompare = url.searchParams.get('shotCompare') || null
   const scenario = scenarioOf(url)
 
   try {
@@ -522,11 +565,15 @@ const server = createServer(async (req, res) => {
       const file = `.dsh/plugin-state/shots/${item.id}-preview.png`
       const override = acceptanceOverrides.get(item.id) || {}
       const evidence = [...(override.evidence || item.evidence || []), file]
-      acceptanceOverrides.set(item.id, { ...override, evidence })
+      // 截图后自动与上一版对比：visual-toast 默认给 changed，其余默认 same。
+      const compareMode = currentShotCompare || (scenario === 'visual-toast' ? 'changed' : 'same')
+      const comparison = makeComparison(item.id, compareMode)
+      const shotDiffs = [...(override.shotDiffs || item.shotDiffs || []), comparison].slice(-5)
+      acceptanceOverrides.set(item.id, { ...override, evidence, shotDiffs })
       return sendJson(res, 200, {
         ok: true,
-        item: { ...item, ...override, evidence },
-        shot: { file, width: 1280, height: 900, url: urlValue },
+        item: { ...item, ...override, evidence, shotDiffs },
+        shot: { file, width: 1280, height: 900, url: urlValue, comparison },
         added: 1,
       })
     }

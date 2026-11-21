@@ -268,6 +268,43 @@ test('截图错误码全部翻人话', () => {
   assert.ok(source.includes('explainShotError'), '截图错误码必须收口到一个映射函数')
 })
 
+test('视觉回归：shotDiffs 如实呈现、不伪造结论', () => {
+  assert.ok(source.includes('shotDiffs'), '必须消费 panel.acceptance.items[].shotDiffs')
+  assert.ok(source.includes('ShotDiffBadge'), '必须有视觉回归徽章组件')
+  // 五种 verdict 都要有独立文案：new / same / changed / different-size / uncomparable。
+  for (const text of ['新增基线', '与上一版一致', '有变化', '尺寸变了', '无法对比']) {
+    assert.ok(source.includes(text), `缺少对比结论文案：${text}`)
+  }
+  assert.ok(source.includes('DIFF_VERDICT_TEXT'), '五种 verdict 必须收口到一个映射')
+  // different-size 绝不能显示成「没变化」：文案与徽章必须是独立结论。
+  assert.ok(source.includes("'different-size': '尺寸变了'"), 'different-size 必须是独立文案')
+  assert.ok(source.includes('changedPixels') && source.includes('totalPixels'), '变化明细放 title，不丢信息')
+  // diff 图走 /shot，30px 缩略图并新标签打开。
+  assert.ok(source.includes('openEvidenceShot(diff.diffFile'), 'changed 的历史条目必须能打开 diff 图')
+  assert.ok(source.includes('openEvidenceShot(latestDiff.diffFile'), '最新 changed 必须有 diff 缩略图入口')
+  assert.ok(source.includes('dc-diff-thumb'), 'diff 缩略图必须有独立样式（30px）')
+  assert.ok(source.includes('dc-diff-history'), '必须有最近 5 次对比的历史列表')
+  assert.ok(source.includes('最近 5 次对比（最新在前）'), '历史列表标题必须说明范围与顺序')
+  // 截图响应里的 comparison 要立刻用于行内提示。
+  assert.ok(source.includes('body.shot && body.shot.comparison'), '截图成功必须消费 shot.comparison')
+  assert.ok(source.includes('comparisonMessage(comparison)'), 'comparison 必须翻成行内提示')
+  assert.ok(source.includes('与上一版有变化') && source.includes('已建立基线'), '截图提示必须区分 changed / new')
+  assert.ok(source.includes('diffPercent'), '变化比例必须格式化成百分比')
+})
+
+test('视觉回归 reason 全部翻人话', () => {
+  for (const [code, text] of [
+    ['baseline-missing', '上一张截图文件已不在'],
+    ['baseline-url', '上一版是 URL 证据，不能像素对比'],
+    ['baseline-outside-project', '上一版截图在项目外，不能像素对比'],
+  ]) {
+    assert.ok(source.includes(code), `缺少 reason 映射 ${code}`)
+    assert.ok(source.includes(text), `reason ${code} 没翻成人话`)
+  }
+  assert.ok(source.includes('解析失败'), '未知 reason 必须以「解析失败」兜底')
+  assert.ok(source.includes('explainDiffReason'), 'reason 必须收口到一个映射函数')
+})
+
 test('降级矩阵：横幅、坏行、缺失能力', () => {
   assert.match(source, /panel\.degraded\.flag/, '必须消费 degraded.flag')
   assert.ok(source.includes('degradedReasons'), '降级横幅要列原因')

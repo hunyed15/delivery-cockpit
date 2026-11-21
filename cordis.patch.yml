@@ -17,3 +17,8 @@
         screenshotHeight: 900
         # 截一张图的总超时（毫秒）；浏览器起不来会直接报 browser-not-found，不会静默降级。
         screenshotTimeoutMs: 30000
+        # 视觉回归：单通道像素差 ≤ tolerance 视为同一像素；
+        # 变化占比 > maxRatio 或变化像素数 ≥ minChangedPixels 视为"与上一版有变化"。
+        screenshotDiffTolerance: 8
+        screenshotDiffMaxRatio: 0.001
+        screenshotDiffMinChangedPixels: 24

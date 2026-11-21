@@ -267,8 +267,53 @@ test('验收清单：条目字段原样映射，未知 result 归一成 null，�
     result: 'pass',
     evidence: ['shots/a1.png'],
     at: '2026-11-21T00:00:00.000Z',
+    shotDiffs: [],
   })
   assert.equal(model.acceptance.items[1].result, null, '未知 result 归一成 null（未验）')
+})
+
+test('验收清单：视觉回归记录随条目下发（最近 5 条，含 reason）', () => {
+  const items = [
+    {
+      id: 'A1',
+      feature_ref: 'FR-1',
+      title: '能添加客户',
+      result: null,
+      evidence: ['shots/a1.png'],
+      shot_diffs: Array.from({ length: 7 }, (_, index) => ({
+        at: `2026-11-21T00:0${index}:00.000Z`,
+        verdict: index === 6 ? 'changed' : 'same',
+        baseline: 'shots/a0.png',
+        diffFile: index === 6 ? 'shots/diff.png' : null,
+        ratio: index === 6 ? 0.42 : 0,
+        changedPixels: index === 6 ? 42 : 0,
+        totalPixels: 100,
+      })),
+    },
+  ]
+  const model = build(
+    evidence({
+      acceptance: {
+        items,
+        empty: false,
+        badJson: false,
+        total: 1,
+        withResult: 0,
+        passed: 0,
+        failed: 0,
+        blocked: 0,
+        passWithoutEvidence: 0,
+        appliesToCurrent: true,
+      },
+    }),
+  )
+  const diffs = model.acceptance.items[0].shotDiffs
+  assert.equal(diffs.length, 5, '只下发最近 5 条')
+  const latest = diffs[diffs.length - 1]
+  assert.equal(latest.verdict, 'changed')
+  assert.equal(latest.diffFile, 'shots/diff.png')
+  assert.equal(latest.ratio, 0.42)
+  assert.equal(latest.reason, null)
 })
 
 test('features：载荷形状、功能进度、未知 bug 用 known=false 表示', async () => {

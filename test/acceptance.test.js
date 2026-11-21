@@ -15,8 +15,10 @@ import {
   draftAcceptance,
   normalizeDraftItems,
   normalizeEvidence,
+  normalizeShotDiffView,
   readAcceptanceFile,
   setAcceptanceResult,
+  toAcceptanceItemView,
 } from '../lib/acceptance.js'
 import { appendReceipt, stateDirOf } from '../lib/receipts.js'
 
@@ -358,6 +360,53 @@ test('填结果：没有验收表时是 item-not-found；bootstrap 阶段拒绝'
     const result = await setAcceptanceResult(project, { item_id: 'A1', result: 'fail' })
     assert.deepEqual(result, { ok: false, error: 'iteration-required' })
   })
+})
+
+test('视觉回归记录：随证据一起落盘，只保留最近 20 条', async () => {
+  await withProject(async (project) => {
+    await seedTable(project, true)
+    await writeFile(join(project, 'shots', 'a2.png'), Buffer.from([2]))
+    const added = await addAcceptanceEvidence(project, {
+      item_id: 'A1',
+      evidence: ['shots/a2.png'],
+      shotDiff: {
+        verdict: 'changed',
+        baseline: 'shots/a1.png',
+        ratio: 0.01234,
+        changedPixels: 123,
+        totalPixels: 10000,
+        width: 100,
+        height: 100,
+        diffFile: '.dsh/plugin-state/shots/diff-a1.png',
+      },
+    })
+    assert.equal(added.ok, true)
+    assert.equal(added.shotDiff.verdict, 'changed')
+    assert.equal(added.shotDiff.ratio, 0.0123, '比例截到 4 位小数')
+    assert.equal(typeof added.shotDiff.at, 'string')
+    assert.equal(added.item.shotDiffs.length, 1)
+    assert.equal(added.item.shotDiffs[0].baseline, 'shots/a1.png')
+
+    // 连续截图只会累积到 20 条，不会无限膨胀
+    for (let index = 0; index < 24; index += 1) {
+      await addAcceptanceEvidence(project, {
+        item_id: 'A1',
+        evidence: ['shots/a2.png'],
+        shotDiff: { verdict: 'same', baseline: 'shots/a1.png', ratio: 0, changedPixels: 0, totalPixels: 10000 },
+      })
+    }
+    const table = await readTable(project)
+    assert.equal(table.items[0].shot_diffs.length, 20)
+    assert.equal(toAcceptanceItemView(table.items[0]).shotDiffs.length, 20)
+    assert.equal(toAcceptanceItemView(table.items[0]).shotDiffs.at(-1).verdict, 'same')
+  })
+})
+
+test('视觉回归记录：不认识的 verdict 归一成 uncomparable，不伪造结论', () => {
+  const view = normalizeShotDiffView({ verdict: 'looks-ok', ratio: 0.5 })
+  assert.equal(view.verdict, 'uncomparable')
+  assert.equal(view.ratio, 0.5)
+  assert.equal(view.reason, null)
 })
 
 test('normalizeEvidence：空数组合法、非字符串拒绝、超过上限截断', async () => {

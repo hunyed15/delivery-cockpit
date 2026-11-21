@@ -22,6 +22,7 @@ import { readProjectCard } from './lib/project-card.js'
 import { appendReceipt } from './lib/receipts.js'
 import { createAcceptanceResultHandler, createAcceptanceScreenshotHandler, createApproveHandler, createInitHandler, createRoutes } from './lib/route.js'
 import { captureScreenshot, writeScreenshot } from './lib/screenshot.js'
+import { compareScreenshots, pickBaselineEvidence, renderDiffPng } from './lib/visual-diff.js'
 
 export const name = 'delivery-cockpit'
 
@@ -43,6 +44,10 @@ const DEFAULT_CONFIG = {
   screenshotWidth: 1280,
   screenshotHeight: 900,
   screenshotTimeoutMs: 30_000,
+  // 视觉回归：单通道差 ≤ tolerance 算同一像素；变化占比 ≤ maxRatio 视为"一致"。
+  screenshotDiffTolerance: 8,
+  screenshotDiffMaxRatio: 0.001,
+  screenshotDiffMinChangedPixels: 24,
 }
 
 const REPORT_STAGES = ['init', 'scaffold', 'brainstorm', 'prototype', 'coding', 'code_review', 'verification', 'release']
@@ -644,7 +649,8 @@ export function apply(ctx, config = {}) {
     if (table.error) return { ok: false, error: 'acceptance-broken', detail: String(table.error?.code ?? table.error) }
     if (table.badJson) return { ok: false, error: 'acceptance-broken' }
     const items = Array.isArray(table.table?.items) ? table.table.items : []
-    if (!items.some((item) => String(item?.id ?? '') === itemId)) return { ok: false, error: 'item-not-found' }
+    const targetItem = items.find((item) => String(item?.id ?? '') === itemId) ?? null
+    if (targetItem === null) return { ok: false, error: 'item-not-found' }
 
     let url = typeof input?.url === 'string' && input.url.trim() !== '' ? input.url.trim() : ''
     if (url === '') {
@@ -668,19 +674,95 @@ export function apply(ctx, config = {}) {
 
     const safeId = itemId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 32) || 'item'
     const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+
+    // 视觉回归：和该条证据里"上一张图"比像素（本次截图还没挂上去，所以最后一张就是基线）。
+    const comparison = await compareWithBaseline(projectPath, targetItem, captured.png)
+    let diffFile = null
+    if (comparison.verdict === 'changed' && Buffer.isBuffer(comparison.mask)) {
+      const diff = renderDiffPng(captured.png, comparison.mask)
+      if (diff.ok) {
+        diffFile = await writeScreenshot(projectPath, `diff-${safeId}-${stamp}.png`, diff.png)
+      }
+    }
+    const differentSize = comparison.verdict === 'different-size'
+    const shotRecord = {
+      at: new Date().toISOString(),
+      verdict: comparison.verdict,
+      baseline: comparison.baseline ?? null,
+      diffFile,
+      // 尺寸不同时比例没有意义（否则会显示"变化 100%"），只留宽高差异。
+      ratio: differentSize ? null : typeof comparison.ratio === 'number' ? comparison.ratio : null,
+      changedPixels: !differentSize && Number.isInteger(comparison.changedPixels) ? comparison.changedPixels : null,
+      totalPixels: !differentSize && Number.isInteger(comparison.totalPixels) ? comparison.totalPixels : null,
+      width: captured.width,
+      height: captured.height,
+      reason: comparison.reason ?? null,
+    }
+
     const file = await writeScreenshot(projectPath, `${safeId}-${stamp}.png`, captured.png)
-    const attached = await addAcceptanceEvidence(projectPath, { item_id: itemId, evidence: [file] })
+    const attached = await addAcceptanceEvidence(projectPath, { item_id: itemId, evidence: [file], shotDiff: shotRecord })
     if (!attached.ok) {
       // 挂不上去就别留孤儿文件（比如条目在截图期间被删掉了）。
       await rm(join(projectPath, file), { force: true }).catch(() => {})
+      if (diffFile !== null) await rm(join(projectPath, diffFile), { force: true }).catch(() => {})
       return attached
     }
     return {
       ok: true,
       item: attached.item,
       added: attached.added,
-      shot: { file, width: captured.width, height: captured.height, url: captured.url },
+      shot: { file, width: captured.width, height: captured.height, url: captured.url, comparison: attached.shotDiff ?? shotRecord },
     }
+  }
+
+  /**
+   * 找该条验收项上一张截图并与本次对比。
+   * 基线来源只认证据列表里的 PNG（截图与 diff 都是 PNG，顺序 = 截图顺序，最后一张就是上一版）；
+   * 基线是 URL / 文件没了 / 太大 / 不是 PNG / 解析失败时给 `uncomparable` + 明确 reason。
+   */
+  const compareWithBaseline = async (projectPath, item, currentPng) => {
+    const baseline = pickBaselineEvidence(item?.evidence)
+    if (baseline.kind === 'new') return { verdict: 'new', baseline: null }
+    // URL 先于 .png 判定：带查询串的 .png URL（?v=2）也算 URL 证据。
+    if (baseline.kind === 'url') return { verdict: 'uncomparable', baseline: baseline.entry, reason: 'baseline-url' }
+    if (baseline.kind === 'non-png') return { verdict: 'uncomparable', baseline: baseline.entry, reason: 'baseline-not-png' }
+    const imageEntry = baseline.entry
+
+    const root = resolve(projectPath)
+    const absolute = resolve(root, imageEntry)
+    const rel = relative(root, absolute)
+    if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+      return { verdict: 'uncomparable', baseline: imageEntry, reason: 'baseline-outside-project' }
+    }
+    let info
+    try {
+      info = await stat(absolute)
+    } catch {
+      return { verdict: 'uncomparable', baseline: imageEntry, reason: 'baseline-missing' }
+    }
+    if (!info.isFile()) return { verdict: 'uncomparable', baseline: imageEntry, reason: 'baseline-missing' }
+    // 与 /shot 端点同一道体积上限：不把超大文件读进内存。
+    if (info.size > 10 * 1024 * 1024) return { verdict: 'uncomparable', baseline: imageEntry, reason: 'baseline-too-large' }
+
+    let baselineBytes
+    try {
+      baselineBytes = await readFile(absolute)
+    } catch {
+      return { verdict: 'uncomparable', baseline: imageEntry, reason: 'baseline-missing' }
+    }
+    const result = compareScreenshots(baselineBytes, currentPng, {
+      tolerance: settings.screenshotDiffTolerance,
+      maxRatio: settings.screenshotDiffMaxRatio,
+      minChangedPixels: settings.screenshotDiffMinChangedPixels,
+    })
+    if (!result.ok) {
+      return {
+        verdict: 'uncomparable',
+        baseline: imageEntry,
+        reason: result.reason?.includes('bad-crc') || result.reason?.includes('unsupported') ? 'baseline-bad-png' : 'baseline-unreadable',
+      }
+    }
+    return { ...result, baseline: imageEntry }
   }
 
   /** 证据图片读取：只允许项目内的图片文件，且限制体积（避免变成任意文件下载器）。 */

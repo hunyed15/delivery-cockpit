@@ -129,6 +129,79 @@ window.__ModuleLoader__.load({
       return explainAcceptanceError(message)
     }
 
+    // 视觉回归：Host 每次截图都会与「该验收项的上一张截图」做像素对比。
+    // 界面只如实呈现 verdict / ratio / reason，绝不把 different-size 说成「没变化」。
+    const DIFF_VERDICT_TEXT = {
+      new: '新增基线',
+      same: '与上一版一致',
+      changed: '有变化',
+      'different-size': '尺寸变了',
+      uncomparable: '无法对比',
+    }
+    const DIFF_VERDICT_TONE = {
+      new: 'unknown',
+      same: 'ok',
+      changed: 'warn',
+      'different-size': 'warn',
+      uncomparable: 'unknown',
+    }
+    const DIFF_REASON_TEXT = {
+      'baseline-missing': '上一张截图文件已不在',
+      'baseline-url': '上一版是 URL 证据，不能像素对比',
+      'baseline-outside-project': '上一版截图在项目外，不能像素对比',
+      'baseline-not-png': '上一版不是 PNG 截图（只支持 PNG 像素对比）',
+      'baseline-bad-png': '上一版截图文件损坏或格式不支持',
+      'baseline-too-large': '上一版截图超过 10 MiB，不做像素对比',
+      'baseline-unreadable': '上一版截图读不出来',
+    }
+
+    function explainDiffReason(reason) {
+      const message = String(reason == null ? '' : reason)
+      if (message === '') return '没有给出原因'
+      for (const [code, text] of Object.entries(DIFF_REASON_TEXT)) {
+        if (message.indexOf(code) >= 0) return text
+      }
+      return `解析失败（${message}）`
+    }
+
+    function diffPercent(ratio) {
+      const value = Number(ratio)
+      if (!Number.isFinite(value)) return '—'
+      return `${(value * 100).toFixed(2)}%`
+    }
+
+    function diffVerdictText(diff) {
+      const verdict = diff && diff.verdict
+      if (verdict === 'changed') return `有变化 ${diffPercent(diff.ratio)}`
+      if (verdict === 'different-size') {
+        const size = diff.width && diff.height ? `（${diff.width}×${diff.height}）` : ''
+        return `尺寸变了${size}`
+      }
+      return DIFF_VERDICT_TEXT[verdict] || '无法对比'
+    }
+
+    function diffTitle(diff) {
+      if (!diff) return ''
+      const parts = []
+      if (diff.at) parts.push(`时间：${new Date(diff.at).toLocaleString()}`)
+      if (diff.reason) parts.push(`原因：${explainDiffReason(diff.reason)}`)
+      if (diff.changedPixels != null && diff.totalPixels) {
+        parts.push(`变化像素：${diff.changedPixels}/${diff.totalPixels}`)
+      }
+      return parts.join('\n')
+    }
+
+    // 截图返回的 shot.comparison 直接变成行内提示，不需要再等刷新。
+    function comparisonMessage(comparison) {
+      if (!comparison || !comparison.verdict) return '已截图并附到证据'
+      const verdict = comparison.verdict
+      if (verdict === 'changed') return `已截图 · 与上一版有变化 ${diffPercent(comparison.ratio)}`
+      if (verdict === 'same') return '已截图 · 与上一版一致'
+      if (verdict === 'new') return '已截图 · 已建立基线'
+      if (verdict === 'different-size') return '已截图 · 尺寸变了'
+      return `已截图 · 无法对比（${explainDiffReason(comparison.reason)}）`
+    }
+
     // 后端错误码对用户没有意义；翻成人话，原文留在 title 里供排查。
     const ERROR_TEXT = {
       'workspace-not-allowed': '这个工作区不在已登记列表里。在某个项目目录里打开会话后回到这里，或点重试。',
@@ -491,6 +564,20 @@ h2.dc-name { margin:0; font-size:16px; font-weight:650; line-height:1.3; letter-
 .dc-shot-row { display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
 /* 注意：shot-box 是 column flex，input 不能再写 flex:1（会沿纵轴长成一大块）。 */
 .dc-shot-url { width:100%; min-width:0; flex:none; }
+/* 视觉回归：最新对比徽章 + 30px diff 缩略图 + 历史列表。 */
+.dc-diff-row { display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin-bottom:4px; }
+.dc-diff-btn { appearance:none; border:0; background:transparent; padding:0; font:inherit;
+  display:inline-flex; align-items:center; gap:4px; cursor:pointer; flex:none; }
+.dc-diff-btn:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; border-radius:4px; }
+.dc-diff-link { appearance:none; border:0; background:transparent; padding:0; font:inherit; font-size:11px;
+  color:var(--dsw-alias-brand-primary); cursor:pointer; text-decoration:underline; }
+.dc-diff-link:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; }
+.dc-diff-thumb { width:30px; height:30px; }
+.dc-diff-history { list-style:none; margin:4px 0 0; padding:0; display:flex; flex-direction:column; gap:2px;
+  font-size:11px; color:var(--dsw-alias-label-secondary); }
+.dc-diff-history li { display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; min-width:0; }
+.dc-diff-history-at { font-variant-numeric:tabular-nums; white-space:nowrap; }
+.dc-diff-history-verdict { color:var(--dsw-alias-label-primary); overflow-wrap:anywhere; }
 .dc-empty-line { margin:0; font-size:12px; color:var(--dsw-alias-label-secondary); }
 .dc-details { margin-top:8px; font-size:11.5px; color:var(--dsw-alias-label-secondary); }
 .dc-details summary { cursor:pointer; }
@@ -1787,6 +1874,30 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
       )
     }
 
+    // 视觉回归徽章：changed 可点开 diff 图；其余只读（reason 放 title 里悬停看）。
+    function ShotDiffBadge(props) {
+      const diff = props.diff
+      if (!diff) return null
+      const verdict = diff.verdict || 'uncomparable'
+      const tone = DIFF_VERDICT_TONE[verdict] || 'unknown'
+      const text = diffVerdictText(diff)
+      if (verdict === 'changed' && diff.diffFile) {
+        return h(
+          'button',
+          {
+            type: 'button',
+            className: 'dc-diff-btn',
+            title: `${diffTitle(diff)}\n点击查看 diff 图`,
+            'aria-label': `查看 diff 图：${text}`,
+            onClick: () => openEvidenceShot(diff.diffFile, props.projectPath),
+          },
+          h(Chip, { tone }, text),
+          h('span', { className: 'dc-diff-link' }, '查看 diff'),
+        )
+      }
+      return h(Chip, { tone, title: diffTitle(diff) || undefined }, text)
+    }
+
     // 验收清单：面板内可直接记录结果（通过/失败/阻塞/撤销）。
     // 写动作只发「项目路径 + 验收项 + 结果 + 证据路径」，文件校验与迭代归属由 Host 负责；
     // 成功后重新拉面板，让 Host 返回的 result/at/evidence 成为唯一事实源。
@@ -1850,11 +1961,22 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
           const body = await postJson(`${API}/acceptance-screenshot`, payload, SHOT_REQUEST_TIMEOUT_MS)
           if (!body || body.ok !== true) throw new Error('shot-failed')
           if (!mounted.current) return
-          setRow(id, { capturing: false, shotError: '', shotSaved: true })
+          // Host 在同一响应里带回与上一版的像素对比：立刻显示，不用等面板刷新。
+          const comparison = body.shot && body.shot.comparison ? body.shot.comparison : null
+          setRow(id, {
+            capturing: false,
+            shotError: '',
+            shotSaved: true,
+            shotMessage: comparisonMessage(comparison),
+            shotDiffFile:
+              comparison && comparison.verdict === 'changed' && comparison.diffFile
+                ? String(comparison.diffFile)
+                : null,
+          })
           if (props.onRefresh) props.onRefresh()
           setTimeout(() => {
             if (mounted.current) setRow(id, { shotSaved: false })
-          }, 4000)
+          }, 6000)
         } catch (failure) {
           if (!mounted.current) return
           // 失败保留已填 URL（shotUrls 不动），方便直接重试。
@@ -1948,6 +2070,10 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
                   const id = item.id
                   const state = rowState[id] || {}
                   const evidence = asArray(item.evidence)
+                  // Host 已按时间正序截断到最近 5 条；最后一条是最新一次对比。
+                  const shotDiffs = asArray(item.shotDiffs)
+                  const latestDiff = shotDiffs.length > 0 ? shotDiffs[shotDiffs.length - 1] : null
+                  const diffOpen = state.diffOpen === true
                   const editingRow = editing[id] === true
                   const stepsTitle = [
                     item.steps ? `步骤：${item.steps}` : '',
@@ -1976,6 +2102,96 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
                     h(
                       'td',
                       null,
+                      shotDiffs.length > 0
+                        ? h(
+                            React.Fragment,
+                            null,
+                            h(
+                              'div',
+                              { className: 'dc-diff-row' },
+                              h(ShotDiffBadge, { diff: latestDiff, projectPath: props.projectPath }),
+                              latestDiff && latestDiff.verdict === 'changed' && latestDiff.diffFile
+                                ? h(
+                                    'button',
+                                    {
+                                      type: 'button',
+                                      className: 'dc-thumb dc-diff-thumb',
+                                      title: '查看 diff 图（变化像素标红）',
+                                      'aria-label': '查看 diff 图',
+                                      onClick: () =>
+                                        openEvidenceShot(latestDiff.diffFile, props.projectPath),
+                                    },
+                                    h('img', {
+                                      src: evidenceSrc(latestDiff.diffFile, props.projectPath),
+                                      alt: 'diff',
+                                      loading: 'lazy',
+                                    }),
+                                  )
+                                : null,
+                              h(
+                                'button',
+                                {
+                                  type: 'button',
+                                  className: 'dc-btn dc-btn-sm',
+                                  'aria-expanded': diffOpen ? 'true' : 'false',
+                                  onClick: () => setRow(id, { diffOpen: !diffOpen }),
+                                },
+                                diffOpen ? '收起历史' : '历史',
+                              ),
+                            ),
+                            diffOpen
+                              ? h(
+                                  React.Fragment,
+                                  null,
+                                  h('div', { className: 'dc-hint' }, '最近 5 次对比（最新在前）'),
+                                  h(
+                                    'ol',
+                                    { className: 'dc-diff-history' },
+                                    shotDiffs
+                                      .slice()
+                                      .reverse()
+                                      .map((diff, diffIndex) =>
+                                      h(
+                                        'li',
+                                        { key: `${id}-diff-${diffIndex}` },
+                                        h(
+                                          'span',
+                                          {
+                                            className: 'dc-diff-history-at',
+                                            title: diff.at ? new Date(diff.at).toLocaleString() : '',
+                                          },
+                                          diff.at ? formatRelative(diff.at) : '—',
+                                        ),
+                                        h(
+                                          'span',
+                                          {
+                                            className: 'dc-diff-history-verdict',
+                                            title: diffTitle(diff) || undefined,
+                                          },
+                                          diffVerdictText(diff),
+                                        ),
+                                        diff.verdict === 'uncomparable' && diff.reason
+                                          ? h('span', { className: 'dc-hint' }, explainDiffReason(diff.reason))
+                                          : null,
+                                        diff.verdict === 'changed' && diff.diffFile
+                                          ? h(
+                                              'button',
+                                              {
+                                                type: 'button',
+                                                className: 'dc-diff-link',
+                                                onClick: () =>
+                                                  openEvidenceShot(diff.diffFile, props.projectPath),
+                                              },
+                                              'diff',
+                                            )
+                                          : null,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : null,
+                          )
+                        : null,
                       editingRow
                         ? h(
                             React.Fragment,
@@ -2085,7 +2301,28 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
                               ? h('div', { className: 'dc-acc-error', role: 'alert' }, state.shotError)
                               : null,
                             state.shotSaved
-                              ? h('div', { className: 'dc-acc-saved', role: 'status' }, '已截图并附到证据')
+                              ? h(
+                                  'div',
+                                  { className: 'dc-acc-saved', role: 'status' },
+                                  state.shotMessage || '已截图并附到证据',
+                                  state.shotDiffFile
+                                    ? h(
+                                        React.Fragment,
+                                        null,
+                                        ' · ',
+                                        h(
+                                          'button',
+                                          {
+                                            type: 'button',
+                                            className: 'dc-diff-link',
+                                            onClick: () =>
+                                              openEvidenceShot(state.shotDiffFile, props.projectPath),
+                                          },
+                                          '查看 diff',
+                                        ),
+                                      )
+                                    : null,
+                                )
                               : null,
                           )
                         : null,
