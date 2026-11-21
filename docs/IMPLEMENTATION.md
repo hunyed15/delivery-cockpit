@@ -48,6 +48,8 @@
 ```
 
 - `stage` ∈ `init|scaffold|brainstorm|prototype|coding|code_review|verification|release`
+- `event`（可选）：**审计事件**，目前只有 `acceptance-stale`（验收失效留痕）。带 `event` 的回执只出现在流水账里，
+  **不参与阶段进度/功能状态投影**（否则会让「验效果」长期停在进行中、功能显示进行中，与状态机自相矛盾）。
 - `status` ∈ `in_progress|completed|blocked|failed|dropped`
 - `iteration_id`：冷启动固定 `"bootstrap"`；迭代环用 `v1.0` / `v1.1` 等
 - `coding` 阶段强制 `task_ref` 非空 + `write_scope` 非空数组
@@ -348,7 +350,7 @@ export function buildDetailModel({ evidence, playbook, stageCapabilities, genera
     cycle:     [ 同上 6 条 ],
   },
   ledger: {
-    receipts: [{ id, at, iterationId, stage, stageName, status, summary, artifacts, usedSkill, needsDecision, taskRef, writeScope }],
+    receipts: [{ id, at, iterationId, stage, stageName, status, summary, artifacts, usedSkill, needsDecision, taskRef, writeScope, featureIds }],
     total, truncated, badLines, missing, lastAt,
   },                              // receipts 最多 20 条（时间倒序），total 是全量条数
   acceptance: { total, withResult, passed, failed, blocked, stale, empty, badJson, truncated,
@@ -397,7 +399,7 @@ export function createRoutes(deps) // -> { handle(request): Promise<Response> }
 | POST | `/init` | body `{path, confirm:true}`；`confirm!==true` ⇒ 400 `confirm-required`；未授权 ⇒ 403；成功 `{ok:true, applied, created, skipped, gitignoreHint}` |
 | POST | `/approve-prototype` | body `{path, iteration_id}`；未授权 ⇒ 403；迭代为空/bootstrap ⇒ 400 `iteration-required`；找不到 `prototype.html` ⇒ 409 `prototype-missing`；成功 `{ok:true, approval:{iterationId, prototypeApprovedAt, prototype}}` |
 | POST | `/acceptance-result` | body `{path, item_id, result:'pass'\|'fail'\|'blocked'\|null, evidence?: string[]}`；400 `item-required`/`bad-result`/`bad-evidence`/`evidence-required`；404 `item-not-found`；409 `evidence-not-found`/`acceptance-broken`/`iteration-mismatch`/`iteration-required`；成功 `{ok:true, item}`（`null` = 撤销，清空 result/at/evidence） |
-| POST | `/acceptance-screenshot` | body `{path, item_id, url?}`（url 缺省用项目名片 `commands.previewUrl`）；只允许回环 http(s)；成功 `{ok:true, item, shot:{file,width,height,url,comparison,invalidated}, added}`；400 `item-required`/`no-url`/`invalid-url`/`url-not-loopback`；404 `item-not-found`；409 `browser-not-found`/`acceptance-broken`/`iteration-*`；504 `timeout`；499 `aborted`；502 `browser-failed`/`capture-failed`。**只挂证据、不改 result**；`shot.comparison` 是本次自动视觉回归结果，`shot.invalidated` 表示这次变化让该条已通过的验收失效 |
+| POST | `/acceptance-screenshot` | body `{path, item_id, url?}`（url 缺省用项目名片 `commands.previewUrl`）；只允许回环 http(s)；成功 `{ok:true, item, shot:{file,width,height,url,comparison,invalidated,receiptId,receiptWarning}, added}`；400 `item-required`/`no-url`/`invalid-url`/`url-not-loopback`；404 `item-not-found`；409 `browser-not-found`/`acceptance-broken`/`iteration-*`；504 `timeout`；499 `aborted`；502 `browser-failed`/`capture-failed`。**只挂证据、不改 result**；`shot.comparison` 是本次自动视觉回归结果，`shot.invalidated` 表示这次变化让该条已通过的验收失效，`shot.receiptId` 是失效留痕的回执 id |
 | GET | `/shot?path=&file=` | 证据图片字节（png/jpeg/webp/gif，≤10 MiB，`cache-control:no-store`）；415 `not-image`/413 `file-too-large`/404 `shot-not-found`/403 未授权 |
 | 其他 | — | 404 `not found` |
 
@@ -611,7 +613,7 @@ features: {
 
 实测记录（2026-11-20/21，DSH 0.2.2-rc.5 / Node 24.20）：
 
-- 1/2/3/4/6 全部通过；`npm test` = 334 用例全绿。
+- 1/2/3/4/6 全部通过；`npm test` = 340 用例全绿。
 - 安装返回 `application: applied`；`listTools` 可见 `cockpit_report` / `cockpit_init`；`Slots.listSubTree` 在 live 页面里看到 `main` 与 `sidebar.panellist` 都有 `delivery-cockpit`（active）。
 - HTTP 实测（本机 `Invoke-WebRequest`）：未登记路径 403、缺 path 400、无原型批准 409、同源 POST 200、跨源 POST 403、二次 init `applied:false / created:[]`。
 - **功能账 live 实测**（临时夹具：PRD 4 条 FR + 3 条回执 + 验收表 + 审核账本 1 条归属 bug、1 条未归属）：FR-1 = 有阻塞（bug 归属到 `web/orders/list.ts`）、FR-2/FR-3 = 进行中、FR-4 = 未开始且待修列 `—`（known=false）、未归属 1 条、功能进度 0/4。夹具用完已清理，未留在仓库。
@@ -718,6 +720,8 @@ features: {
 - 清除：人重新点任意结果（通过/失败/阻塞/撤销）⇒ `stale` 清空；**`same` 截图不会把失效冲掉**（变了就是变了）。
 - `new` / `same` / `uncomparable` 不触发失效（无法证明变化，不制造假紧张）。
 - **第五处口径**（独立评审 important）：`lib/features.js` 的按功能 `acceptanceStatsOf` 也必须排除 stale 的 pass，否则会出现"功能账显示已完成、阶段门却拦在验效果"的自相矛盾；功能账同步透出 `acceptance.stale` 计数。
+- **失效留痕**（V1.0.7）：失效时自动追加一条 `cockpit_report` 回执（`stage:'verification'`、`status:'in_progress'`、`event:'acceptance-stale'`、`summary` 写明"截图有变化 x%，验收「标题」已失效，需要你重新确认"、`artifacts` 放本次截图、`feature_ids` 取条目的 `feature_ref`）。配置 `receiptOnInvalidate` 可关；回执写失败只回 `receiptWarning`，**不把截图流程判失败**（截图与失效已落盘，trace 失败要如实说而不是回滚数据）。
+  - **审计事件不投影**（独立评审 important）：`stage:'verification'+status:'in_progress'` 若被当成进度，会让功能显示进行中、进度轨永久卡在验效果。所以带 `event` 的回执在 `stageStates`、进度轨与功能账里一律跳过（`isAuditReceipt`），只保留在流水账；**待决策判定同样跳过**（审计回执不能静默吞掉 `needs_human_decision`）。
 
 **接线层**
 

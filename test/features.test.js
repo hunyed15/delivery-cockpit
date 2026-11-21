@@ -478,6 +478,32 @@ test('失效的 pass 不算功能完成：功能账与阶段门口径一致', ()
   assert.notEqual(fr1.status, 'done', '阶段门正拦着，功能账不能显示已完成')
 })
 
+test('失效 + 审计回执：功能显示待验收，不能被留痕回执带成"进行中"', () => {
+  const board = buildFeatureBoard({
+    extracted: extractFeatures(PRD),
+    prd: { path: 'prd.md' },
+    receipts: [
+      receipt({ feature_ids: ['FR-1'], status: 'completed', write_scope: ['web/orders/**'] }),
+      // 验收失效留痕：stage/status 看起来像"进行中"，但 event 标记它只是审计事件
+      receipt({
+        feature_ids: ['FR-1'],
+        status: 'in_progress',
+        stage: 'verification',
+        event: 'acceptance-stale',
+        artifacts: ['.dsh/plugin-state/shots/a2.png'],
+        write_scope: [],
+      }),
+    ],
+    acceptance: acceptanceOf([
+      { id: 'A1', feature_ref: 'FR-1', title: '能添加客户', result: 'pass', evidence: ['shots/a1.png'], stale: true },
+    ]),
+    review: reviewOf([]),
+  })
+  const fr1 = board.items.find((item) => item.id === 'FR-1')
+  assert.equal(fr1.status, 'pending-acceptance', '失效后应是待验收，不是进行中')
+  assert.deepEqual(fr1.paths, ['web/orders'], '审计回执的截图不能混进代码路径锚点')
+})
+
 test('功能账不抛错：缺参数时给空结构', () => {
   const board = buildFeatureBoard()
   assert.equal(board.source, 'prd-missing')

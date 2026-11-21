@@ -8,6 +8,7 @@ import {
   MAX_RECEIPT_BYTES,
   appendReceipt,
   currentIteration,
+  isAuditReceipt,
   pendingDecision,
   readReceipts,
   readReceiptsFromText,
@@ -123,6 +124,21 @@ test('待人工决策：最新一条且之后没有同迭代回执才算未解�
 
   const otherIteration = [decision, { iteration_id: 'v1.1', stage: 'brainstorm', status: 'in_progress', summary_for_human: '新一轮' }]
   assert.ok(pendingDecision(otherIteration), '别的迭代不该把待决策冲掉')
+
+  // 审计事件（验收失效留痕）不能把待决策静默吞掉：它不是有人处理了决策。
+  const auditAfterDecision = [
+    decision,
+    { iteration_id: 'v1.0', stage: 'verification', status: 'in_progress', event: 'acceptance-stale', summary_for_human: '验收失效' },
+  ]
+  assert.equal(pendingDecision(auditAfterDecision)?.summary_for_human, 'A 还是 B？', '审计回执不该清掉待决策')
+
+  // 审计回执之后再出现真正的进度回执，才算决策被接走
+  const progressAfterAudit = [
+    decision,
+    { iteration_id: 'v1.0', stage: 'verification', status: 'in_progress', event: 'acceptance-stale', summary_for_human: '验收失效' },
+    { iteration_id: 'v1.0', stage: 'brainstorm', status: 'completed', summary_for_human: '选了手机号' },
+  ]
+  assert.equal(pendingDecision(progressAfterAudit), null)
 })
 
 test('阶段状态只取指定迭代的最新值', () => {
@@ -230,6 +246,29 @@ test('没超限时 truncated=false，读取口径不变', async () => {
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+test('event：只接受登记过的审计事件；普通回执 event 为 null', () => {
+  assert.equal(validateReceipt({ ...base, event: 'acceptance-stale' }).ok, true)
+  assert.equal(validateReceipt({ ...base, event: 'acceptance-stale' }).value.event, 'acceptance-stale')
+  assert.equal(validateReceipt(base).value.event, null)
+  assert.equal(validateReceipt({ ...base, event: 'typo-event' }).ok, false)
+  assert.equal(validateReceipt({ ...base, event: '' }).ok, false)
+  assert.equal(validateReceipt({ ...base, event: 42 }).ok, false)
+})
+
+test('审计事件不参与阶段进度投影（stageStates 跳过）', () => {
+  const receipts = [
+    { iteration_id: 'v1.0', stage: 'verification', status: 'completed', at: '1' },
+    { iteration_id: 'v1.0', stage: 'verification', status: 'in_progress', at: '2', event: 'acceptance-stale' },
+  ]
+  const states = stageStates(receipts, 'v1.0')
+  assert.equal(states.get('verification').status, 'completed', '审计回执不能把阶段打回进行中')
+  assert.equal(isAuditReceipt(receipts[1]), true)
+  assert.equal(isAuditReceipt(receipts[0]), false)
+  // 与写入口共用白名单：手改进来的未知 event 不算审计（validateReceipt 本来也会拒绝写入它）
+  assert.equal(isAuditReceipt({ event: 'typo-event' }), false)
+  assert.equal(isAuditReceipt({ event: 42 }), false)
 })
 
 test('feature_ids：可选，给了必须是字符串数组，落盘统一大写去空格', () => {

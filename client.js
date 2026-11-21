@@ -1978,13 +1978,16 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
           const comparison = body.shot && body.shot.comparison ? body.shot.comparison : null
           // 本轮截图让该条验收失效时，必须强提示「重新点通过」——失效 ≠ 改结果。
           const invalidated = Boolean(body.shot && body.shot.invalidated === true)
+          const receiptId = body.shot && typeof body.shot.receiptId === 'string' ? body.shot.receiptId : ''
+          const receiptWarning =
+            body.shot && typeof body.shot.receiptWarning === 'string' ? body.shot.receiptWarning : ''
           setRow(id, {
             capturing: false,
             shotError: '',
             shotSaved: true,
             shotInvalidated: invalidated,
             shotMessage: invalidated
-              ? '已截图 · 有变化：该条验收已失效，请重新点「通过」'
+              ? `已截图 · 有变化：该条验收已失效，请重新点「通过」${receiptId ? `（已写入回执 ${receiptId}）` : ''}${receiptWarning ? `（回执写入失败：${receiptWarning}）` : ''}`
               : comparisonMessage(comparison),
             shotDiffFile:
               comparison && comparison.verdict === 'changed' && comparison.diffFile

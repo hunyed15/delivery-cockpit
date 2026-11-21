@@ -20,7 +20,7 @@ import {
   setAcceptanceResult,
   toAcceptanceItemView,
 } from '../lib/acceptance.js'
-import { appendReceipt, stateDirOf } from '../lib/receipts.js'
+import { appendReceipt, readReceipts, stateDirOf } from '../lib/receipts.js'
 
 async function withProject(run) {
   const project = await mkdtemp(join(tmpdir(), 'dc-acc-'))
@@ -492,6 +492,66 @@ test('失效只发生在"之前是 pass + 真的变了"；new/same/uncomparable 
     })
     assert.equal(disabled.invalidated, false)
     assert.equal(disabled.item.stale, false)
+  })
+})
+
+test('失效会追加一条 cockpit_report 回执（可追溯是哪次截图让哪条验收失效）', async () => {
+  await withProject(async (project) => {
+    await seedTable(project, true)
+    await writeFile(join(project, 'shots', 'a2.png'), Buffer.from([2]))
+    await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['shots/a1.png'] })
+
+    const before = await readReceipts(project)
+    const changed = await addAcceptanceEvidence(project, {
+      item_id: 'A1',
+      evidence: ['shots/a2.png'],
+      shotDiff: { verdict: 'changed', baseline: 'shots/a1.png', ratio: 0.02, changedPixels: 200, totalPixels: 10000 },
+    })
+    assert.equal(changed.invalidated, true)
+    assert.match(changed.receiptId, /^r-/, '失效必须留下回执 id')
+
+    const after = await readReceipts(project)
+    assert.equal(after.receipts.length, before.receipts.length + 1)
+    const receipt = after.receipts[after.receipts.length - 1]
+    assert.equal(receipt.id, changed.receiptId)
+    assert.equal(receipt.iteration_id, 'v1.0')
+    assert.equal(receipt.stage, 'verification')
+    assert.equal(receipt.status, 'in_progress')
+    assert.match(receipt.summary_for_human, /失效/)
+    assert.match(receipt.summary_for_human, /能添加客户/)
+    assert.deepEqual(receipt.feature_ids, ['FR-1'], '回执要挂到功能上')
+    assert.deepEqual(receipt.artifacts, ['shots/a2.png'], '回执带截图证据')
+    assert.equal(receipt.event, 'acceptance-stale', '留痕回执要带审计事件标记（不参与进度投影）')
+  })
+})
+
+test('失效回执可关闭；没失效时不写回执', async () => {
+  await withProject(async (project) => {
+    await seedTable(project, true)
+    await writeFile(join(project, 'shots', 'a2.png'), Buffer.from([2]))
+    await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['shots/a1.png'] })
+
+    // 没失效（same）⇒ 不写回执
+    const same = await addAcceptanceEvidence(project, {
+      item_id: 'A1',
+      evidence: ['shots/a2.png'],
+      shotDiff: { verdict: 'same', baseline: 'shots/a2.png', ratio: 0, changedPixels: 0, totalPixels: 10000 },
+    })
+    assert.equal(same.receiptId, null)
+    const afterSame = await readReceipts(project)
+    assert.equal(afterSame.receipts.length, 1, '只有播种那条 v1.0 回执')
+
+    // 失效但配置关闭 ⇒ 不写回执
+    const disabled = await addAcceptanceEvidence(project, {
+      item_id: 'A1',
+      evidence: ['shots/a2.png'],
+      shotDiff: { verdict: 'changed', baseline: 'shots/a1.png', ratio: 0.02 },
+      receiptOnInvalidate: false,
+    })
+    assert.equal(disabled.invalidated, true)
+    assert.equal(disabled.receiptId, null)
+    const afterDisabled = await readReceipts(project)
+    assert.equal(afterDisabled.receipts.length, 1)
   })
 })
 

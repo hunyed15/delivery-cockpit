@@ -37,6 +37,7 @@ const ROW_KEYS = ['degraded', 'hasDecision', 'id', 'initialized', 'nextKind', 'n
 const LEDGER_RECEIPT_KEYS = [
   'artifacts',
   'at',
+  'featureIds',
   'id',
   'iterationId',
   'needsDecision',
@@ -266,6 +267,29 @@ test('验收清单：stale 与计数随载荷下发（阶段门据此拦人）',
   assert.equal(item.staleReason, 'visual-change')
   assert.equal(item.staleAt, '2026-11-21T01:00:00.000Z')
   assert.equal(item.shotDiffs[0].verdict, 'changed')
+})
+
+test('审计回执（失效留痕）不参与进度轨，但仍出现在流水账里', () => {
+  const audit = receipt({
+    stage: 'verification',
+    status: 'in_progress',
+    event: 'acceptance-stale',
+    summary_for_human: '截图有变化，验收「能添加客户」已失效',
+    at: '2026-11-21T05:00:00.000Z',
+  })
+  const model = build(
+    evidence({
+      receipts: {
+        receipts: [receipt({ stage: 'coding', status: 'completed' }), audit],
+        lastAt: audit.at,
+      },
+    }),
+  )
+  const cycle = model.progression.cycle
+  const verification = cycle.find((node) => node.stageId === 'verification')
+  assert.notEqual(verification.state, 'current', '审计回执不能把「验效果」标成进行中')
+  // 流水账照常展示它（审计事件是给人看的痕迹，不是进度）
+  assert.ok(model.ledger.receipts.some((row) => row.stage === 'verification' && /已失效/.test(row.summary)))
 })
 
 test('验收清单：条目字段原样映射，未知 result 归一成 null，超 100 条标 truncated', () => {

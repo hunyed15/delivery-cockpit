@@ -50,6 +50,8 @@ const DEFAULT_CONFIG = {
   screenshotDiffMinChangedPixels: 24,
   // 截图发生视觉变化时，之前判过的"通过"自动失效（阶段门要求重新确认）。
   invalidateOnVisualChange: true,
+  // 失效时往执行回执账本追加一条（可追溯是哪次截图让哪条验收失效）。
+  receiptOnInvalidate: true,
 }
 
 const REPORT_STAGES = ['init', 'scaffold', 'brainstorm', 'prototype', 'coding', 'code_review', 'verification', 'release']
@@ -707,6 +709,7 @@ export function apply(ctx, config = {}) {
       evidence: [file],
       shotDiff: shotRecord,
       invalidateOnVisualChange: settings.invalidateOnVisualChange !== false,
+      receiptOnInvalidate: settings.receiptOnInvalidate !== false,
     })
     if (!attached.ok) {
       // 挂不上去就别留孤儿文件（比如条目在截图期间被删掉了）。
@@ -726,6 +729,9 @@ export function apply(ctx, config = {}) {
         comparison: attached.shotDiff ?? shotRecord,
         // 之前判过通过、这次截图又变了 ⇒ 该条验收已失效，界面要提示重新确认。
         invalidated: attached.invalidated === true,
+        // 失效留痕：回执 id（写失败时给 warning，不阻断截图）。
+        receiptId: attached.receiptId ?? null,
+        receiptWarning: attached.receiptWarning ?? null,
       },
     }
   }
