@@ -49,6 +49,9 @@ test('cockpit_report 的必填与枚举与账本常量一致', () => {
   // feature_ids 可选：功能账靠它把回执挂到 PRD 的 FR 编号上
   assert.ok(report.parameters.properties.feature_ids)
   assert.ok(!report.parameters.required.includes('feature_ids'), 'feature_ids 必须可选，否则旧调用全挂')
+  // 验收复核留痕：Agent 主动写 event，但只允许登记过的值，且不能带别的 stage/status 组合
+  assert.deepEqual(report.parameters.properties.event.enum, ['acceptance-recheck'])
+  assert.ok(!report.parameters.required.includes('event'), 'event 必须可选，否则普通回执全挂')
   assert.deepEqual(report.output.schema.required, ['ok', 'receiptId'])
 })
 
@@ -76,6 +79,49 @@ test('cockpit_report execute 真的把回执追加进会话工作目录的账本
     const row = JSON.parse(lines[0])
     assert.equal(row.summary_for_human, '工作区建好了')
     assert.equal(row.stage, 'init')
+  } finally {
+    await rm(project, { recursive: true, force: true })
+  }
+})
+
+test('cockpit_report 支持验收复核留痕（event=acceptance-recheck），且拒绝错误组合', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'dc-tool-'))
+  try {
+    const report = createToolDefinitions(fakeCtx).find((item) => item.name === 'cockpit_report')
+    const value = await report.execute(
+      {
+        iteration_id: 'v1.0',
+        stage: 'verification',
+        status: 'completed',
+        summary_for_human: '复核 A1「能添加客户」：按步骤重走一遍，仍通过',
+        feature_ids: ['FR-1'],
+        event: 'acceptance-recheck',
+      },
+      execIn(project),
+    )
+    assert.equal(value.ok, true)
+    assert.match(value.receiptId, /^r-/)
+    const text = await readFile(join(project, '.dsh', 'plugin-state', 'receipts.jsonl'), 'utf8')
+    const row = JSON.parse(text.trim().split(/\r?\n/)[0])
+    assert.equal(row.event, 'acceptance-recheck')
+    assert.equal(row.stage, 'verification')
+    assert.equal(row.status, 'completed')
+    assert.deepEqual(row.feature_ids, ['FR-1'])
+
+    // 审计事件必须配对正确的 stage/status，不能伪装成别的阶段进度
+    await assert.rejects(() =>
+      report.execute(
+        { iteration_id: 'v1.0', stage: 'coding', status: 'completed', summary_for_human: 'x', event: 'acceptance-recheck' },
+        execIn(project),
+      ),
+    )
+    // 普通回执不带 event 时保持原行为
+    await report.execute(
+      { iteration_id: 'v1.0', stage: 'verification', status: 'in_progress', summary_for_human: '开始验效果' },
+      execIn(project),
+    )
+    const rows = (await readFile(join(project, '.dsh', 'plugin-state', 'receipts.jsonl'), 'utf8')).trim().split(/\r?\n/)
+    assert.equal(JSON.parse(rows[1]).event, null)
   } finally {
     await rm(project, { recursive: true, force: true })
   }

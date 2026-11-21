@@ -315,6 +315,13 @@ test('missingCapabilities：只留 present=no 且非 optional', async () => {
   assert.deepEqual(missingCapabilities(null), [])
 })
 
+test('验效果阶段：提示 Agent 用 event=acceptance-recheck 写验收复核回执', () => {
+  const entry = entryForStage(builtin, 'verification')
+  assert.match(entry.promptTemplate, /acceptance-recheck/, '验效果指令必须告诉 Agent 复核留痕怎么写')
+  assert.match(entry.promptTemplate, /cockpit_report/, '要给具体工具名')
+  assert.match(entry.exitGate, /stale|失效/, '出口条件要包含失效条目不算通过')
+})
+
 test('renderPrompt：只替换 {capabilities}，其他 {...} 原样保留', async () => {
   const entry = entryForStage(builtin, 'prototype')
   const services = {

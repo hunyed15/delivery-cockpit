@@ -319,6 +319,7 @@ test('验效果阶段门：截图变化让「通过」失效、必须重新确�
   assert.ok(source.includes('body.shot && body.shot.invalidated'), '截图成功必须消费 shot.invalidated')
   assert.ok(source.includes('该条验收已失效，请重新点「通过」'), 'invalidated 时必须强提示重新确认')
   assert.ok(source.includes('receiptId') && source.includes('已写入回执'), '失效回执 id 要显示出来（可追溯）')
+  assert.ok(source.includes('验收复核') && source.includes('验收失效'), '账本审计回执要能区分复核/失效')
   // 失效 ≠ 改结果：stale 分支不能改 result，重新确认仍走原有四个按钮。
   assert.ok(!/stale:\s*false[\s\S]{0,80}result:/.test(source), '前端不得用 stale 分支改写 result')
 })

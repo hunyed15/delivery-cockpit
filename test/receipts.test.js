@@ -249,12 +249,62 @@ test('没超限时 truncated=false，读取口径不变', async () => {
 })
 
 test('event：只接受登记过的审计事件；普通回执 event 为 null', () => {
-  assert.equal(validateReceipt({ ...base, event: 'acceptance-stale' }).ok, true)
-  assert.equal(validateReceipt({ ...base, event: 'acceptance-stale' }).value.event, 'acceptance-stale')
+  assert.equal(
+    validateReceipt({
+      iteration_id: 'v1.0',
+      stage: 'verification',
+      status: 'in_progress',
+      summary_for_human: 'x',
+      event: 'acceptance-stale',
+    }).value.event,
+    'acceptance-stale',
+  )
   assert.equal(validateReceipt(base).value.event, null)
   assert.equal(validateReceipt({ ...base, event: 'typo-event' }).ok, false)
   assert.equal(validateReceipt({ ...base, event: '' }).ok, false)
   assert.equal(validateReceipt({ ...base, event: 42 }).ok, false)
+})
+
+test('验收复核（acceptance-recheck）：必须 stage=verification / status=completed', () => {
+  const recheck = { iteration_id: 'v1.0', stage: 'verification', status: 'completed', summary_for_human: '复核 A1：仍通过', event: 'acceptance-recheck' }
+  assert.equal(validateReceipt(recheck).ok, true)
+  assert.equal(validateReceipt(recheck).value.event, 'acceptance-recheck')
+
+  // 错误组合必须拒绝（防止伪装成别的阶段进度）
+  assert.equal(validateReceipt({ ...recheck, stage: 'coding' }).ok, false)
+  assert.equal(validateReceipt({ ...recheck, status: 'in_progress' }).ok, false)
+  // 失效留痕的配对也锁死
+  assert.equal(validateReceipt({ ...recheck, event: 'acceptance-stale' }).ok, false)
+  assert.equal(
+    validateReceipt({ ...recheck, status: 'in_progress' }).error,
+    'acceptance-recheck 回执必须是 stage=verification / status=completed',
+  )
+
+  // 审计回执自己也不能挂待决策（写入口拦截 + 判定兜底）
+  assert.equal(
+    validateReceipt({
+      iteration_id: 'v1.0',
+      stage: 'verification',
+      status: 'completed',
+      summary_for_human: 'x',
+      event: 'acceptance-recheck',
+      needs_human_decision: { title: '要不要重做？' },
+    }).ok,
+    false,
+  )
+  assert.equal(
+    pendingDecision([
+      {
+        iteration_id: 'v1.0',
+        stage: 'verification',
+        status: 'completed',
+        event: 'acceptance-recheck',
+        summary_for_human: '手改账本',
+        needs_human_decision: { title: '假决策' },
+      },
+    ]),
+    null,
+  )
 })
 
 test('审计事件不参与阶段进度投影（stageStates 跳过）', () => {

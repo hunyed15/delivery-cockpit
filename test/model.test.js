@@ -37,6 +37,7 @@ const ROW_KEYS = ['degraded', 'hasDecision', 'id', 'initialized', 'nextKind', 'n
 const LEDGER_RECEIPT_KEYS = [
   'artifacts',
   'at',
+  'event',
   'featureIds',
   'id',
   'iterationId',

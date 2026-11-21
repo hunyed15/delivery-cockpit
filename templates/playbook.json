@@ -80,8 +80,8 @@
         { "kind": "mcp", "name": "playwright", "mode": "full", "note": "本机未安装时降级为人工执行 + 截图" },
         { "kind": "skill", "name": "verification-before-completion", "mode": "full" }
       ],
-      "promptTemplate": "按 `acceptance.json` 逐条执行，用 {capabilities}：每条填 `result`（pass/fail/blocked），pass 必须附截图存 `shots/`，最后写一条执行回执。验收表为空时，先按 `prd.md` 起草条目给我确认。",
-      "exitGate": "`items` 非空、每条 result 非 null、每条 pass 都有 evidence",
+      "promptTemplate": "按 `acceptance.json` 逐条执行，用 {capabilities}：每条填 `result`（pass/fail/blocked），pass 必须附截图存 `shots/`，最后写一条执行回执。验收表为空时，先按 `prd.md` 起草条目给我确认。复核某条验收（比如我提出疑问、或截图变了要我再看）时，用 `cockpit_report` 带 `event:\"acceptance-recheck\"` 留痕：`stage:\"verification\"`、`status:\"completed\"`、`feature_ids` 填对应功能、`summary_for_human` 写清复核了哪条和结论；它只进流水账，改 `result` 仍由我在面板点。",
+      "exitGate": "`items` 非空、每条 result 非 null、每条 pass 都有 evidence、没有失效（stale）条目",
       "redLines": ["不看代码就填 pass —— 必须有截图证据", "空表不算通过", "发现 fail 要记下来，不许改写期望值凑过"]
     },
 

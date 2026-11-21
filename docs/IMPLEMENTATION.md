@@ -48,8 +48,8 @@
 ```
 
 - `stage` ∈ `init|scaffold|brainstorm|prototype|coding|code_review|verification|release`
-- `event`（可选）：**审计事件**，目前只有 `acceptance-stale`（验收失效留痕）。带 `event` 的回执只出现在流水账里，
-  **不参与阶段进度/功能状态投影**（否则会让「验效果」长期停在进行中、功能显示进行中，与状态机自相矛盾）。
+- `event`（可选）：**审计事件**，当前有 `acceptance-stale`（插件写的验收失效留痕）与 `acceptance-recheck`（Agent 主动写的验收复核留痕）。带 `event` 的回执只出现在流水账里，
+  **不参与阶段进度/功能状态/待决策投影**（否则会让「验效果」长期停在进行中、功能显示进行中，与状态机自相矛盾）。
 - `status` ∈ `in_progress|completed|blocked|failed|dropped`
 - `iteration_id`：冷启动固定 `"bootstrap"`；迭代环用 `v1.0` / `v1.1` 等
 - `coding` 阶段强制 `task_ref` 非空 + `write_scope` 非空数组
@@ -417,7 +417,8 @@ export function apply(ctx, config = {})
 ```
 
 - 工具（每个都必须有 `output: { schema, render }`）：
-  - `cockpit_report` —— design §5.1 逐字（字段/required/枚举/additionalProperties:false）。
+  - `cockpit_report` —— design §5.1 逐字（字段/required/枚举/additionalProperties:false），外加两个可选扩展：
+    `feature_ids?: string[]`（回执挂到 PRD 功能）与 `event?: 'acceptance-recheck'`（**验收复核留痕**：stage 必须 `verification`、status 必须 `completed`、summary 写清复核了哪条与结论；这类回执只进流水账，不改验收结果、不参与进度投影）。
   - `cockpit_init` —— `{ cwd?: string, dryRun?: boolean }` → `{ ok, dryRun, applied, projectPath, created[], skipped[], gitignoreHint }`；dryRun 默认 `true`（**不写盘是默认**）。
 - 工具 cwd 解析：`exec.agent` → `ctx.get('workingDirectory').get(agent)` → `exec.agent?.session?.header?.cwd` → `process.cwd()`（同上游 `agentCwd`，取不到不猜目录）。
 - 每个工具 `ctx.effect(() => ctx.tools.register(def))`。
@@ -722,6 +723,14 @@ features: {
 - **第五处口径**（独立评审 important）：`lib/features.js` 的按功能 `acceptanceStatsOf` 也必须排除 stale 的 pass，否则会出现"功能账显示已完成、阶段门却拦在验效果"的自相矛盾；功能账同步透出 `acceptance.stale` 计数。
 - **失效留痕**（V1.0.7）：失效时自动追加一条 `cockpit_report` 回执（`stage:'verification'`、`status:'in_progress'`、`event:'acceptance-stale'`、`summary` 写明"截图有变化 x%，验收「标题」已失效，需要你重新确认"、`artifacts` 放本次截图、`feature_ids` 取条目的 `feature_ref`）。配置 `receiptOnInvalidate` 可关；回执写失败只回 `receiptWarning`，**不把截图流程判失败**（截图与失效已落盘，trace 失败要如实说而不是回滚数据）。
   - **审计事件不投影**（独立评审 important）：`stage:'verification'+status:'in_progress'` 若被当成进度，会让功能显示进行中、进度轨永久卡在验效果。所以带 `event` 的回执在 `stageStates`、进度轨与功能账里一律跳过（`isAuditReceipt`），只保留在流水账；**待决策判定同样跳过**（审计回执不能静默吞掉 `needs_human_decision`）。
+
+**功能账（V1.0.8 补：Agent 主动写验收复核回执）**
+
+- `cockpit_report` 新增可选 `event`，当前只接受 `acceptance-recheck`（验收复核）。工具 schema 的 `enum` 就是白名单；`additionalProperties:false` 不变。
+- 写入口（`validateReceipt`）强制事件与 stage/status 配对：`acceptance-stale` ⇒ verification + in_progress；`acceptance-recheck` ⇒ verification + completed。配错直接抛错，避免"复核"回执伪装成别的阶段进度。
+- 这类回执是**审计事件**：进流水账、面板账本行显示「验收复核」徽章，但 `stageStates`/进度轨/功能账/待决策全部跳过它；`result` 永远不由回执改，必须人在面板点。
+- 可发现性：`templates/playbook.json` 的「验效果」指令里写明用法（`cockpit_report` + `event:"acceptance-recheck"` + `feature_ids`），出口条件补「没有失效（stale）条目」。
+- 审计回执**不能携带 `needs_human_decision`**（写入口拒绝；`pendingDecision` 也跳过审计回执），避免"复核留痕"顶出一个来源错误的决策卡。
 
 **接线层**
 

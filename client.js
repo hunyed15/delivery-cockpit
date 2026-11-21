@@ -2658,6 +2658,8 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
       const tone = STATUS_TONE[statusKey] || 'unknown'
       const statusText = STATUS_TEXT[statusKey] || statusKey
       const stageName = receipt.stageName || STAGE_TEXT[receipt.stage] || receipt.stage || '未知阶段'
+      const auditText =
+        receipt.event === 'acceptance-recheck' ? '验收复核' : receipt.event === 'acceptance-stale' ? '验收失效' : null
       const artifacts = asArray(receipt.artifacts)
       const meta = []
       if (receipt.iterationId) meta.push(receipt.iterationId)
@@ -2672,6 +2674,7 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
           { className: 'dc-ledger-head' },
           h('span', { className: 'dc-ledger-stage' }, stageName),
           h(Chip, { tone }, statusText),
+          auditText ? h(Chip, { tone: 'idle', title: '审计事件：只留痕，不参与进度投影' }, auditText) : null,
           receipt.needsDecision ? h(Chip, { tone: 'warn' }, '待决策') : null,
           h('span', { className: 'dc-ledger-when', title: receipt.at ? new Date(receipt.at).toLocaleString() : '' }, formatRelative(receipt.at)),
         ),

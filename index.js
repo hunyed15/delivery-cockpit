@@ -79,6 +79,14 @@ const COCKPIT_REPORT = {
         items: { type: 'string' },
         description: '这条回执对应 PRD 里的功能编号（如 FR-3），用于把回执挂到「功能账」上；可省略',
       },
+      event: {
+        type: 'string',
+        enum: ['acceptance-recheck'],
+        description:
+          '验收复核留痕：你亲自复核了某条验收就传 acceptance-recheck。此时 stage 必须是 verification、status 必须是 completed；' +
+          'summary_for_human 写清复核了哪条（如 A1「能添加客户」）和结论（仍通过 / 发现的问题 / 已失效原因）。' +
+          '这类回执只进流水账，**不改验收结果、不参与进度投影**——改结果仍要人在面板点。',
+      },
       needs_human_decision: {
         type: 'object',
         required: ['title'],
