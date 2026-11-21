@@ -45,6 +45,7 @@ async function findReactFile(relative) {
 }
 
 // 近似的 DSH 浅色主题变量：只用于本地预览排版。
+// 深色覆盖放在 html[data-theme="dark"] 上；client.js 只消费 token，所以两套主题同一份 CSS。
 // 颜色对比度结论必须在真机上用真实 token 复核（这也是 README 里写明的限制）。
 const TOKENS_CSS = `:root{
 --dsw-alias-bg-base:#ffffff;
@@ -59,11 +60,33 @@ const TOKENS_CSS = `:root{
 --dsw-alias-state-warn-primary:#a86a00;
 --dsw-alias-state-error-primary:#c9302c;
 --dsw-alias-state-idle-primary:#9aa0a6;
+}
+html[data-theme="dark"]{
+--dsw-alias-bg-base:#14161a;
+--dsw-alias-bg-layer-1:#1b1e24;
+--dsw-alias-bg-layer-2:#23272f;
+--dsw-alias-border-l1:#2e333b;
+--dsw-alias-border-l2:#3b414b;
+--dsw-alias-label-primary:#e6e8ec;
+--dsw-alias-label-secondary:#9aa2b1;
+--dsw-alias-brand-primary:#7aa2ff;
+--dsw-alias-state-success-primary:#4cc38a;
+--dsw-alias-state-warn-primary:#e0b15a;
+--dsw-alias-state-error-primary:#f2707c;
+--dsw-alias-state-idle-primary:#6b7280;
 }`
 
 const HTML = `<!doctype html>
 <html lang="zh-CN"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+  /* 深色主题：?theme=dark 时在 CSS 生效前打标，client.js 不需要知道主题。 */
+  try {
+    if (new URLSearchParams(location.search).get('theme') === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark')
+    }
+  } catch (e) {}
+</script>
 <title>delivery-cockpit-preview</title>
 <link rel="stylesheet" href="/tokens.css">
 <style>

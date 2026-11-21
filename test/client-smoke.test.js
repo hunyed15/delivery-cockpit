@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PACKAGE_DIR = dirname(HERE)
 const source = await readFile(join(PACKAGE_DIR, 'client.js'), 'utf8')
+const previewServer = await readFile(join(PACKAGE_DIR, 'tools/preview/server.mjs'), 'utf8')
 
 // CSS 在模块里是一个模板字符串；单独切出来才能对选择器/颜色做静态约束。
 function extractCss(text) {
@@ -125,9 +126,11 @@ test('记住上次项目', () => {
 })
 
 test('一屏四区与底部状态', () => {
-  for (const title of ['① 项目名片 & 迭代头', '② 唯一下一步', '③ 迭代进度', '④ 功能账 & 缺陷账']) {
+  for (const title of ['项目名片 & 迭代头', '唯一下一步', '迭代进度', '功能账 & 缺陷账']) {
     assert.ok(source.includes(title), `缺少区域标题：${title}`)
   }
+  // 四个区不是序列：区标题不再带 ①–④ 圆圈数字。
+  assert.ok(!source.includes("title: '① 项目名片"), '区标题不得再带圆圈数字')
   for (const text of ['上次回执', '引擎正常', '数据待确认', '主会话活跃']) {
     assert.ok(source.includes(text), `缺少底部状态文案：${text}`)
   }
@@ -150,8 +153,12 @@ test('功能账表格：三路证据如实呈现', () => {
     assert.ok(source.includes(text), `缺少功能状态文案：${text}`)
   }
   assert.ok(source.includes('statusLabel'), '状态必须优先使用 Host 下发的 statusLabel')
-  for (const header of ["'功能'", "'状态'", "'待修'", "'验收'", "'最近进展'"]) {
+  for (const header of ["'功能'", "'状态'", "'最近进展'"]) {
     assert.ok(source.includes(`h('th', { scope: 'col' }, ${header})`), `缺少表头 ${header}`)
+  }
+  // 数字列（待修/验收）右对齐 + 等宽数字，视觉改版后仍必须保持。
+  for (const header of ["'待修'", "'验收'"]) {
+    assert.ok(source.includes(`h('th', { scope: 'col', className: 'dc-num' }, ${header})`), `缺少数字表头 ${header}`)
   }
   assert.ok(source.includes('dc-feature-detail-row'), '行必须可展开显示 bug 明细')
   assert.ok(source.includes('dc-path-row') && source.includes('关联路径'), '展开区必须显示关联路径')
@@ -365,4 +372,55 @@ test('账本与人话状态映射', () => {
     assert.ok(source.includes(stage), `缺少阶段中文：${stage}`)
   }
   assert.ok(source.includes('待你决策'), '待决策必须置顶显示')
+})
+
+test('视觉体系：排版、按钮、focus、动效、骨架屏、双主题', () => {
+  assert.ok(css.length > 8000, `样式改版后仍应完整（${css.length} 字符）`)
+  // 单栏与层级：1040 居中、hero 20px 是唯一大字号内容、正文 13px。
+  assert.ok(css.includes('max-width:1040px'), '页面必须是 1040px 单栏')
+  assert.ok(css.includes('font-size:20px'), 'hero 标题必须用 20px 层级')
+  assert.ok(css.includes('font-size:13px'), '正文必须 13px')
+  assert.ok(css.includes('line-height:1.6'), '正文行高必须 1.6')
+  // 数字等宽与右对齐。
+  assert.ok(css.includes('font-variant-numeric:tabular-nums'), '数字必须等宽')
+  assert.ok(css.includes('.dc-num'), '数字列必须有右对齐类')
+  assert.ok(css.includes('text-align:right'), '数字列必须右对齐')
+  // 统一 focus ring。
+  assert.ok(css.includes(':focus-visible'), '必须有统一 focus 样式')
+  assert.ok(css.includes('outline:2px solid var(--dsw-alias-brand-primary)'), 'focus ring 必须用 accent token')
+  assert.ok(css.includes('outline-offset:2px'), 'focus ring 必须留 offset')
+  // 按钮体系：30px 高、radius 8、disabled 有态。
+  assert.ok(css.includes('height:30px') && css.includes('border-radius:8px'), '按钮必须统一 30px/8px')
+  assert.ok(css.includes(':disabled'), '按钮必须有 disabled 态')
+  // 动效 + reduced motion。
+  assert.ok(css.includes('ease-out'), '状态变化必须 ease-out')
+  assert.ok(css.includes('prefers-reduced-motion: reduce'), '必须尊重 reduced-motion')
+  // 骨架屏（3 行）而不是转圈。
+  assert.ok(source.includes('dc-skel dc-skel-line'), '加载态必须有骨架行')
+  assert.ok((source.match(/dc-skel dc-skel-card/g) || []).length >= 6, '每处加载态至少 3 行骨架')
+  assert.ok(!source.includes('dc-spinner'), '不要转圈加载')
+  // 深色主题由预览 harness 打标，client.js 只消费 token。
+  assert.ok(previewServer.includes('html[data-theme="dark"]'), '预览必须提供深色 token 覆盖')
+  assert.ok(previewServer.includes("get('theme') === 'dark'"), '?theme=dark 必须能切换主题')
+  assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(css), 'client 样式不得出现硬编码十六进制色')
+  assert.ok(!/(?:rgba?|hsla?)\(/.test(css), 'client 样式不得出现硬编码 rgb/hsl 色')
+  // 区标题去序列号；② 是唯一 surface 焦点面。
+  assert.ok(source.includes("className: 'dc-card dc-hero'"), '唯一下一步必须是唯一 surface（dc-hero）')
+  assert.ok(css.includes('.dc-hero') && css.includes('background:var(--dsw-alias-bg-layer-1)'), 'hero 必须用 layer-1 底')
+  // 窄屏表格改为堆叠块（不是横滚切片）。
+  assert.ok(css.includes('.dc-table thead { display:none; }'), '窄屏表头必须隐藏（堆叠布局）')
+  assert.ok(css.includes('content:attr(data-label)'), '窄屏堆叠必须用 data-label 做行标签')
+  assert.ok(source.includes("'data-label': '状态'"), '功能行必须带 data-label')
+  assert.ok(source.includes("'data-label': '操作'"), '验收操作列必须带 data-label')
+  // 区③ 四个元信息 2×2。
+  assert.ok(css.includes('grid-template-columns:repeat(2,minmax(0,1fr))'), '区③ 元信息必须 2×2 网格')
+  assert.ok(source.includes("未完成`") || source.includes('未完成'), '任务文案必须精简短')
+  // 缩略图 28px + hover/focus accent。
+  assert.ok(css.includes('width:28px; height:28px'), '证据缩略图必须 28px')
+  assert.ok(css.includes('.dc-thumb:hover') && css.includes('.dc-thumb:focus-visible'), '缩略图必须有 hover/focus accent')
+  // stale 警示框用 layer-1 底 + warn 边框 + 主色文字（两套主题可读）。
+  assert.ok(css.includes('.dc-stale-note') && css.includes('background:var(--dsw-alias-bg-layer-1)'), 'stale 提示必须用 layer-1 底')
+  // 总览箭头 hover 位移。
+  assert.ok(source.includes('dc-ws-enter'), '总览卡片必须有箭头位移元素')
+  assert.ok(css.includes('.dc-ws-card:hover .dc-ws-enter'), '总览箭头必须在 hover 时右移')
 })
