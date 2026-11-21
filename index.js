@@ -48,6 +48,8 @@ const DEFAULT_CONFIG = {
   screenshotDiffTolerance: 8,
   screenshotDiffMaxRatio: 0.001,
   screenshotDiffMinChangedPixels: 24,
+  // 截图发生视觉变化时，之前判过的"通过"自动失效（阶段门要求重新确认）。
+  invalidateOnVisualChange: true,
 }
 
 const REPORT_STAGES = ['init', 'scaffold', 'brainstorm', 'prototype', 'coding', 'code_review', 'verification', 'release']
@@ -700,7 +702,12 @@ export function apply(ctx, config = {}) {
     }
 
     const file = await writeScreenshot(projectPath, `${safeId}-${stamp}.png`, captured.png)
-    const attached = await addAcceptanceEvidence(projectPath, { item_id: itemId, evidence: [file], shotDiff: shotRecord })
+    const attached = await addAcceptanceEvidence(projectPath, {
+      item_id: itemId,
+      evidence: [file],
+      shotDiff: shotRecord,
+      invalidateOnVisualChange: settings.invalidateOnVisualChange !== false,
+    })
     if (!attached.ok) {
       // 挂不上去就别留孤儿文件（比如条目在截图期间被删掉了）。
       await rm(join(projectPath, file), { force: true }).catch(() => {})
@@ -711,7 +718,15 @@ export function apply(ctx, config = {}) {
       ok: true,
       item: attached.item,
       added: attached.added,
-      shot: { file, width: captured.width, height: captured.height, url: captured.url, comparison: attached.shotDiff ?? shotRecord },
+      shot: {
+        file,
+        width: captured.width,
+        height: captured.height,
+        url: captured.url,
+        comparison: attached.shotDiff ?? shotRecord,
+        // 之前判过通过、这次截图又变了 ⇒ 该条验收已失效，界面要提示重新确认。
+        invalidated: attached.invalidated === true,
+      },
     }
   }
 

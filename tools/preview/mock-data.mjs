@@ -100,7 +100,8 @@ const FEATURES = {
       priority: 'P0',
       status: 'blocked',
       statusLabel: '有阻塞',
-      acceptance: { total: 2, passed: 1, failed: 1, blocked: 0, missingEvidence: 0 },
+      // A1 已失效：Host 的 passed 会排除失效条，所以这里 passed=0、missingEvidence=1。
+      acceptance: { total: 2, passed: 0, failed: 1, blocked: 0, missingEvidence: 1 },
       bugs: {
         blocking: 2,
         known: true,
@@ -269,6 +270,10 @@ const ACCEPTANCE_ITEMS = [
     result: 'pass',
     evidence: ['.dsh/plugin-state/shots/a1.png', 'shots/add.png', 'shots/add-2.png', 'https://ci.example.com/runs/42'],
     at: ago(20),
+    // 最近一次截图有变化：result 仍是 pass（历史保留），但这条已失效、需要重新确认。
+    stale: true,
+    staleAt: ago(5),
+    staleReason: 'visual-change',
   },
   {
     id: 'A2',
@@ -418,9 +423,11 @@ function makePanel(overrides = {}) {
     acceptance: {
       total: 6,
       withResult: 4,
-      passed: 2,
+      // A1 虽然 result=pass，但已失效（截图有变化），Host 的通过计数把它排除。
+      passed: 1,
       failed: 1,
       blocked: 1,
+      stale: 1,
       empty: false,
       badJson: false,
       truncated: false,
@@ -751,4 +758,5 @@ export function approveResult(iterationId) {
     },
   }
 }
+
 

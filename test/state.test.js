@@ -341,6 +341,49 @@ test('验收表属于别的迭代：不参与通过判定，也不给绿灯', ()
   assert.match(decision.reason, /别的迭代/)
 })
 
+test('优先级 12：截图变化让已通过的验收失效 ⇒ 回到验效果，并点名"失效"', () => {
+  const decision = decide({
+    acceptance: {
+      items: [{ id: 'A1', title: '能添加客户', result: 'pass', evidence: ['shots/a1.png'], stale: true }],
+      empty: false,
+      badJson: false,
+      missing: false,
+      total: 1,
+      withResult: 0,
+      passed: 0,
+      failed: 0,
+      blocked: 0,
+      stale: 1,
+      passWithoutEvidence: 0,
+      appliesToCurrent: true,
+    },
+  })
+  assert.equal(decision.kind, 'verification')
+  assert.equal(decision.stageId, 'verification')
+  assert.match(decision.reason, /截图变化失效/)
+})
+
+test('验收全绿但条目带 stale（与汇总不一致的防御）：仍然不许发出去', () => {
+  // 就算 counts 被误写成"全绿"，条目层有 stale 也不能放行——宁可多验一次，也不给假绿灯。
+  const decision = decide({
+    acceptance: {
+      items: [{ id: 'A1', title: '能添加客户', result: 'pass', evidence: ['shots/a1.png'], stale: true }],
+      empty: false,
+      badJson: false,
+      missing: false,
+      total: 1,
+      withResult: 1,
+      passed: 1,
+      failed: 0,
+      blocked: 0,
+      stale: 0,
+      passWithoutEvidence: 0,
+      appliesToCurrent: true,
+    },
+  })
+  assert.equal(decision.kind, 'verification')
+})
+
 test('优先级 13：验收全绿但没发布 ⇒ 发出去', () => {
   const decision = decide({ receipts: { receipts: [receipt({ stage: 'release', status: 'in_progress' })] } })
   assert.equal(decision.priority, 13)

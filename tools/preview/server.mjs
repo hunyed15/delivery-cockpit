@@ -164,7 +164,7 @@ const HARNESS = `(function () {
       if (scenario === 'acceptance-shot') {
         waitForRowText(id, '已截图', function () { document.title = 'ready:' + scenario })
       } else if (scenario === 'visual-toast') {
-        waitForRowText(id, '与上一版有变化', function () { document.title = 'ready:' + scenario })
+        waitForRowText(id, '该条验收已失效', function () { document.title = 'ready:' + scenario })
       } else if (scenario === 'acceptance-shotting') {
         waitForRowText(id, '截图中…', function () { document.title = 'ready:' + scenario })
       } else {
@@ -276,7 +276,8 @@ const HARNESS = `(function () {
           scenario === 'acceptance-shot-error' ||
           scenario === 'visual-toast'
         ) {
-          if (openShotBoxAndSetUrl('A4')) return
+          // visual-toast 用 A6（当前是 pass）截图，changed 才会真正让「通过」失效。
+          if (openShotBoxAndSetUrl(scenario === 'visual-toast' ? 'A6' : 'A4')) return
         }
         // visual-regression：把每行的「历史」都展开，一张图看全五种结论与历史列表。
         if (scenario === 'visual-regression') {
@@ -439,9 +440,11 @@ const server = createServer(async (req, res) => {
           items,
           total: items.length,
           withResult: items.filter((item) => item.result !== null && item.result !== undefined).length,
-          passed: items.filter((item) => item.result === 'pass').length,
+          // 失效的通过不计入 passed（Host 阶段门口径）：stale ≠ 改结果，但也不再算通过。
+          passed: items.filter((item) => item.result === 'pass' && item.stale !== true).length,
           failed: items.filter((item) => item.result === 'fail').length,
           blocked: items.filter((item) => item.result === 'blocked').length,
+          stale: items.filter((item) => item.stale === true).length,
         }
         // 预览里同步功能账的验收汇总，避免「撤销后 区③ 1/6、功能表仍 1/2」的自相矛盾。
         if (panel.features && Array.isArray(panel.features.items)) {
@@ -461,7 +464,7 @@ const server = createServer(async (req, res) => {
                 ...feature,
                 acceptance: {
                   total: refs.length,
-                  passed: refs.filter((item) => item.result === 'pass').length,
+                  passed: refs.filter((item) => item.result === 'pass' && item.stale !== true).length,
                   failed: refs.filter((item) => item.result === 'fail').length,
                   blocked: refs.filter((item) => item.result === 'blocked').length,
                   missingEvidence: refs.filter((item) => item.result === null).length,
@@ -521,10 +524,15 @@ const server = createServer(async (req, res) => {
       if (evidence.some((value) => /missing|notfound/i.test(value))) {
         return sendJson(res, 409, { ok: false, error: 'evidence-not-found' })
       }
-      const patch =
-        body.result === null
+      const patch = {
+        ...(body.result === null
           ? { result: null, evidence: [], at: null }
-          : { result: body.result, evidence, at: new Date().toISOString() }
+          : { result: body.result, evidence, at: new Date().toISOString() }),
+        // 人重新点任意结果即视为重新确认：清掉失效标记（与 Host 语义一致）。
+        stale: false,
+        staleAt: null,
+        staleReason: null,
+      }
       acceptanceOverrides.set(item.id, patch)
       return sendJson(res, 200, { ok: true, item: { ...item, ...patch } })
     }
@@ -569,11 +577,21 @@ const server = createServer(async (req, res) => {
       const compareMode = currentShotCompare || (scenario === 'visual-toast' ? 'changed' : 'same')
       const comparison = makeComparison(item.id, compareMode)
       const shotDiffs = [...(override.shotDiffs || item.shotDiffs || []), comparison].slice(-5)
-      acceptanceOverrides.set(item.id, { ...override, evidence, shotDiffs })
+      // 有变化 ⇒ 该条验收失效（只对「曾经通过」的条目成立；未验条目没有可失效的通过记录）。
+      const invalidated = compareMode === 'changed' && item.result === 'pass'
+      const patch = {
+        ...override,
+        evidence,
+        shotDiffs,
+        ...(invalidated
+          ? { stale: true, staleAt: comparison.at, staleReason: 'visual-change' }
+          : {}),
+      }
+      acceptanceOverrides.set(item.id, patch)
       return sendJson(res, 200, {
         ok: true,
-        item: { ...item, ...override, evidence, shotDiffs },
-        shot: { file, width: 1280, height: 900, url: urlValue, comparison },
+        item: { ...item, ...patch },
+        shot: { file, width: 1280, height: 900, url: urlValue, comparison, invalidated },
         added: 1,
       })
     }

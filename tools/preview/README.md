@@ -57,7 +57,8 @@ node tools/preview/shot.mjs "http://127.0.0.1:4711/?scenario=normal" 360 --measu
 | `acceptance-shotting` | 同上但截图请求被 mock 延迟 2.4s：抓按钮「截图中…」禁用态 |
 | `acceptance-shot-error` | 配 `&shotError=browser-not-found`：验证失败文案且保留 URL |
 | `visual-regression` | 自动展开每行「历史」：五种对比结论徽章 + 最近 5 次列表 + changed 的 30px diff 缩略图 |
-| `visual-toast` | 截图成功返回 `changed`：行内「已截图 · 与上一版有变化 1.23% · 查看 diff」 |
+| `visual-toast` | 截图返回 changed + `invalidated:true`：行内「已截图 · 有变化：该条验收已失效，请重新点「通过」」 |
+| `stale-gate` | 截图变化后的阶段门：标题「· 1 条已失效」、A1「通过·已失效」+ 行内重新确认提示 |
 
 `shotError=` 可换成 `no-url` / `invalid-url` / `url-not-loopback` / `timeout` / `capture-failed` / `browser-failed` 等，mock 按真实状态码返回；`&shotCompare=same|changed|new|different-size|uncomparable` 可切换截图返回的 `shot.comparison`；`/delivery-cockpit/api/shot` 用 `shots/thumb.png` 当缩略图占位。
 | `approved` | 原型已批准：按钮变只读「已于 X 通过原型」 |

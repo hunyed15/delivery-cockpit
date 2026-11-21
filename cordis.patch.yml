@@ -22,3 +22,6 @@
         screenshotDiffTolerance: 8
         screenshotDiffMaxRatio: 0.001
         screenshotDiffMinChangedPixels: 24
+        # 截图发生视觉变化（changed / 尺寸变了）时，之前判过的「通过」自动失效：
+        # 阶段门不再放行，必须人重新点一次通过。设为 false 可关闭（不推荐）。
+        invalidateOnVisualChange: true

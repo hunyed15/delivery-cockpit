@@ -311,7 +311,7 @@ export function deriveDecision(evidence) // 纯函数，无 I/O
 补充规则（实现层澄清，design 未覆盖但必须给唯一答案）：
 
 - `review.available === false` ⇒ 规则 8/9/10 跳过（`notes` 记"未接审核账本，跳过挑毛病判定"）；只有当 `review.reason` 是**读失败**时才走规则 1（已在 `degraded` 中）。
-- `acceptanceAllPass`：`items` 非空 && 每条 `result === 'pass'` && `evidence` 非空。
+- `acceptanceAllPass`：`items` 非空 && 每条 `result === 'pass'` && `evidence` 非空 && 每条 `stale !== true`（截图变化导致的失效 pass 不放行）。
 - `released`：当前迭代存在 `stage:'release' && status:'completed'` 的回执。
 - 规则 2 的 `title` 用 `needs_human_decision.title`（这就是"最高优置顶"）。
 - 全部 `title` 必须是**人话**（≤ 20 字），`reason` 一句为什么（≤ 40 字），不含代码。
@@ -351,8 +351,9 @@ export function buildDetailModel({ evidence, playbook, stageCapabilities, genera
     receipts: [{ id, at, iterationId, stage, stageName, status, summary, artifacts, usedSkill, needsDecision, taskRef, writeScope }],
     total, truncated, badLines, missing, lastAt,
   },                              // receipts 最多 20 条（时间倒序），total 是全量条数
-  acceptance: { total, withResult, passed, failed, blocked, empty, badJson, truncated,
+  acceptance: { total, withResult, passed, failed, blocked, stale, empty, badJson, truncated,
     items: [{ id, featureRef, title, steps, expect, result, evidence, at,
+              stale, staleAt, staleReason,
               shotDiffs: [{ at, verdict, baseline, diffFile, ratio, changedPixels, totalPixels, width, height, reason }] }] },  // items ≤ 100；shotDiffs ≤ 5
   review: { available, reason, rounds, blocking, fixed, issues },  // issues 最多 3
   tasks: { available, total, open, completed, items },             // items 最多 20
@@ -396,7 +397,7 @@ export function createRoutes(deps) // -> { handle(request): Promise<Response> }
 | POST | `/init` | body `{path, confirm:true}`；`confirm!==true` ⇒ 400 `confirm-required`；未授权 ⇒ 403；成功 `{ok:true, applied, created, skipped, gitignoreHint}` |
 | POST | `/approve-prototype` | body `{path, iteration_id}`；未授权 ⇒ 403；迭代为空/bootstrap ⇒ 400 `iteration-required`；找不到 `prototype.html` ⇒ 409 `prototype-missing`；成功 `{ok:true, approval:{iterationId, prototypeApprovedAt, prototype}}` |
 | POST | `/acceptance-result` | body `{path, item_id, result:'pass'\|'fail'\|'blocked'\|null, evidence?: string[]}`；400 `item-required`/`bad-result`/`bad-evidence`/`evidence-required`；404 `item-not-found`；409 `evidence-not-found`/`acceptance-broken`/`iteration-mismatch`/`iteration-required`；成功 `{ok:true, item}`（`null` = 撤销，清空 result/at/evidence） |
-| POST | `/acceptance-screenshot` | body `{path, item_id, url?}`（url 缺省用项目名片 `commands.previewUrl`）；只允许回环 http(s)；成功 `{ok:true, item, shot:{file,width,height,url,comparison}, added}`；400 `item-required`/`no-url`/`invalid-url`/`url-not-loopback`；404 `item-not-found`；409 `browser-not-found`/`acceptance-broken`/`iteration-*`；504 `timeout`；499 `aborted`；502 `browser-failed`/`capture-failed`。**只挂证据、不改 result**；`shot.comparison` 是本次自动视觉回归结果 |
+| POST | `/acceptance-screenshot` | body `{path, item_id, url?}`（url 缺省用项目名片 `commands.previewUrl`）；只允许回环 http(s)；成功 `{ok:true, item, shot:{file,width,height,url,comparison,invalidated}, added}`；400 `item-required`/`no-url`/`invalid-url`/`url-not-loopback`；404 `item-not-found`；409 `browser-not-found`/`acceptance-broken`/`iteration-*`；504 `timeout`；499 `aborted`；502 `browser-failed`/`capture-failed`。**只挂证据、不改 result**；`shot.comparison` 是本次自动视觉回归结果，`shot.invalidated` 表示这次变化让该条已通过的验收失效 |
 | GET | `/shot?path=&file=` | 证据图片字节（png/jpeg/webp/gif，≤10 MiB，`cache-control:no-store`）；415 `not-image`/413 `file-too-large`/404 `shot-not-found`/403 未授权 |
 | 其他 | — | 404 `not found` |
 
@@ -519,7 +520,7 @@ features: {
   items: [{
     id, title, priority,
     status, statusLabel,                // 已完成/有阻塞/进行中/待验收/未开始/—
-    acceptance: { total, passed, failed, blocked, missingEvidence },
+    acceptance: { total, passed, failed, blocked, missingEvidence, stale },  // stale 的 pass 不计入 passed
     bugs: { blocking, severe, known, issues: [{severity,title,file,line}] },   // issues ≤ 3；severe 按全量归属结果算
     lastAt, lastSummary, receipts, inferredReceipts, anchors: { receipts, tasks }, paths,
   }],
@@ -610,7 +611,7 @@ features: {
 
 实测记录（2026-11-20/21，DSH 0.2.2-rc.5 / Node 24.20）：
 
-- 1/2/3/4/6 全部通过；`npm test` = 322 用例全绿。
+- 1/2/3/4/6 全部通过；`npm test` = 334 用例全绿。
 - 安装返回 `application: applied`；`listTools` 可见 `cockpit_report` / `cockpit_init`；`Slots.listSubTree` 在 live 页面里看到 `main` 与 `sidebar.panellist` 都有 `delivery-cockpit`（active）。
 - HTTP 实测（本机 `Invoke-WebRequest`）：未登记路径 403、缺 path 400、无原型批准 409、同源 POST 200、跨源 POST 403、二次 init `applied:false / created:[]`。
 - **功能账 live 实测**（临时夹具：PRD 4 条 FR + 3 条回执 + 验收表 + 审核账本 1 条归属 bug、1 条未归属）：FR-1 = 有阻塞（bug 归属到 `web/orders/list.ts`）、FR-2/FR-3 = 进行中、FR-4 = 未开始且待修列 `—`（known=false）、未归属 1 条、功能进度 0/4。夹具用完已清理，未留在仓库。
@@ -625,6 +626,7 @@ features: {
 - **V1.0.4 live 实测**（临时夹具，验完已清理）：真实 Chrome headless 截图 3s 出图、落盘 `.dsh/plugin-state/shots/`、自动挂到证据、`GET /shot` 回 `image/png`，`result` 保持空；卡死页面 `timeoutMs=6000` ⇒ 6.3s 返回 `timeout`；客户端 1.5s 断开 ⇒ 2.2s 返回 `aborted`；两次异常后 **0 残留临时 profile、0 僵尸 chrome 进程**。
 - **V1.0.5 live 实测**（临时夹具，验完已清理）：同一验收项连拍四次——① 无基线 ⇒ `new`；② 同页面 ⇒ `same`（0/1,152,000 像素变化，证明渲染确定性够用）；③ 改了页面（换文案 + 加搜索框）⇒ `changed`（3,535 像素 = 0.31%，diff 图正确把"变化的文字行 + 新增输入框"标红、其余压灰）；④ 又是同页面 ⇒ `same`。面板 `acceptance.items[].shotDiffs` 按序下发 4 条记录，`result` 始终保持为空（截图不判通过）。
 - **小改动回归实测**（评审修复后）：只把「保存按钮在右下角」改成「左下角」——151 像素、占比 0.01%，修复前会被占比阈值判成 `same`，现在正确报 `changed` 并出 diff 图；同页面重拍仍 `same`。
+- **V1.0.6 live 实测**（临时夹具，验完已清理）：起点验收全绿 ⇒ `next=release`；第 1 次截图（`new`，建立基线）⇒ 仍 `release`；改页面再截 ⇒ `comparison=changed`、`invalidated=true`，面板 `next=verification`、`reason=「有 1 条验收因截图变化失效，重新确认后再放行」`、`passed=0 / stale=1`、条目 `result` 仍是 `pass`（历史保留）；人重新点「通过」⇒ `next=release`、`passed=1 / stale=0`。
 - 第 5 条的 **页面内点击** 属人工确认项（agent 打不开带鉴权的 GUI）；视觉由 `tools/preview` 的真实 React + CDP 截图覆盖：`features.png`（功能账主视图）/ `features-prd-missing.png` / `features-no-fr.png` / `degraded.png` / `overview.png` / `features-360.png`（360px 无横向溢出）。
 - 改动 Host 代码后需要**重载插件**（disable→enable 或重启 DSH）才生效；只改 `client.js` 需要**刷新页面**。
 
@@ -707,6 +709,15 @@ features: {
 - 基线是 URL / 文件已删 / 格式不支持 ⇒ `uncomparable` + reason，绝不"假装比过"。
 - 只有 `changed` 才生成 diff 图，存 `.dsh/plugin-state/shots/diff-*.png`，只记在 `shotDiffs[].diffFile`，**不进证据列表**（证据只放真实截图）。
 - `shot_diffs` 每次截图一条、最多保留 20 条；面板只展示最近 5 条（Host 下发已截断）。
+
+**功能账（V1.0.6 补：视觉变化联动阶段门）**
+
+- 语义：**截图变了 ⇒ 之前那次 pass 失效（stale），但 result 不改**。理由：result 是人做过的判断，删掉等于篡改历史；失效标记让"阶段门不再认它"，同时保留可追溯。
+- 触发条件（三件同时成立）：该条原本 `result==='pass'`；本次 `shotDiff.verdict` ∈ `changed|different-size`；`invalidateOnVisualChange !== false`（配置默认 true）。
+- 失效后：`evidence.acceptance.passed` 排除它、`stale` 单独计数、`withResult` 也不把它算"验过"（否则功能会停在"进行中"）；`acceptanceAllPass` 返回 false ⇒ 状态机退回「验效果」，`verificationReason` 点名「有 N 条验收因截图变化失效」。
+- 清除：人重新点任意结果（通过/失败/阻塞/撤销）⇒ `stale` 清空；**`same` 截图不会把失效冲掉**（变了就是变了）。
+- `new` / `same` / `uncomparable` 不触发失效（无法证明变化，不制造假紧张）。
+- **第五处口径**（独立评审 important）：`lib/features.js` 的按功能 `acceptanceStatsOf` 也必须排除 stale 的 pass，否则会出现"功能账显示已完成、阶段门却拦在验效果"的自相矛盾；功能账同步透出 `acceptance.stale` 计数。
 
 **接线层**
 

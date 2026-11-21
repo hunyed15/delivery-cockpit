@@ -461,6 +461,23 @@ test('任务标题带 FR 但 relatedFiles 为空时不构成锚点（不能让�
   assert.deepEqual(fr3.paths, [])
 })
 
+test('失效的 pass 不算功能完成：功能账与阶段门口径一致', () => {
+  const board = buildFeatureBoard({
+    extracted: extractFeatures(PRD),
+    prd: { path: 'prd.md' },
+    receipts: [receipt({ feature_ids: ['FR-1'], status: 'completed' })],
+    acceptance: acceptanceOf([
+      { id: 'A1', feature_ref: 'FR-1', title: '能添加客户', result: 'pass', evidence: ['shots/a1.png'], stale: true },
+    ]),
+    review: reviewOf([]),
+  })
+  const fr1 = board.items.find((item) => item.id === 'FR-1')
+  assert.equal(fr1.acceptance.total, 1)
+  assert.equal(fr1.acceptance.passed, 0, '失效的 pass 不计入通过')
+  assert.equal(fr1.acceptance.stale, 1)
+  assert.notEqual(fr1.status, 'done', '阶段门正拦着，功能账不能显示已完成')
+})
+
 test('功能账不抛错：缺参数时给空结构', () => {
   const board = buildFeatureBoard()
   assert.equal(board.source, 'prd-missing')

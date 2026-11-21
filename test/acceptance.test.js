@@ -409,6 +409,92 @@ test('视觉回归记录：不认识的 verdict 归一成 uncomparable，不伪�
   assert.equal(view.reason, null)
 })
 
+test('视觉变化会让已通过的验收失效（stale），重新确认后清除', async () => {
+  await withProject(async (project) => {
+    await seedTable(project, true)
+    await writeFile(join(project, 'shots', 'a2.png'), Buffer.from([2]))
+    await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['shots/a1.png'] })
+
+    const changed = await addAcceptanceEvidence(project, {
+      item_id: 'A1',
+      evidence: ['shots/a2.png'],
+      shotDiff: { verdict: 'changed', baseline: 'shots/a1.png', ratio: 0.02, changedPixels: 200, totalPixels: 10000 },
+    })
+    assert.equal(changed.ok, true)
+    assert.equal(changed.invalidated, true, '截图变了 ⇒ 之前那次通过失效')
+    assert.equal(changed.item.stale, true)
+    assert.equal(changed.item.staleReason, 'visual-change')
+    assert.equal(changed.item.result, 'pass', '旧通过保留为历史，不篡改人做过的判断')
+
+    // 同页面截图不会把失效状态冲掉（变了就是变了，必须人重新确认）
+    const same = await addAcceptanceEvidence(project, {
+      item_id: 'A1',
+      evidence: ['shots/a2.png'],
+      shotDiff: { verdict: 'same', baseline: 'shots/a2.png', ratio: 0, changedPixels: 0, totalPixels: 10000 },
+    })
+    assert.equal(same.invalidated, false)
+    assert.equal(same.item.stale, true)
+
+    // 人重新点通过 ⇒ 失效清除
+    const rePassed = await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['shots/a2.png'] })
+    assert.equal(rePassed.item.stale, false)
+    assert.equal(rePassed.item.staleAt, null)
+    const table = await readTable(project)
+    assert.equal(table.items[0].stale, false)
+  })
+})
+
+test('失效只发生在"之前是 pass + 真的变了"；new/same/uncomparable 与非 pass 条目不失效', async () => {
+  await withProject(async (project) => {
+    await seedTable(project, true)
+    await writeFile(join(project, 'shots', 'a2.png'), Buffer.from([2]))
+
+    // 还没判通过：截图变化不该产生"失效"语义
+    const beforeDecision = await addAcceptanceEvidence(project, {
+      item_id: 'A1',
+      evidence: ['shots/a2.png'],
+      shotDiff: { verdict: 'changed', ratio: 0.1 },
+    })
+    assert.equal(beforeDecision.invalidated, false)
+    assert.equal(beforeDecision.item.stale, false)
+
+    // 判过失败：截图变化也不影响（本来就没通过）
+    await setAcceptanceResult(project, { item_id: 'A1', result: 'fail' })
+    const afterFail = await addAcceptanceEvidence(project, {
+      item_id: 'A1',
+      evidence: ['shots/a2.png'],
+      shotDiff: { verdict: 'changed', ratio: 0.1 },
+    })
+    assert.equal(afterFail.invalidated, false)
+    assert.equal(afterFail.item.stale, false)
+  })
+
+  await withProject(async (project) => {
+    await seedTable(project, true)
+    await writeFile(join(project, 'shots', 'a2.png'), Buffer.from([2]))
+    await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['shots/a1.png'] })
+
+    for (const verdict of ['new', 'same', 'uncomparable']) {
+      const result = await addAcceptanceEvidence(project, {
+        item_id: 'A1',
+        evidence: ['shots/a2.png'],
+        shotDiff: { verdict, ratio: 0 },
+      })
+      assert.equal(result.invalidated, false, `${verdict} 不该让通过失效`)
+      assert.equal(result.item.stale, false)
+    }
+    // 配置可关闭
+    const disabled = await addAcceptanceEvidence(project, {
+      item_id: 'A1',
+      evidence: ['shots/a2.png'],
+      shotDiff: { verdict: 'changed', ratio: 0.1 },
+      invalidateOnVisualChange: false,
+    })
+    assert.equal(disabled.invalidated, false)
+    assert.equal(disabled.item.stale, false)
+  })
+})
+
 test('normalizeEvidence：空数组合法、非字符串拒绝、超过上限截断', async () => {
   await withProject(async (project) => {
     assert.deepEqual(await normalizeEvidence(project, []), { ok: true, evidence: [] })

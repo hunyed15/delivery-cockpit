@@ -578,6 +578,13 @@ h2.dc-name { margin:0; font-size:16px; font-weight:650; line-height:1.3; letter-
 .dc-diff-history li { display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; min-width:0; }
 .dc-diff-history-at { font-variant-numeric:tabular-nums; white-space:nowrap; }
 .dc-diff-history-verdict { color:var(--dsw-alias-label-primary); overflow-wrap:anywhere; }
+/* 截图变化让「通过」失效：标签与行内提示都必须是警示色，不能看起来像正常通过。 */
+.dc-stale-title { color:var(--dsw-alias-state-warn-primary); font-weight:600; }
+.dc-stale-tag { display:inline-flex; align-items:center; margin-left:4px; font-size:10.5px; font-weight:600;
+  color:var(--dsw-alias-state-warn-primary); border:1px solid currentColor; border-radius:999px;
+  padding:0 6px; white-space:nowrap; }
+.dc-stale-note { margin-bottom:4px; padding:5px 8px; border:1px solid var(--dsw-alias-state-warn-primary);
+  border-radius:6px; color:var(--dsw-alias-state-warn-primary); font-size:11.5px; overflow-wrap:anywhere; }
 .dc-empty-line { margin:0; font-size:12px; color:var(--dsw-alias-label-secondary); }
 .dc-details { margin-top:8px; font-size:11.5px; color:var(--dsw-alias-label-secondary); }
 .dc-details summary { cursor:pointer; }
@@ -1910,7 +1917,13 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
       const passedRaw = Number(acceptance.passed)
       const passedCount = Number.isFinite(passedRaw)
         ? passedRaw
-        : items.filter((item) => item && item.result === 'pass').length
+        // 回退统计也必须排除 stale：否则同一条失效项会同时算进"已通过"和"已失效"。
+        : items.filter((item) => item && item.result === 'pass' && item.stale !== true).length
+      // stale 是「历史通过但截图变了、需要重新确认」的单独计数；Host 的 passed 已排除它们。
+      const staleRaw = Number(acceptance.stale)
+      const staleCount = Number.isFinite(staleRaw)
+        ? staleRaw
+        : items.filter((item) => item && item.stale === true).length
       const [editing, setEditing] = React.useState({})
       const [drafts, setDrafts] = React.useState({})
       const [rowState, setRowState] = React.useState({})
@@ -1963,11 +1976,16 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
           if (!mounted.current) return
           // Host 在同一响应里带回与上一版的像素对比：立刻显示，不用等面板刷新。
           const comparison = body.shot && body.shot.comparison ? body.shot.comparison : null
+          // 本轮截图让该条验收失效时，必须强提示「重新点通过」——失效 ≠ 改结果。
+          const invalidated = Boolean(body.shot && body.shot.invalidated === true)
           setRow(id, {
             capturing: false,
             shotError: '',
             shotSaved: true,
-            shotMessage: comparisonMessage(comparison),
+            shotInvalidated: invalidated,
+            shotMessage: invalidated
+              ? '已截图 · 有变化：该条验收已失效，请重新点「通过」'
+              : comparisonMessage(comparison),
             shotDiffFile:
               comparison && comparison.verdict === 'changed' && comparison.diffFile
                 ? String(comparison.diffFile)
@@ -2098,10 +2116,29 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
                         : null,
                     ),
                     h('td', { className: 'dc-cell-mono' }, item.featureRef || '—'),
-                    h('td', null, h(AcceptanceResultChip, { result: item.result })),
                     h(
                       'td',
                       null,
+                      h(AcceptanceResultChip, { result: item.result }),
+                      item.stale === true && item.result === 'pass'
+                        ? h(
+                            'span',
+                            { className: 'dc-stale-tag', title: '截图有变化，需重新确认' },
+                            '已失效',
+                          )
+                        : null,
+                    ),
+                    h(
+                      'td',
+                      null,
+                      item.stale === true && item.result === 'pass'
+                        ? h(
+                            'div',
+                            { className: 'dc-stale-note', role: 'status' },
+                            '截图有变化，之前那次通过已失效，请重新点「通过」确认',
+                            item.staleAt ? `（${formatRelative(item.staleAt)}）` : '',
+                          )
+                        : null,
                       shotDiffs.length > 0
                         ? h(
                             React.Fragment,
@@ -2303,7 +2340,10 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
                             state.shotSaved
                               ? h(
                                   'div',
-                                  { className: 'dc-acc-saved', role: 'status' },
+                                  {
+                                    className: state.shotInvalidated === true ? 'dc-stale-note' : 'dc-acc-saved',
+                                    role: 'status',
+                                  },
                                   state.shotMessage || '已截图并附到证据',
                                   state.shotDiffFile
                                     ? h(
@@ -2392,7 +2432,15 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
       return h(
         'details',
         { className: 'dc-acceptance', open: true },
-        h('summary', null, `验收清单（${items.length} 条 · ${passedCount} 已通过）`),
+        h(
+          'summary',
+          null,
+          `验收清单（${items.length} 条 · ${passedCount} 已通过`,
+          staleCount > 0
+            ? h('span', { className: 'dc-stale-title' }, ` · ${staleCount} 条已失效`)
+            : null,
+          '）',
+        ),
         content,
       )
     }

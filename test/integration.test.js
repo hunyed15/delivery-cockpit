@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { approvePrototype } from '../lib/approvals.js'
+import { addAcceptanceEvidence, setAcceptanceResult } from '../lib/acceptance.js'
 import { readEvidence } from '../lib/evidence.js'
 import { buildFeatureBoard, extractFeatures, readPrdText } from '../lib/features.js'
 import { applyInit, planInit } from '../lib/init.js'
@@ -224,6 +225,84 @@ test('面板详情与总览来自同一份证据：金额/数字不跨源', asyn
     assert.equal(row.nextKind, model.nextAction.kind)
     assert.equal(row.degraded, false)
     assert.equal(row.path, project)
+  } finally {
+    await rm(project, { recursive: true, force: true })
+  }
+})
+
+test('验收失效联动阶段门：通过 → 截图变化 → 回验效果 → 重新确认 → 放行', async () => {
+  const project = await makeProject()
+  try {
+    const plan = await planInit(project)
+    await applyInit(project, plan)
+    // 迭代与前置阶段：prd + 原型批准 + 任务全部完成
+    await appendReceipt(project, {
+      iteration_id: 'v1.0',
+      stage: 'brainstorm',
+      status: 'completed',
+      summary_for_human: '需求定了',
+    })
+    await writeFile(join(project, 'prd.md'), '# 客户管理\n\n## 4. 功能需求\n\n### FR-1 客户列表（P0）\n', 'utf8')
+    await writeFile(
+      join(project, '.dsh', 'plugin-state', 'approvals.json'),
+      JSON.stringify({ 'v1.0': { prototypeApprovedAt: '2026-11-20T10:00:00.000Z', prototype: 'prototype.html' } }),
+      'utf8',
+    )
+    await mkdir(join(project, '.trellis', 'tasks', 'T1'), { recursive: true })
+    await writeFile(
+      join(project, '.trellis', 'tasks', 'T1', 'task.json'),
+      JSON.stringify({ id: 'T1', title: 'FR-1 客户列表', status: 'completed', relatedFiles: ['web/orders'] }),
+      'utf8',
+    )
+    await appendReceipt(project, {
+      iteration_id: 'v1.0',
+      stage: 'coding',
+      status: 'completed',
+      summary_for_human: '列表做完了',
+      feature_ids: ['FR-1'],
+      write_scope: ['web/orders/**'],
+      task_ref: 'T1',
+    })
+    await mkdir(join(project, 'shots'), { recursive: true })
+    await writeFile(join(project, 'shots', 'a1.png'), Buffer.from([1, 2, 3]))
+    await writeFile(
+      join(project, '.dsh', 'plugin-state', 'acceptance.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        iteration_id: 'v1.0',
+        items: [{ id: 'A1', feature_ref: 'FR-1', title: '能添加客户', result: null, evidence: [], at: null }],
+      }),
+      'utf8',
+    )
+
+    // 1) 人点通过：验收全绿 ⇒ 下一步是发出去
+    const passed = await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['shots/a1.png'] })
+    assert.equal(passed.item.stale, false)
+    let evidence = await readEvidence(project)
+    assert.equal(deriveDecision(evidence).kind, 'release')
+
+    // 2) 页面改了，重新截图（changed）⇒ 该条通过自动失效，阶段门退回验效果
+    await writeFile(join(project, 'shots', 'a2.png'), Buffer.from([9, 9, 9]))
+    const shot = await addAcceptanceEvidence(project, {
+      item_id: 'A1',
+      evidence: ['shots/a2.png'],
+      shotDiff: { verdict: 'changed', baseline: 'shots/a1.png', ratio: 0.03, changedPixels: 300, totalPixels: 10000 },
+    })
+    assert.equal(shot.invalidated, true)
+    evidence = await readEvidence(project)
+    assert.equal(evidence.acceptance.stale, 1)
+    assert.equal(evidence.acceptance.passed, 0)
+    const blockedDecision = deriveDecision(evidence)
+    assert.equal(blockedDecision.kind, 'verification')
+    assert.match(blockedDecision.reason, /截图变化失效/)
+
+    // 3) 人重新确认通过 ⇒ 失效清除，阶段门重新放行
+    const rePassed = await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['shots/a2.png'] })
+    assert.equal(rePassed.item.stale, false)
+    evidence = await readEvidence(project)
+    assert.equal(evidence.acceptance.stale, 0)
+    assert.equal(evidence.acceptance.passed, 1)
+    assert.equal(deriveDecision(evidence).kind, 'release')
   } finally {
     await rm(project, { recursive: true, force: true })
   }

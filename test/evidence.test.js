@@ -262,6 +262,25 @@ test('名片坏 JSON：card.broken + status=broken + 降级', async () => {
   })
 })
 
+test('验收失效：stale 的 pass 不算通过，也不计入"已验证"', async () => {
+  await withProject(async (project) => {
+    await writeState(project, 'acceptance.json', {
+      schemaVersion: 1,
+      iteration_id: null,
+      items: [
+        { id: 'A1', title: '截图变了导致失效', result: 'pass', evidence: ['shots/a1.png'], stale: true, stale_reason: 'visual-change' },
+        { id: 'A2', title: '仍然有效', result: 'pass', evidence: ['shots/a2.png'] },
+      ],
+    })
+    const evidence = await readEvidence(project)
+    assert.equal(evidence.acceptance.total, 2)
+    assert.equal(evidence.acceptance.passed, 1, '失效的 pass 不计入通过')
+    assert.equal(evidence.acceptance.stale, 1)
+    assert.equal(evidence.acceptance.withResult, 1, '失效不算"已验过"（否则功能状态会停在"进行中"）')
+    assert.equal(evidence.degraded.flag, false, '失效不是数据故障')
+  })
+})
+
 test('验收表缺失：missing=true，按空表处理（空表不算通过）', async () => {
   await withProject(async (project) => {
     const evidence = await readEvidence(project)

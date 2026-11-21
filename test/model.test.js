@@ -229,6 +229,45 @@ test('acceptance-draft：缺必需能力时不得被 hint 解禁（§6.3 优先�
   assert.doesNotMatch(JSON.stringify(model.nextAction.notes), /cockpit_acceptance/, '没有被 hint 改写')
 })
 
+test('验收清单：stale 与计数随载荷下发（阶段门据此拦人）', () => {
+  const items = [
+    {
+      id: 'A1',
+      feature_ref: 'FR-1',
+      title: '能添加客户',
+      result: 'pass',
+      evidence: ['shots/a1.png'],
+      stale: true,
+      stale_at: '2026-11-21T01:00:00.000Z',
+      stale_reason: 'visual-change',
+      shot_diffs: [{ at: '2026-11-21T01:00:00.000Z', verdict: 'changed', ratio: 0.02, changedPixels: 200, totalPixels: 10000 }],
+    },
+  ]
+  const model = build(
+    evidence({
+      acceptance: {
+        items,
+        empty: false,
+        badJson: false,
+        total: 1,
+        withResult: 0,
+        passed: 0,
+        failed: 0,
+        blocked: 0,
+        stale: 1,
+        passWithoutEvidence: 0,
+        appliesToCurrent: true,
+      },
+    }),
+  )
+  assert.equal(model.acceptance.stale, 1)
+  const item = model.acceptance.items[0]
+  assert.equal(item.stale, true)
+  assert.equal(item.staleReason, 'visual-change')
+  assert.equal(item.staleAt, '2026-11-21T01:00:00.000Z')
+  assert.equal(item.shotDiffs[0].verdict, 'changed')
+})
+
 test('验收清单：条目字段原样映射，未知 result 归一成 null，超 100 条标 truncated', () => {
   const items = Array.from({ length: 101 }, (_, index) => ({
     id: `A${index + 1}`,
@@ -267,6 +306,9 @@ test('验收清单：条目字段原样映射，未知 result 归一成 null，�
     result: 'pass',
     evidence: ['shots/a1.png'],
     at: '2026-11-21T00:00:00.000Z',
+    stale: false,
+    staleAt: null,
+    staleReason: null,
     shotDiffs: [],
   })
   assert.equal(model.acceptance.items[1].result, null, '未知 result 归一成 null（未验）')

@@ -305,6 +305,23 @@ test('视觉回归 reason 全部翻人话', () => {
   assert.ok(source.includes('explainDiffReason'), 'reason 必须收口到一个映射函数')
 })
 
+test('验效果阶段门：截图变化让「通过」失效、必须重新确认', () => {
+  assert.ok(source.includes('acceptance.stale'), '必须消费 acceptance.stale')
+  assert.ok(source.includes('item.stale === true'), '必须消费 items[].stale')
+  assert.ok(source.includes("item.stale === true && item.result === 'pass'"), '只有 pass + stale 才显示失效')
+  assert.ok(source.includes('staleAt'), '失效时间要展示/可悬停')
+  assert.ok(source.includes('已失效'), '结果列必须有「已失效」标签')
+  assert.ok(source.includes('截图有变化，需重新确认'), '标签 title 必须说明原因')
+  assert.ok(source.includes('截图有变化，之前那次通过已失效，请重新点「通过」确认'), '行内必须给重新确认提示')
+  assert.ok(source.includes('条已失效'), '标题必须补「y 条已失效」')
+  assert.ok(source.includes('dc-stale-title') && source.includes('dc-stale-tag') && source.includes('dc-stale-note'),
+    '失效三处必须有独立样式（标题/标签/行内提示）')
+  assert.ok(source.includes('body.shot && body.shot.invalidated'), '截图成功必须消费 shot.invalidated')
+  assert.ok(source.includes('该条验收已失效，请重新点「通过」'), 'invalidated 时必须强提示重新确认')
+  // 失效 ≠ 改结果：stale 分支不能改 result，重新确认仍走原有四个按钮。
+  assert.ok(!/stale:\s*false[\s\S]{0,80}result:/.test(source), '前端不得用 stale 分支改写 result')
+})
+
 test('降级矩阵：横幅、坏行、缺失能力', () => {
   assert.match(source, /panel\.degraded\.flag/, '必须消费 degraded.flag')
   assert.ok(source.includes('degradedReasons'), '降级横幅要列原因')
