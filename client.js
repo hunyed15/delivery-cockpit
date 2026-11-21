@@ -1502,6 +1502,14 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
         : '—'
       const paths = asArray(item.paths)
       const receipts = Number(item.receipts) || 0
+      const inferred = Number(item.inferredReceipts) || 0
+      const anchors = item.anchors && typeof item.anchors === 'object' ? item.anchors : {}
+      const anchorText = [
+        Number(anchors.receipts) > 0 ? `回执自报 ${Number(anchors.receipts)} 条` : null,
+        Number(anchors.tasks) > 0 ? `任务标题 ${Number(anchors.tasks)} 个` : null,
+      ]
+        .filter(Boolean)
+        .join('、')
       const expandable = issues.length > 0 || paths.length > 0 || receipts > 0
       const expanded = props.expanded === true
       const when = item.lastAt ? formatRelative(item.lastAt) : ''
@@ -1588,7 +1596,16 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
                         h('code', { className: 'dc-code' }, paths.join('、')),
                       )
                     : null,
-                  receipts > 0 ? h('div', { className: 'dc-hint' }, `关联回执 ${receipts} 条`) : null,
+                  receipts > 0
+                    ? h(
+                        'div',
+                        { className: 'dc-hint' },
+                        `关联回执 ${receipts} 条${inferred > 0 ? `（其中 ${inferred} 条按任务 relatedFiles / 路径自动归属）` : ''}`,
+                      )
+                    : null,
+                  anchorText
+                    ? h('div', { className: 'dc-hint' }, `路径锚点：${anchorText}（写了 feature_ids 的回执优先）`)
+                    : null,
                 ),
               ),
             )

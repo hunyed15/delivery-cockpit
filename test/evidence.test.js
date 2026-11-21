@@ -397,9 +397,9 @@ test('任务表：只读 id/title/status；open = 非 completed；items 最多 5
     assert.equal(evidence.tasks.completed, 1)
     assert.equal(evidence.tasks.open, 2)
     assert.deepEqual(evidence.tasks.items, [
-      { id: 'T1', title: '做完的', status: 'completed' },
-      { id: 'T2', title: '在做的', status: 'in_progress' },
-      { id: 'T3', title: '没状态的', status: 'unknown' },
+      { id: 'T1', title: '做完的', status: 'completed', relatedFiles: [] },
+      { id: 'T2', title: '在做的', status: 'in_progress', relatedFiles: [] },
+      { id: 'T3', title: '没状态的', status: 'unknown', relatedFiles: [] },
     ])
     assert.equal(evidence.degraded.flag, false)
   })

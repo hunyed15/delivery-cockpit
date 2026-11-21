@@ -26,6 +26,10 @@ DSH 插件 **交付驾驶舱**：把项目的真实状态收拢成一屏——**
 
 配套规则：没有可归属路径的功能，待修列显示 `—`；未归属的 bug 单列；PRD 没识别到 `### FR-N` 时直说并给格式提示。
 
+**回执自动归属（可解释、可覆盖）**：回执没写 `feature_ids` 时，按它的 `write_scope`/`artifacts` 与「任务标题里的 `FR-3` + `relatedFiles`」反推归属；写了 `feature_ids` 就以自报为准、不再推断。展开行会写明"其中 N 条自动归属"。
+
+**验收起草**：走到"生成验收清单"时，指令会点名还缺哪几条 `FR-x`，Agent 用 `cockpit_acceptance` 一次写入条目骨架（`result` 留空）；该工具**只追加，绝不覆盖**人已经填好的结果与证据。
+
 ## 文档
 
 - **产品设计（定稿）**：[docs/design.md](docs/design.md) —— 定位、12 条状态机、降级矩阵、能力路由、非目标
@@ -48,8 +52,9 @@ DSH 插件 **交付驾驶舱**：把项目的真实状态收拢成一屏——**
 - [x] 真机安装验收：`application: applied`、`listTools` 可见两工具、两处 slot 已注册、HTTP 路由 200/403/409 实测、二次 init 幂等
 - [x] 原型批准最小写路径（`POST /approve-prototype`，按 `iteration_id` 落盘）—— 没有它状态机第 4 条永远过不去；视觉画廊仍属 Phase 2
 - [x] **功能账（V1.0.1）**：PRD `### FR-N` 提取 + 三路证据状态 + 缺陷按路径归属 + 未归属单列（用户反馈后补齐，取代原来的回执流水账）
+- [x] **自动归属 + 验收起草（V1.0.2）**：回执按任务 `relatedFiles`/FR 标题自动归属（自报优先、可解释）；`cockpit_acceptance` 按 PRD 功能起草验收条目（只追加不覆盖）
 
-**测试**：`npm test` = `node --test "test/*.test.js"`，当前 **246 个用例全绿**（含端到端状态机推进、功能账三路证据、写授权 fail-closed 专项）。
+**测试**：`npm test` = `node --test "test/*.test.js"`，当前 **271 个用例全绿**（含端到端状态机推进、功能账三路证据与自动归属、验收起草、技能可见性、写授权 fail-closed 专项）。
 
 > 勾选只在**实现并通过验收**之后做。`node --test test/`（目录形式）在本机 Node 24 不支持，请用上面的 glob 形式或 `npm test`。
 
@@ -69,7 +74,8 @@ lib/detect.js       技术栈探测（只读文件，不猜）
 lib/project-card.js 项目名片（探测字段 + 人填两字段）
 lib/init.js         状态目录初始化（幂等 / dry-run / 只写四个文件）
 lib/playbook.js     阶段能力路由（内置 + 项目覆盖 + 存在性检测）
-lib/features.js     功能账（PRD 受控结构提取 + 三路证据状态推导 + bug 路径归属）
+lib/features.js     功能账（PRD 受控结构提取 + 三路证据状态推导 + bug 路径归属 + 回执自动归属）
+lib/acceptance.js   验收表起草（只追加不覆盖；坏表/跨迭代拒绝写入）
 lib/evidence.js     只读证据聚合（trellis / prd / 回执 / 批准 / 验收表 / 任务 / 审核账本）
 lib/state.js        状态机：唯一动作
 lib/model.js        面板模型（总览行 + 详情一屏四区）

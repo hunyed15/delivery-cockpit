@@ -348,6 +348,119 @@ test('汇总计数与每条功能的状态一致', () => {
   assert.deepEqual(statuses, ['done', 'blocked', 'in-progress'])
 })
 
+test('自动归属：任务标题带 FR 编号时，relatedFiles 就是该功能的路径锚点', () => {
+  const board = buildFeatureBoard({
+    extracted: extractFeatures(PRD),
+    prd: { path: 'prd.md' },
+    tasks: {
+      available: true,
+      items: [{ id: 'T3', title: 'FR-2 检索打分：补候选打分', status: 'in_progress', relatedFiles: ['src/rank/**'] }],
+    },
+    review: reviewOf([issue({ file: 'src/rank/score.ts', title: '打分越界' })]),
+  })
+  const fr2 = board.items.find((item) => item.id === 'FR-2')
+  assert.equal(fr2.anchors.tasks, 1)
+  assert.deepEqual(fr2.paths, ['src/rank'], '尾部 /** 会被归一掉')
+  assert.equal(fr2.status, 'blocked')
+  assert.equal(fr2.bugs.blocking, 1)
+})
+
+test('自动归属：没写 feature_ids 的回执，按 write_scope / 任务 relatedFiles 与锚点重叠推断', () => {
+  const board = buildFeatureBoard({
+    extracted: extractFeatures(PRD),
+    prd: { path: 'prd.md' },
+    tasks: {
+      available: true,
+      items: [{ id: 'T3', title: 'FR-2 检索打分', status: 'in_progress', relatedFiles: ['src/rank'] }],
+    },
+    receipts: [
+      // 这条没写 feature_ids，也没写 write_scope，但 task_ref 指向的任务有 relatedFiles
+      receipt({ feature_ids: [], task_ref: 'T3', status: 'in_progress', write_scope: [] }),
+    ],
+    review: reviewOf([]),
+  })
+  const fr2 = board.items.find((item) => item.id === 'FR-2')
+  assert.equal(fr2.receipts, 1)
+  assert.equal(fr2.inferredReceipts, 1)
+  assert.equal(fr2.status, 'in-progress')
+  assert.ok(board.notes.some((note) => /自动归属/.test(note)))
+})
+
+test('自动归属：显式 feature_ids 永远优先，不会被路径推断重复归到别的功能', () => {
+  const board = buildFeatureBoard({
+    extracted: extractFeatures(PRD),
+    prd: { path: 'prd.md' },
+    tasks: {
+      available: true,
+      items: [{ id: 'T1', title: 'FR-1 采集', status: 'in_progress', relatedFiles: ['src/feed'] }],
+    },
+    receipts: [receipt({ feature_ids: ['FR-2'], write_scope: ['src/feed/**'], status: 'in_progress' })],
+    review: reviewOf([]),
+  })
+  const fr1 = board.items.find((item) => item.id === 'FR-1')
+  const fr2 = board.items.find((item) => item.id === 'FR-2')
+  assert.equal(fr2.receipts, 1, '自报的归到 FR-2')
+  assert.equal(fr1.receipts, 0, '不会被路径推断再算一次')
+  assert.equal(fr2.inferredReceipts, 0)
+})
+
+test('一条锚点都没有时明确提示先写 feature_ids', () => {
+  const board = buildFeatureBoard({
+    extracted: extractFeatures(PRD),
+    prd: { path: 'prd.md' },
+    receipts: [receipt({ feature_ids: [], write_scope: ['src/whatever'] })],
+    review: reviewOf([]),
+  })
+  assert.ok(board.notes.some((note) => /第一条 coding 回执请写上 feature_ids/.test(note)))
+})
+
+test('自动归属：一条覆盖多个功能的回执会多处归属，但 note 按唯一回执计数', () => {
+  const board = buildFeatureBoard({
+    extracted: extractFeatures(PRD),
+    prd: { path: 'prd.md' },
+    tasks: {
+      available: true,
+      items: [
+        { id: 'T1', title: 'FR-1 采集', status: 'in_progress', relatedFiles: ['web/shared'] },
+        { id: 'T2', title: 'FR-2 检索', status: 'in_progress', relatedFiles: ['web/shared'] },
+      ],
+    },
+    receipts: [receipt({ feature_ids: [], write_scope: ['web/shared/**'], status: 'in_progress' })],
+    review: reviewOf([]),
+  })
+  const fr1 = board.items.find((item) => item.id === 'FR-1')
+  const fr2 = board.items.find((item) => item.id === 'FR-2')
+  assert.equal(fr1.inferredReceipts, 1)
+  assert.equal(fr2.inferredReceipts, 1, '同一份改动同时服务两条功能')
+  const note = board.notes.find((item) => /自动归属/.test(item))
+  assert.match(note, /有 1 条回执/, 'note 按唯一回执计数，不按配对次数')
+})
+
+test('自动归属：task_ref 指向不存在的任务时优雅降级（不推断、不报错）', () => {
+  const board = buildFeatureBoard({
+    extracted: extractFeatures(PRD),
+    prd: { path: 'prd.md' },
+    tasks: { available: true, items: [{ id: 'T1', title: 'FR-1 采集', status: 'in_progress', relatedFiles: ['src/feed'] }] },
+    receipts: [receipt({ feature_ids: [], task_ref: 'T404', write_scope: [], status: 'in_progress' })],
+    review: reviewOf([]),
+  })
+  const fr1 = board.items.find((item) => item.id === 'FR-1')
+  assert.equal(fr1.receipts, 0)
+  assert.equal(fr1.inferredReceipts, 0)
+})
+
+test('任务标题带 FR 但 relatedFiles 为空时不构成锚点（不能让界面显示"任务锚点"却无路径）', () => {
+  const board = buildFeatureBoard({
+    extracted: extractFeatures(PRD),
+    prd: { path: 'prd.md' },
+    tasks: { available: true, items: [{ id: 'T9', title: 'FR-3 转存收尾', status: 'in_progress', relatedFiles: [] }] },
+    review: reviewOf([]),
+  })
+  const fr3 = board.items.find((item) => item.id === 'FR-3')
+  assert.equal(fr3.anchors.tasks, 0)
+  assert.deepEqual(fr3.paths, [])
+})
+
 test('功能账不抛错：缺参数时给空结构', () => {
   const board = buildFeatureBoard()
   assert.equal(board.source, 'prd-missing')

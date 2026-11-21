@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, readdir, access, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createToolDefinitions, TOOL_DEFINITIONS } from '../index.js'
-import { STAGES, STATUSES } from '../lib/receipts.js'
+import { appendReceipt, STAGES, STATUSES } from '../lib/receipts.js'
 
 const fakeCtx = { get: () => undefined, logger: { warn() {} } }
 const execIn = (cwd) => ({ agent: { session: { header: { cwd } } } })
@@ -178,4 +178,59 @@ test('取不到工作目录时直接报错，不回退到进程启动目录', as
   )
   const init = tools.find((item) => item.name === 'cockpit_init')
   await assert.rejects(() => init.execute({}, {}), /无法确定项目目录/)
+})
+
+test('cockpit_acceptance：声明 output、items 必填、只追加不覆盖', async () => {
+  const acceptance = TOOL_DEFINITIONS.find((item) => item.name === 'cockpit_acceptance')
+  assert.ok(acceptance, '功能账依赖这个工具起草验收条目')
+  assert.equal(typeof acceptance.output?.schema, 'object')
+  assert.equal(typeof acceptance.output?.render, 'function')
+  assert.deepEqual(acceptance.parameters.required, ['items'])
+  assert.deepEqual(acceptance.parameters.properties.items.items.required, ['title'])
+  assert.ok(acceptance.parameters.properties.items.items.properties.feature_ref)
+
+  const project = await mkdtemp(join(tmpdir(), 'dc-acc-tool-'))
+  try {
+    // 验收表属于迭代环：先有一条 v1.0 的回执
+    await appendReceipt(project, {
+      iteration_id: 'v1.0',
+      stage: 'brainstorm',
+      status: 'completed',
+      summary_for_human: '需求定了',
+    })
+    const tool = createToolDefinitions(fakeCtx).find((item) => item.name === 'cockpit_acceptance')
+    const first = await tool.execute(
+      { items: [{ feature_ref: 'FR-1', title: '能添加客户', steps: '点新增', expect: '列表出现' }] },
+      execIn(project),
+    )
+    assert.equal(first.ok, true)
+    assert.equal(first.added, 1)
+    assert.equal(first.iterationId, 'v1.0')
+
+    const tablePath = join(project, '.dsh', 'plugin-state', 'acceptance.json')
+    const table = JSON.parse(await readFile(tablePath, 'utf8'))
+    assert.equal(table.items[0].feature_ref, 'FR-1')
+    assert.equal(table.items[0].result, null)
+
+    const again = await tool.execute({ items: [{ feature_ref: 'FR-1', title: '能添加客户' }] }, execIn(project))
+    assert.equal(again.added, 0)
+    assert.equal(again.skipped, 1)
+    assert.equal(JSON.parse(await readFile(tablePath, 'utf8')).items.length, 1)
+  } finally {
+    await rm(project, { recursive: true, force: true })
+  }
+})
+
+test('cockpit_acceptance：跨迭代或坏表时明确报错，不写盘', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'dc-acc-tool-'))
+  try {
+    const tool = createToolDefinitions(fakeCtx).find((item) => item.name === 'cockpit_acceptance')
+    // 只有 bootstrap 回执：没有迭代，拒绝起草
+    await assert.rejects(
+      () => tool.execute({ items: [{ title: '能添加客户' }] }, execIn(project)),
+      /还没有迭代/,
+    )
+  } finally {
+    await rm(project, { recursive: true, force: true })
+  }
 })

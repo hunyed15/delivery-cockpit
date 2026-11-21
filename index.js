@@ -6,10 +6,12 @@
  * 2. 插件自己只写 `.dsh/plugin-state/`（外加 init 建 `.trellis/` 空目录）；项目别的文件一律不碰。
  * 3. 读不到就说读不到：所有降级都由 lib/evidence.js 聚合，这里不补默认值。
  */
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { draftAcceptance } from './lib/acceptance.js'
 import { approvePrototype } from './lib/approvals.js'
 import { readEvidence } from './lib/evidence.js'
 import { buildFeatureBoard, extractFeatures, readPrdText } from './lib/features.js'
@@ -134,6 +136,57 @@ const COCKPIT_INIT = {
  * options.authorizeWrite：显式路径的写授权（与 HTTP 层共用同一口径）。默认原样放行，
  * 仅供契约测试使用；真正注册时由 apply 注入"必须是 DSH 已登记工作区"的实现。
  */
+const COCKPIT_ACCEPTANCE = {
+  name: 'cockpit_acceptance',
+  description:
+    '按 PRD 功能起草验收条目，写入 .dsh/plugin-state/acceptance.json。只追加：已有条目的 result/evidence 绝不覆盖，' +
+    '那是人的判断与证据。feature_ref 指向 PRD 的 FR 编号（如 FR-3），面板据此把验收结果挂到功能上；' +
+    'result 由人在验效果阶段填写，pass 必须附证据。',
+  parameters: {
+    type: 'object',
+    required: ['items'],
+    properties: {
+      items: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['title'],
+          properties: {
+            feature_ref: { type: 'string', description: 'PRD 功能编号，如 FR-3；建议每条都填，否则验收结果挂不回功能' },
+            title: { type: 'string', description: '人话验收点，例如「能添加客户」' },
+            steps: { type: 'string', description: '人话操作步骤' },
+            expect: { type: 'string', description: '期望结果' },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    additionalProperties: false,
+  },
+  output: {
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        added: { type: 'number' },
+        skipped: { type: 'number' },
+        total: { type: 'number' },
+        iterationId: { type: 'string' },
+      },
+      required: ['ok', 'total'],
+    },
+    render(_args, value) {
+      if (!value?.ok) return [{ type: 'text', text: '验收表起草失败' }]
+      return [
+        {
+          type: 'text',
+          text: `验收表已起草：新增 ${value.added} 条、跳过 ${value.skipped} 条（共 ${value.total} 条，迭代 ${value.iterationId}）`,
+        },
+      ]
+    },
+  },
+}
+
 export function createToolDefinitions(ctx, options = {}) {
   const authorizeWrite = typeof options.authorizeWrite === 'function' ? options.authorizeWrite : async (path) => path
   return [
@@ -187,6 +240,33 @@ export function createToolDefinitions(ctx, options = {}) {
         }
       },
     },
+    {
+      ...COCKPIT_ACCEPTANCE,
+      async execute(args, exec) {
+        // 验收表只写在会话自己的工作目录里（没有 cwd 参数，不存在"模型指定别处"的注入面）。
+        const projectPath = requireCwd(agentCwd(ctx, exec), 'cockpit_acceptance')
+        const result = await draftAcceptance(projectPath, args?.items)
+        if (!result.ok) {
+          const [code, ...rest] = String(result.error ?? '').split('：')
+          const mapped =
+            code === 'iteration-required'
+              ? '还没有迭代：先写一条 iteration_id 为 v1.0 的回执（bootstrap 冷启动阶段不建验收表）'
+              : code === 'acceptance-broken'
+                ? 'acceptance.json 不是合法 JSON：插件不会覆盖坏文件，请先手工修好或删除它'
+                : code === 'iteration-mismatch'
+                  ? `验收表属于迭代 ${result.iterationId}，与当前迭代不一致：先归档或确认后再起草`
+                  : String(result.error ?? '起草失败')
+          throw new Error(`cockpit_acceptance: ${mapped}${rest.length > 0 ? `：${rest.join('：')}` : ''}`)
+        }
+        return {
+          ok: true,
+          added: result.added,
+          skipped: result.skipped,
+          total: result.total,
+          iterationId: result.iterationId,
+        }
+      },
+    },
   ]
 }
 
@@ -200,6 +280,8 @@ function attempt(fn) {
     return undefined
   }
 }
+
+const isNonEmpty = (value) => typeof value === 'string' && value.trim() !== ''
 
 function requireCwd(path, toolName) {
   // 不再回退 process.cwd()：把回执写到 DSH 进程启动目录，会让整块状态落到一个没人看的项目里。
@@ -238,15 +320,83 @@ function readBuiltinPlaybook() {
  * 能力存在性：读不到返回 null（= 未知），绝不返回空集合。
  * 空集合会让界面说"没装这个技能"，而"读不到"和"没装"是两件不同的事。
  */
+/**
+ * 技能目录的磁盘扫描：`~/.dsh/skills`、`~/.agents/skills`、项目的 `.dsh/skills` / `.agents/skills`。
+ *
+ * 为什么要扫描磁盘：Host 的 skills 服务在 root context 下只能看到 global 层（实测这里只有 5 个），
+ * 而用户装在 `~/.dsh/skills` 的技能（ponytail / TDD / verification-before-completion …）属于
+ * agent 作用域，插件从面板侧看不到。只信服务会把"装着的能力"报成"缺失"，进而把下一步指令错误禁用。
+ * 扫描是只读的，名字取目录名 + SKILL.md 里声明的 name（两者都收，宁可多认不可误报缺失）。
+ */
+export async function readDiskSkillNames(cwd, options = {}) {
+  // DSH 的 home 不一定等于操作系统 home（本机就是 D:\Users\Admin\.dsh）：
+  // 优先用 DSH_HOME，其次 OS home 下的 .dsh。
+  const dshHome = isNonEmpty(options.dshHome)
+    ? options.dshHome
+    : isNonEmpty(process.env.DSH_HOME)
+      ? process.env.DSH_HOME
+      : join(homedir(), '.dsh')
+  const userHome = dirname(dshHome)
+  // 去重：未设 DSH_HOME 时 userHome 就是 OS home，两个 .agents 路径会指向同一目录。
+  const roots = [
+    ...new Set([
+      join(dshHome, 'skills'),
+      join(homedir(), '.agents', 'skills'),
+      join(userHome, '.agents', 'skills'),
+      ...(isNonEmpty(cwd) ? [join(cwd, '.dsh', 'skills'), join(cwd, '.agents', 'skills')] : []),
+    ]),
+  ]
+  const names = new Set()
+  let readable = 0
+  for (const root of roots) {
+    let entries
+    try {
+      entries = await readdir(root, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    readable += 1
+    for (const entry of entries) {
+      // 用户技能目录里的条目常常是指向别处的符号链接（DSH 自己就是这样挂的）：
+      // Dirent 对符号链接 isDirectory() 为 false，必须跟随一次才知道它是不是目录。
+      let isDirectory = entry.isDirectory()
+      if (!isDirectory && entry.isSymbolicLink()) {
+        try {
+          isDirectory = (await stat(join(root, entry.name))).isDirectory()
+        } catch {
+          isDirectory = false
+        }
+      }
+      if (!isDirectory) continue
+      names.add(entry.name)
+      // SKILL.md 里声明的 name 可能与目录名不同：两个都收，避免因改名而漏认。
+      try {
+        const text = await readFile(join(root, entry.name, 'SKILL.md'), 'utf8')
+        const declared = text.match(/^---[\s\S]*?^name:\s*["']?([^"'\r\n]+)["']?\s*$/m)
+        if (declared && declared[1].trim() !== '') names.add(declared[1].trim())
+      } catch {
+        // 没有 SKILL.md 或读不到：目录名已经记下了，不影响
+      }
+    }
+  }
+  return { names, readable }
+}
+
 async function readSkillNames(ctx, cwd) {
   const skills = attempt(() => ctx.get('skills'))
-  if (!skills || typeof skills.list !== 'function') return null
-  try {
-    const list = await skills.list({ cwd })
-    return new Set((Array.isArray(list) ? list : []).map((item) => String(item?.name ?? '')).filter(Boolean))
-  } catch {
-    return null
+  let serviceNames = null
+  if (skills && typeof skills.list === 'function') {
+    try {
+      const list = await skills.list({ cwd })
+      serviceNames = new Set((Array.isArray(list) ? list : []).map((item) => String(item?.name ?? '')).filter(Boolean))
+    } catch {
+      serviceNames = null
+    }
   }
+  const disk = await readDiskSkillNames(cwd).catch(() => ({ names: new Set(), readable: 0 }))
+  // 两边都读不到才算"无法检测"；只要有一边读得到，就以并集为准（避免把装着的技能报成缺失）。
+  if (serviceNames === null && disk.readable === 0) return null
+  return new Set([...(serviceNames ?? []), ...disk.names])
 }
 
 function readToolNames(ctx) {
@@ -427,6 +577,7 @@ export function apply(ctx, config = {}) {
       receipts: evidence.receipts?.receipts,
       acceptance: evidence.acceptance,
       review: evidence.review,
+      tasks: evidence.tasks,
     })
     for (const warning of features.warnings ?? []) {
       evidence.warnings = Array.isArray(evidence.warnings) ? evidence.warnings : []

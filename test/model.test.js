@@ -161,6 +161,74 @@ function build(ev, options = {}) {
 
 const currentNodes = (model) => [...model.progression.coldStart, ...model.progression.cycle].filter((node) => node.state === 'current')
 
+test('acceptance-draft：指令点名还缺验收的 FR，并指向 cockpit_acceptance', async () => {
+  const { buildFeatureBoard, extractFeatures } = await import('../lib/features.js')
+  const board = buildFeatureBoard({
+    extracted: extractFeatures(['## 功能需求', '### FR-1 采集', '### FR-2 转存'].join('\n')),
+    prd: { path: 'prd.md' },
+    acceptance: {
+      items: [{ id: 'A1', feature_ref: 'FR-2', title: '能转存', result: 'pass', evidence: ['shots/fr2.png'] }],
+      appliesToCurrent: true,
+      badJson: false,
+      missing: false,
+      empty: false,
+      total: 1,
+    },
+    review: { available: true, rounds: 1, blocking: 0, fixed: 0, lastRound: 1, issues: [], blockingIssues: [] },
+  })
+  const emptyAcceptance = {
+    items: [],
+    empty: true,
+    total: 0,
+    withResult: 0,
+    passed: 0,
+    failed: 0,
+    blocked: 0,
+    passWithoutEvidence: 0,
+    appliesToCurrent: true,
+  }
+  const model = build(evidence({ acceptance: emptyAcceptance }), { features: board })
+
+  assert.equal(model.nextAction.kind, 'acceptance-draft')
+  assert.match(model.nextAction.instruction, /FR-1/, '缺验收的功能要被点名')
+  assert.doesNotMatch(model.nextAction.instruction, /FR-2/, '已有验收条目的功能不该列进"还缺"')
+  assert.match(model.nextAction.instruction, /cockpit_acceptance/)
+  assert.equal(model.nextAction.disabled, false)
+  assert.deepEqual(model.nextAction.buttons, ['copy'])
+})
+
+test('acceptance-draft：缺必需能力时不得被 hint 解禁（§6.3 优先）', async () => {
+  const { buildFeatureBoard, extractFeatures } = await import('../lib/features.js')
+  const board = buildFeatureBoard({
+    extracted: extractFeatures(['## 功能需求', '### FR-1 采集'].join('\n')),
+    prd: { path: 'prd.md' },
+    acceptance: { items: [], appliesToCurrent: true, badJson: false, missing: false, empty: true, total: 0 },
+  })
+  const emptyAcceptance = {
+    items: [],
+    empty: true,
+    total: 0,
+    withResult: 0,
+    passed: 0,
+    failed: 0,
+    blocked: 0,
+    passWithoutEvidence: 0,
+    appliesToCurrent: true,
+  }
+  const model = build(evidence({ acceptance: emptyAcceptance }), {
+    features: board,
+    stageCapabilities: makeStageCapabilities({
+      verification: [resolved('verification-skill', { present: 'no', missingMessage: '该阶段需要的技能未安装：verification-skill。' })],
+    }),
+  })
+
+  assert.equal(model.nextAction.kind, 'acceptance-draft')
+  assert.equal(model.nextAction.disabled, true)
+  assert.equal(model.nextAction.instruction, null, '缺能力时不能下发指令')
+  assert.equal(model.nextAction.disabledReason, '该阶段需要的技能未安装：verification-skill。')
+  assert.doesNotMatch(JSON.stringify(model.nextAction.notes), /cockpit_acceptance/, '没有被 hint 改写')
+})
+
 test('features：载荷形状、功能进度、未知 bug 用 known=false 表示', async () => {
   const { buildFeatureBoard, extractFeatures } = await import('../lib/features.js')
   const board = buildFeatureBoard({

@@ -112,6 +112,8 @@ const FEATURES = {
       lastAt: ago(3),
       lastSummary: '修了采集重连，还剩一个并发 bug',
       receipts: 4,
+      inferredReceipts: 1,
+      anchors: { receipts: 3, tasks: 1 },
       paths: ['src/collector/**', 'src/ui/status.ts'],
     },
     {
@@ -125,6 +127,8 @@ const FEATURES = {
       lastAt: ago(120),
       lastSummary: '分析结果与验收表全部对过',
       receipts: 2,
+      inferredReceipts: 0,
+      anchors: { receipts: 2, tasks: 0 },
       paths: ['src/analyze/**'],
     },
     {
@@ -138,6 +142,8 @@ const FEATURES = {
       lastAt: ago(40),
       lastSummary: 'Excel 导出跑通，PDF 还没开始',
       receipts: 2,
+      inferredReceipts: 2,
+      anchors: { receipts: 0, tasks: 1 },
       paths: ['src/export/**'],
     },
     {
@@ -152,6 +158,8 @@ const FEATURES = {
       lastAt: null,
       lastSummary: null,
       receipts: 0,
+      inferredReceipts: 0,
+      anchors: { receipts: 0, tasks: 0 },
       paths: [],
     },
     {
@@ -165,6 +173,8 @@ const FEATURES = {
       lastAt: ago(300),
       lastSummary: '页面都改完了，等验收表填结果',
       receipts: 1,
+      inferredReceipts: 1,
+      anchors: { receipts: 0, tasks: 0 },
       paths: ['src/app/**'],
     },
   ],

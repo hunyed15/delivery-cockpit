@@ -237,6 +237,11 @@ export function renderPrompt(entry, resolved)      // -> { text:string|null, cap
 
 - `kind === 'inline'` ⇒ 恒 `present:'yes'`，且**不**进 `{capabilities}` 文本（它指向我们自己的规则，不是可调技能）。
 - `kind === 'skill'` ⇒ `services.skills` 里有同名 ⇒ yes；`skills === null`（读不到）⇒ `unknown`（UI 说"无法检测"，不谎报缺失）。
+  - **技能可见性（实测修正）**：Host 的 `skills.list()` 在 root context 下只返回 global 层（本机实测只有 5 个），
+    用户装在 `$DSH_HOME/skills` 的技能（ponytail / TDD / verification-before-completion …）属于 agent 作用域，服务侧看不到。
+    所以 `index.js` 的 `readSkillNames` = 服务列表 ∪ **磁盘扫描**（`$DSH_HOME/skills`、`~/.agents/skills`、
+    项目 `.dsh/skills` / `.agents/skills`；跟随符号链接，取目录名 + `SKILL.md` 里 `name:` 声明）。
+    两边都读不到才返回 `null`（unknown）。只信服务会把"装着的能力"报成"缺失"，进而错误禁用下一步指令。
 - `kind === 'tool'` ⇒ `services.tools` 有 ⇒ yes。
 - `kind === 'mcp'` ⇒ `services.mcp` 有 ⇒ yes。
 - `present:'no'` 时 `missingMessage` = `missingHints[kind]` 里的 `{name}` 替换；`optional:true` 的缺失**不算阻断**。
@@ -511,7 +516,7 @@ features: {
     status, statusLabel,                // 已完成/有阻塞/进行中/待验收/未开始/—
     acceptance: { total, passed, failed, blocked, missingEvidence },
     bugs: { blocking, severe, known, issues: [{severity,title,file,line}] },   // issues ≤ 3；severe 按全量归属结果算
-    lastAt, lastSummary, receipts, paths,
+    lastAt, lastSummary, receipts, inferredReceipts, anchors: { receipts, tasks }, paths,
   }],
   unattributed: { blocking, known, issues },
   notes: [string],
@@ -520,6 +525,32 @@ features: {
 
 界面口径：区④ 从「只列回执」改成「功能账表格 + 缺陷账（未归属）+ 执行回执（折叠次要）」；
 `source==='prd-missing'` 显示「还没有 prd.md」；`strategy==='none'` 显示格式提示；`bugs.known=false` 显示 `—`。
+
+### 3.14 Lead · 回执的自动归属（可解释、可覆盖）
+
+功能路径锚点有两个来源，**回执自报优先**：
+
+1. **任务锚点**：`.trellis/tasks/<task>/task.json` 的 `title` 或目录名里出现 `FR-<n>`（如 `FR-3 转存`）⇒ 该任务的 `relatedFiles` 作为这个功能的路径锚点。
+2. **回执锚点**：回执 `feature_ids` 声明的功能 ⇒ 该回执的 `write_scope` + `artifacts` 作为路径锚点。
+
+回执归属：
+
+- 写了 `feature_ids` ⇒ 只按自报归属（**不推断**，避免被路径重复挂到别的功能）。
+- 没写 `feature_ids` ⇒ 用它的路径（`write_scope` + `artifacts` + 所属任务 `relatedFiles`）与功能锚点做前缀交集推断；命中即归属，并在条目上记 `inferredReceipts`。
+- 推断出的回执**不反向扩大**功能路径（否则一条 `web/**` 会把所有功能都连起来）。
+- 界面必须显示"其中 N 条按任务 relatedFiles / 路径自动归属"与锚点来源；一条锚点都没有时，note 明确提示"第一条 coding 回执请写上 feature_ids"。
+
+### 3.15 Lead · `lib/acceptance.js` + `cockpit_acceptance` 工具（按 PRD 起草验收）
+
+- `readAcceptanceFile(projectPath)` → `{table, missing, badJson, error}`（坏表与空表分开）。
+- `normalizeDraftItems(rawItems)`：`title` 必填；`feature_ref` 可选但必须是 `FR-<数字>`（统一大写）；`result/evidence/at` 固定由人后续填。
+- `draftAcceptance(projectPath, rawItems)`：
+  - 迭代：读回执得到当前迭代；`bootstrap` ⇒ `iteration-required`（验收表属于迭代环）。
+  - 现有表坏 JSON ⇒ `acceptance-broken`（**不覆盖坏文件**）；`iteration_id` 与当前不一致 ⇒ `iteration-mismatch`；`null` ⇒ 绑定当前迭代。
+  - 去重键 = `feature_ref|title`（同一条重复起草跳过，reason `exists`）；**已有条目原样保留，只追加**，新条目 id 取未占用的 `A<n>`。
+  - 原子写（临时文件 + rename，失败回退直接写）。
+- 工具 `cockpit_acceptance({items:[{feature_ref?,title,steps?,expect?}]})`：必须声明 `output`；只写会话工作目录下的 `.dsh/plugin-state/acceptance.json`（**没有 cwd 参数**，无注入面）；错误码翻译成人话后抛出。
+- 生成验收清单那一步（`kind==='acceptance-draft'`）的指令由模型按功能账改写：点名"还缺 FR-x"，指向 `cockpit_acceptance`，其余阶段仍完全由 playbook 模板决定。
 
 ## 4. 验收（真机）
 
@@ -533,11 +564,17 @@ features: {
 
 实测记录（2026-11-20/21，DSH 0.2.2-rc.5 / Node 24.20）：
 
-- 1/2/3/4/6 全部通过；`npm test` = 244 用例全绿。
+- 1/2/3/4/6 全部通过；`npm test` = 271 用例全绿。
 - 安装返回 `application: applied`；`listTools` 可见 `cockpit_report` / `cockpit_init`；`Slots.listSubTree` 在 live 页面里看到 `main` 与 `sidebar.panellist` 都有 `delivery-cockpit`（active）。
 - HTTP 实测（本机 `Invoke-WebRequest`）：未登记路径 403、缺 path 400、无原型批准 409、同源 POST 200、跨源 POST 403、二次 init `applied:false / created:[]`。
 - **功能账 live 实测**（临时夹具：PRD 4 条 FR + 3 条回执 + 验收表 + 审核账本 1 条归属 bug、1 条未归属）：FR-1 = 有阻塞（bug 归属到 `web/orders/list.ts`）、FR-2/FR-3 = 进行中、FR-4 = 未开始且待修列 `—`（known=false）、未归属 1 条、功能进度 0/4。夹具用完已清理，未留在仓库。
 - **真实 PRD 实测**：`D:\Coding\EasyVod` 的 `docs/prd.md`（959 行）→ 稳定提取 10 条功能（FR-1…FR-10，P0/P1 正确，`（P0，核心差异化）` 这类写法也能正确剥出标题与优先级），状态全部「未开始」、待修列 `—`（没有审核账本），如实反映"只有 PRD、还没有执行证据"。
+- **V1.0.2 live 实测**（临时夹具，验完已清理）：
+  - 任务 `T2` 标题 `FR-1 客户列表` + `relatedFiles:["web/orders"]` ⇒ 形成任务锚点；回执 `r-1` 自报 `feature_ids:["FR-1"]` ⇒ 显式归属。
+  - 回执 `r-2` **没写** `feature_ids`，只靠 `task_ref:"T1"` 与任务 `relatedFiles:["web/import"]` ⇒ 被推断归属到 `FR-2`（`inferredReceipts=1`），note 写明"有 1 条回执没写 feature_ids，已自动归属"。
+  - `acceptance-draft` 的指令实测为「还缺 FR-1、FR-2、FR-3：调用 cockpit_acceptance 一次写入…」。
+  - 直接走工具的 execute 路径：首次 `added=2`，再次 `skipped=1`（幂等、不重复），写出的条目 `result:null / evidence:[]`。
+  - 技能可见性修正前后：`verification-before-completion` 由 `no` → `yes`，`missing` 只剩真正没装的 `playwright`。
 - 第 5 条的 **页面内点击** 属人工确认项（agent 打不开带鉴权的 GUI）；视觉由 `tools/preview` 的真实 React + CDP 截图覆盖：`features.png`（功能账主视图）/ `features-prd-missing.png` / `features-no-fr.png` / `degraded.png` / `overview.png` / `features-360.png`（360px 无横向溢出）。
 - 改动 Host 代码后需要**重载插件**（disable→enable 或重启 DSH）才生效；只改 `client.js` 需要**刷新页面**。
 
@@ -571,6 +608,19 @@ features: {
 
 - `evidence.review` 新增 `blockingIssues`（全量，上限 200；`issues` 仍是前 3 条给列表用）：功能账要按文件路径归属 bug，只给 3 条会把其余 bug 误算成「未归属」。
 - `cockpit_report` 新增可选 `feature_ids: string[]`（落盘统一去空格 + 大写）；`acceptance.json` 条目的 `feature_ref` 直接透传（evidence 的 items 保留原始字段）。
+- `evidence.tasks.items[]` 新增 `relatedFiles`（上限 50）：自动归属要用任务的声明范围，不能凭空猜。
+
+**功能账（V1.0.2 补：自动归属 + 验收起草）**
+
+- 自动归属的锚点优先级：回执自报 `feature_ids` > 任务标题里的 `FR-<n>` + `relatedFiles`。**推断只用于挂回执，不反向扩大功能路径**（否则一条 `web/**` 会把所有功能连起来）。
+- 界面新增 `inferredReceipts` / `anchors{receipts,tasks}`：自动归属必须能一眼看出"为什么算在这条功能上"。
+- 新增工具 `cockpit_acceptance`（第三个工具）：只追加、绝不覆盖已有 `result/evidence`；`bootstrap` 阶段拒绝（验收表属于迭代环）；坏表/跨迭代一律拒绝写入。
+- `acceptance-draft` 的下一步指令由模型按功能账改写（点名还缺的 `FR-x` 并指向 `cockpit_acceptance`）；这是唯一一处覆盖 playbook 模板的地方，已在上文 §3.15 写死。
+  - 独立评审第 1 轮 important：改写**必须在 `action.disabled === false` 时才发生**，且只改 instruction/notes/buttons，绝不改 `disabled`/`disabledReason` —— 否则会把"缺必需能力不下发指令"这道防线绕过去。
+- 自动归属的 note 按**唯一回执**计数（一条回执覆盖多个功能时是"多处归属"，不是"多条回执"）；`task_ref` 指向不存在的任务时优雅降级为空。
+- **技能可见性修正**（live 实测发现）：只信 `ctx.skills.list()` 会把用户目录里装着的技能报成"缺失"（root context 只看得到 global 层），
+  于是"验效果"这类阶段被错误禁用。现在 `readSkillNames` = 服务 ∪ 磁盘扫描（`$DSH_HOME/skills`、`~/.agents/skills`、项目两个目录；
+  跟随符号链接、目录名与 `SKILL.md` 的 `name:` 都收）。实测修正后 `verification-before-completion` 由 `no` 变 `yes`，只剩真正没装的 `playwright` 报缺失。
 - 状态优先级按实现收敛为：`有阻塞`（归属 bug）> `已完成`（验收全 pass 且有证据）> `进行中`（in_progress/blocked 回执，或验收部分有结果）> `待验收`（completed 回执但没验收通过）> `未开始`（无任何关联证据）> `—`（验收表坏了且无证据）。
   - 关键修正：**验收草稿（result 全 null）不是证据**——它曾经让"什么都没做"的功能显示「待验收」，语义反了。
 - 每条功能的 `bugs.known` 独立判断：账本不可用，或该功能没有任何可归属路径而账本里确有 bug ⇒ `false`（界面显示 `—`）。**不写 0**。

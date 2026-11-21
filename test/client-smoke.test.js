@@ -169,6 +169,13 @@ test('缺陷账：known 不能伪造成 0，未归属必须单列', () => {
   assert.ok(source.includes('SEVERITY_TEXT'), 'bug 明细必须显示 severity 中文')
 })
 
+test('自动归属可解释：推断条数与路径锚点要显示出来', () => {
+  assert.ok(source.includes('inferredReceipts'), '必须消费 inferredReceipts')
+  assert.ok(source.includes('自动归属'), '展开区必须说明哪些回执是自动归属的')
+  assert.ok(source.includes('路径锚点'), '展开区必须说明锚点来源（自报回执 / 任务标题）')
+  assert.ok(source.includes('写了 feature_ids 的回执优先'), '必须写明显式声明优先于推断')
+})
+
 test('功能账空态：PRD 缺失 / 结构认不出 / 无条目 分开写', () => {
   assert.ok(source.includes("source === 'prd-missing'"), '必须处理 prd-missing')
   assert.ok(source.includes('还没有 prd.md —— 想清楚阶段会产出它'), 'PRD 缺失文案必须逐字')
