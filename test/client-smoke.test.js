@@ -78,12 +78,14 @@ test('侧栏图标是纯 SVG 且用 currentColor', () => {
 
 test('API 前缀与端点逐字对接契约', () => {
   assert.ok(source.includes("const API = '/delivery-cockpit/api'"), 'API 前缀必须逐字')
-  for (const endpoint of ['/workspaces', '/panel?path=', '/init-plan?path=', '/init', '/approve-prototype']) {
+  for (const endpoint of ['/workspaces', '/panel?path=', '/init-plan?path=', '/init', '/approve-prototype', '/acceptance-result']) {
     assert.ok(source.includes(`\${API}${endpoint}`), `缺少接口 ${endpoint}`)
   }
   // 写盘动作必须显式确认 + 按迭代批准；缺任何一个都会写坏状态。
   assert.ok(source.includes('confirm: true'), 'POST /init 必须带 confirm: true')
   assert.ok(source.includes('iteration_id: props.iterationId'), 'approve-prototype 必须带 iteration_id')
+  assert.ok(source.includes('item_id: id'), 'acceptance-result 必须带 item_id')
+  assert.ok(source.includes('evidence,'), 'acceptance-result 必须带 evidence')
   assert.ok(source.includes("credentials: 'same-origin'"), 'fetch 必须 same-origin')
   const fetches = [...source.matchAll(/fetch\(/g)]
   assert.equal(fetches.length, 1, '所有请求必须收口到一个 fetch 封装')
@@ -194,6 +196,43 @@ test('执行回执退到折叠区（默认折叠）', () => {
   // 回执区不能默认展开：details 上不能带 open。
   assert.ok(!/h\('details',\s*\{\s*className:\s*'dc-receipts',\s*open:/.test(source), '回执区默认不得展开')
   assert.ok(source.includes("h('summary', null, `执行回执"), '回执折叠区必须有 summary')
+})
+
+test('验收清单：面板内可点记录结果', () => {
+  assert.ok(source.includes('acceptance.items'), '必须消费 acceptance.items')
+  assert.ok(source.includes('AcceptancePanel'), '必须有验收清单组件')
+  assert.ok(source.includes('验收清单（') && source.includes('条 · ') && source.includes('已通过'),
+    '验收清单标题必须带「N 条 · x 已通过」')
+  assert.ok(source.includes('dc-acceptance') && source.includes('open: true'), '验收清单必须默认展开')
+  for (const button of ["'通过'", "'失败'", "'阻塞'", "'撤销'"]) {
+    assert.ok(source.includes(button), `缺少操作按钮 ${button}`)
+  }
+  assert.ok(source.includes('dc-evidence-input'), '证据必须可编辑（行内 input）')
+  assert.ok(source.includes('截图路径或 URL'), '证据输入要有 placeholder')
+  // 摘要里的通过数必须用 Host 的全局真值：items 最多 100 条，截断时前端 filter 只覆盖可见项。
+  assert.ok(source.includes('acceptance.passed'), '验收摘要必须用 Host 的 acceptance.passed')
+  assert.ok(source.includes('Number.isFinite(passedRaw)'), '缺 acceptance.passed 时才回退本地统计')
+  assert.ok(source.includes('通过必须附证据'), '点通过但没证据时必须拦下')
+  assert.ok(source.includes("submit(item, null)"), '撤销必须发 result=null')
+  assert.ok(source.includes('if (props.onRefresh) props.onRefresh()'), '成功后必须刷新面板')
+  assert.ok(source.includes('还没有验收清单：让 Agent 用 cockpit_acceptance 起草'), '空态文案必须逐字')
+  assert.ok(source.includes("props.actionKind === 'acceptance-draft'"), 'acceptance-draft 时要有指引')
+})
+
+test('验收结果错误码全部翻人话', () => {
+  for (const [code, text] of [
+    ['evidence-required', '通过必须附证据'],
+    ['evidence-not-found', '证据文件不存在：先确认路径'],
+    ['iteration-mismatch', '验收表属于别的迭代'],
+    ['acceptance-broken', '验收表不是合法 JSON，先修好'],
+    ['item-not-found', '这条验收项已不存在，刷新面板'],
+    ['bad-result', '结果只能是 通过 / 失败 / 阻塞 / 撤销'],
+    ['workspace-not-allowed', '这个工作区不在已登记列表里'],
+  ]) {
+    assert.ok(source.includes(code), `缺少错误码映射 ${code}`)
+    assert.ok(source.includes(text), `错误码 ${code} 没翻成人话`)
+  }
+  assert.ok(source.includes('explainAcceptanceError'), '错误码必须收口到一个映射函数')
 })
 
 test('降级矩阵：横幅、坏行、缺失能力', () => {

@@ -13,7 +13,9 @@ import {
   acceptancePathOf,
   draftAcceptance,
   normalizeDraftItems,
+  normalizeEvidence,
   readAcceptanceFile,
+  setAcceptanceResult,
 } from '../lib/acceptance.js'
 import { appendReceipt, stateDirOf } from '../lib/receipts.js'
 
@@ -191,5 +193,181 @@ test('null 迭代的旧表会被绑定到当前迭代', async () => {
     assert.equal(result.ok, true)
     const table = await readTable(project)
     assert.equal(table.iteration_id, 'v1.0')
+  })
+})
+
+/** 写一张带一条待验条目的表，并可选地放一张真实截图。 */
+async function seedTable(project, withShot = false) {
+  await startIteration(project)
+  await writeTable(project, {
+    schemaVersion: 1,
+    iteration_id: 'v1.0',
+    items: [{ id: 'A1', feature_ref: 'FR-1', title: '能添加客户', steps: '点新增', expect: '列表出现', result: null, evidence: [], at: null }],
+  })
+  if (withShot) {
+    await mkdir(join(project, 'shots'), { recursive: true })
+    await writeFile(join(project, 'shots', 'a1.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+  }
+}
+
+test('撤销必须无条件成功：即使旧证据文件已经被删掉', async () => {
+  await withProject(async (project) => {
+    await seedTable(project, true)
+    await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['shots/a1.png'] })
+    // 人删了截图/改了名——撤销不该被"证据文件不存在"拦死
+    await rm(join(project, 'shots', 'a1.png'), { force: true })
+    const cleared = await setAcceptanceResult(project, { item_id: 'A1', result: null, evidence: ['shots/a1.png'] })
+    assert.equal(cleared.ok, true)
+    assert.equal(cleared.item.result, null)
+    assert.deepEqual(cleared.item.evidence, [])
+    assert.equal(cleared.item.at, null)
+  })
+})
+
+test('失败/阻塞的证据只是备注：旧文件被删也能改判（pass 仍严格要求存在）', async () => {
+  await withProject(async (project) => {
+    await seedTable(project, true)
+    await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['shots/a1.png'] })
+    await rm(join(project, 'shots', 'a1.png'), { force: true })
+
+    const failed = await setAcceptanceResult(project, { item_id: 'A1', result: 'fail', evidence: ['shots/a1.png'] })
+    assert.equal(failed.ok, true, '改判为失败不该被旧证据文件卡住')
+    assert.equal(failed.item.result, 'fail')
+
+    // 但通过仍然要求证据真实存在
+    const blocked = await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['shots/a1.png'] })
+    assert.equal(blocked.ok, false)
+    assert.equal(blocked.error, 'evidence-not-found')
+  })
+})
+
+test('填结果：漏传 result 字段必须拒绝（≠ 撤销），不能静默擦掉已填结果', async () => {
+  await withProject(async (project) => {
+    await seedTable(project, true)
+    await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['shots/a1.png'] })
+    const before = await readFile(acceptancePathOf(project), 'utf8')
+
+    const missing = await setAcceptanceResult(project, { item_id: 'A1' })
+    assert.deepEqual(missing, { ok: false, error: 'bad-result' })
+    assert.equal(await readFile(acceptancePathOf(project), 'utf8'), before, '请求非法时一个字节都不许改')
+  })
+})
+
+test('填结果：通过必须附证据，且证据文件必须真实存在', async () => {
+  await withProject(async (project) => {
+    await seedTable(project)
+    assert.deepEqual(await setAcceptanceResult(project, { item_id: 'A1', result: 'pass' }), {
+      ok: false,
+      error: 'evidence-required',
+    })
+    const missing = await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['shots/nope.png'] })
+    assert.equal(missing.ok, false)
+    assert.equal(missing.error, 'evidence-not-found')
+
+    // 路径穿越也要拒绝：证据只能来自项目内
+    const traversal = await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['../outside.png'] })
+    assert.equal(traversal.ok, false)
+    assert.equal(traversal.error, 'evidence-not-found')
+  })
+})
+
+test('填结果：通过 + 真实截图 ⇒ pass 落盘并归一化证据路径', async () => {
+  await withProject(async (project) => {
+    await seedTable(project, true)
+    const result = await setAcceptanceResult(project, {
+      item_id: 'A1',
+      result: 'pass',
+      evidence: [join('.', 'shots', 'a1.png')],
+    })
+    assert.equal(result.ok, true)
+    assert.equal(result.item.result, 'pass')
+    assert.deepEqual(result.item.evidence, ['shots/a1.png'])
+    assert.equal(typeof result.item.at, 'string')
+
+    const table = await readTable(project)
+    assert.equal(table.items[0].result, 'pass')
+    assert.deepEqual(table.items[0].evidence, ['shots/a1.png'])
+  })
+})
+
+test('填结果：http(s) URL 可当证据（比如预览链接）', async () => {
+  await withProject(async (project) => {
+    await seedTable(project)
+    const result = await setAcceptanceResult(project, {
+      item_id: 'A1',
+      result: 'pass',
+      evidence: ['https://example.com/preview'],
+    })
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.item.evidence, ['https://example.com/preview'])
+  })
+})
+
+test('填结果：失败/阻塞不强制证据；撤销会清空结果与证据', async () => {
+  await withProject(async (project) => {
+    await seedTable(project, true)
+    const failed = await setAcceptanceResult(project, { item_id: 'A1', result: 'fail' })
+    assert.equal(failed.ok, true)
+    assert.equal(failed.item.result, 'fail')
+    assert.deepEqual(failed.item.evidence, [])
+
+    const passed = await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['shots/a1.png'] })
+    assert.equal(passed.ok, true)
+
+    const cleared = await setAcceptanceResult(project, { item_id: 'A1', result: null })
+    assert.equal(cleared.ok, true)
+    assert.equal(cleared.item.result, null)
+    assert.deepEqual(cleared.item.evidence, [], '撤销要连证据一起清掉，否则会出现"未验但有证据"的怪状态')
+    assert.equal(cleared.item.at, null)
+
+    const table = await readTable(project)
+    assert.equal(table.items[0].result, null)
+    assert.equal(table.items[0].title, '能添加客户', '撤销只动结果，不动条目本身')
+  })
+})
+
+test('填结果：非法枚举、条目不存在、迭代不匹配、坏表都明确报错', async () => {
+  await withProject(async (project) => {
+    await seedTable(project)
+    assert.deepEqual(await setAcceptanceResult(project, { item_id: 'A1', result: 'done' }), { ok: false, error: 'bad-result' })
+    assert.deepEqual(await setAcceptanceResult(project, { item_id: '', result: 'fail' }), { ok: false, error: 'item-required' })
+    assert.deepEqual(await setAcceptanceResult(project, { item_id: 'A9', result: 'fail' }), { ok: false, error: 'item-not-found' })
+
+    await writeTable(project, { schemaVersion: 1, iteration_id: 'v0.9', items: [{ id: 'A1', title: 'x' }] })
+    const mismatch = await setAcceptanceResult(project, { item_id: 'A1', result: 'fail' })
+    assert.equal(mismatch.ok, false)
+    assert.equal(mismatch.error, 'iteration-mismatch')
+
+    await writeFile(acceptancePathOf(project), '{ broken', 'utf8')
+    const broken = await setAcceptanceResult(project, { item_id: 'A1', result: 'fail' })
+    assert.equal(broken.ok, false)
+    assert.equal(broken.error, 'acceptance-broken')
+  })
+})
+
+test('填结果：没有验收表时是 item-not-found；bootstrap 阶段拒绝', async () => {
+  await withProject(async (project) => {
+    await startIteration(project)
+    await mkdir(stateDirOf(project), { recursive: true })
+    const noTable = await setAcceptanceResult(project, { item_id: 'A1', result: 'fail' })
+    assert.equal(noTable.ok, false)
+    assert.equal(noTable.error, 'item-not-found')
+  })
+  await withProject(async (project) => {
+    const result = await setAcceptanceResult(project, { item_id: 'A1', result: 'fail' })
+    assert.deepEqual(result, { ok: false, error: 'iteration-required' })
+  })
+})
+
+test('normalizeEvidence：空数组合法、非字符串拒绝、超过上限截断', async () => {
+  await withProject(async (project) => {
+    assert.deepEqual(await normalizeEvidence(project, []), { ok: true, evidence: [] })
+    assert.deepEqual(await normalizeEvidence(project, ['  ']), { ok: true, evidence: [] })
+    assert.equal((await normalizeEvidence(project, [42])).error, 'bad-evidence')
+
+    const many = Array.from({ length: 25 }, (_, index) => `https://example.com/${index}`)
+    const capped = await normalizeEvidence(project, many)
+    assert.equal(capped.ok, true)
+    assert.equal(capped.evidence.length, 20)
   })
 })

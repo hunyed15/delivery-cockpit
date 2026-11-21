@@ -125,6 +125,35 @@ const HARNESS = `(function () {
     setTimeout(function () { waitFor(selector, callback, attempt + 1) }, 100)
   }
 
+  function rowFor(id) {
+    return document.querySelector('[data-acceptance-id="' + id + '"]')
+  }
+
+  function clickInRow(id, text) {
+    var row = rowFor(id)
+    if (!row) return false
+    var buttons = row.querySelectorAll('button')
+    for (var i = 0; i < buttons.length; i++) {
+      if ((buttons[i].textContent || '').indexOf(text) >= 0) { buttons[i].click(); return true }
+    }
+    return false
+  }
+
+  // React 受控 input 必须用原生 setter + input 事件，直接改 .value 不会触发 onChange。
+  function setReactInput(input, value) {
+    var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+    setter.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  function waitForRowText(id, text, callback, attempt) {
+    attempt = attempt || 0
+    var row = rowFor(id)
+    if (row && (row.textContent || '').indexOf(text) >= 0) { callback(); return }
+    if (attempt > 80) { document.title = 'timeout:row-' + id; return }
+    setTimeout(function () { waitForRowText(id, text, callback, attempt + 1) }, 100)
+  }
+
   window.__harness = {
     boot: function () {
       var ctx = {
@@ -194,6 +223,32 @@ const HARNESS = `(function () {
             return
           }
         }
+        // acceptance-edit：点开一条验收项的证据输入框。
+        if (scenario === 'acceptance-edit') {
+          if (clickInRow('A4', '编辑')) {
+            waitFor('.dc-evidence-input', function () { document.title = 'ready:' + scenario })
+            return
+          }
+        }
+        // acceptance-save：撤销 A1 的通过结果，验证 POST /acceptance-result 成功后刷新。
+        if (scenario === 'acceptance-save') {
+          if (clickInRow('A1', '撤销')) {
+            waitForRowText('A1', '未验', function () { document.title = 'ready:' + scenario })
+            return
+          }
+        }
+        // acceptance-error：给未验项填一个不存在的证据路径，验证 409 错误翻成人话。
+        if (scenario === 'acceptance-error') {
+          if (clickInRow('A4', '编辑')) {
+            waitFor('.dc-evidence-input', function () {
+              var input = document.querySelector('.dc-evidence-input')
+              if (input) setReactInput(input, 'shots/missing-evidence.png')
+              clickInRow('A4', '通过')
+              waitFor('.dc-acc-error', function () { document.title = 'ready:' + scenario })
+            })
+            return
+          }
+        }
         document.title = 'ready:' + scenario
       })
     },
@@ -205,6 +260,8 @@ let currentScenario = 'normal'
 // 只在 approve-action 场景使用：POST 成功后，后续 /panel 必须返回「已批准」，
 // 这样截图验证的是「点通过 → 刷新成只读」这条真实链路，而不是静态假状态。
 let approved = false
+// 验收结果写操作的内存覆盖：模拟 Host 落盘后 /panel 的变化（截图才能看到刷新后的结果）。
+let acceptanceOverrides = new Map()
 
 function scenarioOf(url) {
   return url.searchParams.get('scenario') || currentScenario
@@ -233,6 +290,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1')
   if (url.pathname === '/') currentScenario = url.searchParams.get('scenario') || 'normal'
   if (url.pathname === '/') approved = false
+  if (url.pathname === '/') acceptanceOverrides = new Map()
   const scenario = scenarioOf(url)
 
   try {
@@ -281,7 +339,50 @@ const server = createServer(async (req, res) => {
       const projectPath = url.searchParams.get('path')
       if (!projectPath) return sendJson(res, 400, { ok: false, error: 'missing-path' })
       const panelScenario = scenario === 'approve-action' && approved ? 'approved' : scenario
-      return sendJson(res, 200, { ok: true, panel: panelFor(panelScenario) })
+      const panel = panelFor(panelScenario)
+      // 把验收结果的写操作结果反映到下一次 /panel，模拟真实 Host 的落盘再读。
+      if (acceptanceOverrides.size > 0 && panel.acceptance && Array.isArray(panel.acceptance.items)) {
+        const items = panel.acceptance.items.map((item) =>
+          acceptanceOverrides.has(item.id) ? { ...item, ...acceptanceOverrides.get(item.id) } : item,
+        )
+        panel.acceptance = {
+          ...panel.acceptance,
+          items,
+          total: items.length,
+          withResult: items.filter((item) => item.result !== null && item.result !== undefined).length,
+          passed: items.filter((item) => item.result === 'pass').length,
+          failed: items.filter((item) => item.result === 'fail').length,
+          blocked: items.filter((item) => item.result === 'blocked').length,
+        }
+        // 预览里同步功能账的验收汇总，避免「撤销后 区③ 1/6、功能表仍 1/2」的自相矛盾。
+        if (panel.features && Array.isArray(panel.features.items)) {
+          const byFeature = new Map()
+          for (const item of items) {
+            if (!item.featureRef) continue
+            const list = byFeature.get(item.featureRef) || []
+            list.push(item)
+            byFeature.set(item.featureRef, list)
+          }
+          panel.features = {
+            ...panel.features,
+            items: panel.features.items.map((feature) => {
+              const refs = byFeature.get(feature.id)
+              if (!refs || refs.length === 0) return feature
+              return {
+                ...feature,
+                acceptance: {
+                  total: refs.length,
+                  passed: refs.filter((item) => item.result === 'pass').length,
+                  failed: refs.filter((item) => item.result === 'fail').length,
+                  blocked: refs.filter((item) => item.result === 'blocked').length,
+                  missingEvidence: refs.filter((item) => item.result === null).length,
+                },
+              }
+            }),
+          }
+        }
+      }
+      return sendJson(res, 200, { ok: true, panel })
     }
 
     if (url.pathname === '/delivery-cockpit/api/init-plan') {
@@ -308,6 +409,35 @@ const server = createServer(async (req, res) => {
       }
       approved = true
       return sendJson(res, 200, approveResult(body.iteration_id))
+    }
+
+    if (url.pathname === '/delivery-cockpit/api/acceptance-result' && req.method === 'POST') {
+      const body = await readBody(req)
+      if (!body || !body.item_id) {
+        return sendJson(res, 400, { ok: false, error: 'item-required' })
+      }
+      const allowed = [null, 'pass', 'fail', 'blocked']
+      if (!Object.prototype.hasOwnProperty.call(body, 'result') || allowed.indexOf(body.result) < 0) {
+        return sendJson(res, 400, { ok: false, error: 'bad-result' })
+      }
+      const evidence = Array.isArray(body.evidence) ? body.evidence.filter((item) => typeof item === 'string') : []
+      if (body.result === 'pass' && evidence.length === 0) {
+        return sendJson(res, 400, { ok: false, error: 'evidence-required' })
+      }
+      const base = panelFor(scenario === 'acceptance-empty' ? 'acceptance-empty' : scenario)
+      const items = base && base.acceptance && Array.isArray(base.acceptance.items) ? base.acceptance.items : []
+      const item = items.find((candidate) => candidate.id === body.item_id)
+      if (!item) return sendJson(res, 404, { ok: false, error: 'item-not-found' })
+      // 预览用「文件不存在」的模拟：路径里带 missing/notfound 就按 409 处理。
+      if (evidence.some((value) => /missing|notfound/i.test(value))) {
+        return sendJson(res, 409, { ok: false, error: 'evidence-not-found' })
+      }
+      const patch =
+        body.result === null
+          ? { result: null, evidence: [], at: null }
+          : { result: body.result, evidence, at: new Date().toISOString() }
+      acceptanceOverrides.set(item.id, patch)
+      return sendJson(res, 200, { ok: true, item: { ...item, ...patch } })
     }
 
     res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })

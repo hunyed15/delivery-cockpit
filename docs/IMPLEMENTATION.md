@@ -351,7 +351,7 @@ export function buildDetailModel({ evidence, playbook, stageCapabilities, genera
     receipts: [{ id, at, iterationId, stage, stageName, status, summary, artifacts, usedSkill, needsDecision, taskRef, writeScope }],
     total, truncated, badLines, missing, lastAt,
   },                              // receipts 最多 20 条（时间倒序），total 是全量条数
-  acceptance: { total, withResult, passed, failed, blocked, empty, badJson },
+  acceptance: { total, withResult, passed, failed, blocked, empty, badJson, truncated, items: [{id, featureRef, title, steps, expect, result, evidence, at}] },  // items ≤ 100
   review: { available, reason, rounds, blocking, fixed, issues },  // issues 最多 3
   tasks: { available, total, open, completed, items },             // items 最多 20
   warnings: [{source,message}],   // 最多 20
@@ -393,6 +393,7 @@ export function createRoutes(deps) // -> { handle(request): Promise<Response> }
 | GET | `/init-plan?path=` | 同上授权；`{ok:true, plan}` |
 | POST | `/init` | body `{path, confirm:true}`；`confirm!==true` ⇒ 400 `confirm-required`；未授权 ⇒ 403；成功 `{ok:true, applied, created, skipped, gitignoreHint}` |
 | POST | `/approve-prototype` | body `{path, iteration_id}`；未授权 ⇒ 403；迭代为空/bootstrap ⇒ 400 `iteration-required`；找不到 `prototype.html` ⇒ 409 `prototype-missing`；成功 `{ok:true, approval:{iterationId, prototypeApprovedAt, prototype}}` |
+| POST | `/acceptance-result` | body `{path, item_id, result:'pass'\|'fail'\|'blocked'\|null, evidence?: string[]}`；400 `item-required`/`bad-result`/`bad-evidence`/`evidence-required`；404 `item-not-found`；409 `evidence-not-found`/`acceptance-broken`/`iteration-mismatch`/`iteration-required`；成功 `{ok:true, item}`（`null` = 撤销，清空 result/at/evidence） |
 | 其他 | — | 404 `not found` |
 
 - 资源路由只接 GET/HEAD（DSH 实测对 resource 的非 GET 回 405）；POST 走 `kind:'exact'` 的 **handler 路由**（`initHandler(deps)`，签名 `(req, res) => Promise<void>`）。
@@ -551,6 +552,15 @@ features: {
   - 原子写（临时文件 + rename，失败回退直接写）。
 - 工具 `cockpit_acceptance({items:[{feature_ref?,title,steps?,expect?}]})`：必须声明 `output`；只写会话工作目录下的 `.dsh/plugin-state/acceptance.json`（**没有 cwd 参数**，无注入面）；错误码翻译成人话后抛出。
 - 生成验收清单那一步（`kind==='acceptance-draft'`）的指令由模型按功能账改写：点名"还缺 FR-x"，指向 `cockpit_acceptance`，其余阶段仍完全由 playbook 模板决定。
+- **人工填结果**：`setAcceptanceResult(projectPath, {item_id, result, evidence})`（`lib/acceptance.js`）——
+  - `result: null` = 撤销：**无条件成功**（直接清空 `result/at/evidence`，不校验旧证据文件是否还在）；
+  - 枚举只收 `pass|fail|blocked`；
+  - `pass` 必须至少一条证据，且项目内相对路径必须**真实存在、不越出项目**（防编造截图/路径穿越），`http(s)` URL 原样允许；
+  - `fail`/`blocked` 的证据只是备注：只做路径规整，**不校验文件存在**（旧截图被删不该妨碍改判）；
+  - `result` 大小写不敏感（存盘统一小写）；证据上限 20 条。
+  - **已知放宽**：`http(s)` URL 证据不做可达性校验（预览链接是真实用例，离线也无法校验），只保证它是合法 URL 形状。
+  - 落盘只改这一条的结果/证据/时间，不动标题与步骤；迭代不匹配、坏表、条目不存在都 fail-closed。
+  - HTTP 层：`POST /acceptance-result`（已登记工作区授权 + 同源 + JSON + body 上限），错误码 → 状态码见 §3.9。
 
 ## 4. 验收（真机）
 
@@ -564,7 +574,7 @@ features: {
 
 实测记录（2026-11-20/21，DSH 0.2.2-rc.5 / Node 24.20）：
 
-- 1/2/3/4/6 全部通过；`npm test` = 271 用例全绿。
+- 1/2/3/4/6 全部通过；`npm test` = 288 用例全绿。
 - 安装返回 `application: applied`；`listTools` 可见 `cockpit_report` / `cockpit_init`；`Slots.listSubTree` 在 live 页面里看到 `main` 与 `sidebar.panellist` 都有 `delivery-cockpit`（active）。
 - HTTP 实测（本机 `Invoke-WebRequest`）：未登记路径 403、缺 path 400、无原型批准 409、同源 POST 200、跨源 POST 403、二次 init `applied:false / created:[]`。
 - **功能账 live 实测**（临时夹具：PRD 4 条 FR + 3 条回执 + 验收表 + 审核账本 1 条归属 bug、1 条未归属）：FR-1 = 有阻塞（bug 归属到 `web/orders/list.ts`）、FR-2/FR-3 = 进行中、FR-4 = 未开始且待修列 `—`（known=false）、未归属 1 条、功能进度 0/4。夹具用完已清理，未留在仓库。
@@ -575,6 +585,7 @@ features: {
   - `acceptance-draft` 的指令实测为「还缺 FR-1、FR-2、FR-3：调用 cockpit_acceptance 一次写入…」。
   - 直接走工具的 execute 路径：首次 `added=2`，再次 `skipped=1`（幂等、不重复），写出的条目 `result:null / evidence:[]`。
   - 技能可见性修正前后：`verification-before-completion` 由 `no` → `yes`，`missing` 只剩真正没装的 `playwright`。
+- **V1.0.3 live 实测**（临时夹具，验完已清理）：`POST /acceptance-result` 无证据 400、证据不存在 409、真实截图 200（证据归一化为 `shots/a1.png`、写入 `at`）、撤销 200 清空、未授权路径 403；面板随之把 FR-1 变「已完成」、功能进度 1/1。修复后复测：**漏传 `result` 字段 400 且 `acceptance.json` 一个字节未变**，显式 `null` 才走撤销。
 - 第 5 条的 **页面内点击** 属人工确认项（agent 打不开带鉴权的 GUI）；视觉由 `tools/preview` 的真实 React + CDP 截图覆盖：`features.png`（功能账主视图）/ `features-prd-missing.png` / `features-no-fr.png` / `degraded.png` / `overview.png` / `features-360.png`（360px 无横向溢出）。
 - 改动 Host 代码后需要**重载插件**（disable→enable 或重启 DSH）才生效；只改 `client.js` 需要**刷新页面**。
 
@@ -626,6 +637,17 @@ features: {
 - 每条功能的 `bugs.known` 独立判断：账本不可用，或该功能没有任何可归属路径而账本里确有 bug ⇒ `false`（界面显示 `—`）。**不写 0**。
 - 路径匹配：`write_scope`/`artifacts` 归一成正斜杠、去 `./`、折叠重复斜杠、去尾部 `/**`/`/*`/`/`；按"等于或前缀 + `/`"匹配 issue.file。
 - PRD 提取跳过代码围栏、按 id 去重、`(P0)`/`（P1）` 解析并从标题剥离；没有「功能需求」小节时全文兜底并留一条建议；完全没有 FR 结构 ⇒ 空 + 格式提示。
+
+**功能账（V1.0.3 补：面板内填验收结果）**
+
+- 面板新增写动作 `POST /acceptance-result`（另一处写接口）：只允许已登记工作区 + 同源 + JSON；`pass` 强制证据，且项目内路径必须真实存在、不越出项目（`http(s)` URL 放行）。
+- 模型载荷 `panel.acceptance.items`（≤100 条，`truncated` 标记截断）：界面据此渲染验收清单与四个动作按钮，**不在前端重算通过数**（counts 仍由 Host 算）。
+- `result:null` 语义 = 撤销（清空 result/at/evidence）。理由：保留"未验但有证据"的状态会让"通过必须附证据"这条不变量出现歧义。
+- 证据最多 20 条；超过的截断（不报错），避免病态输入撑爆写盘。
+- **`result` 必须显式给**（独立评审第 1 轮 important）：字段缺失或 `undefined` ≠ 撤销，直接 400 `bad-result`；
+  路由层只透传客户端真的给了的字段，避免"漏字段"被下游解释成"清空人已经填好的结果"。
+- **证据按结果分级校验**（独立评审第 2 轮 important）：`pass` 才校验文件存在；`fail`/`blocked` 只规整不校验；
+  `null`（撤销）无条件成功、完全不碰磁盘。理由：撤销/改判不该被"旧截图已被删除"卡死。
 
 **接线层**
 

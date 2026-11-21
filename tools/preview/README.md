@@ -47,6 +47,12 @@ node tools/preview/shot.mjs "http://127.0.0.1:4711/?scenario=normal" 360 --measu
 | `features-expanded` | 自动展开第一行，验证 bug 明细（severity/标题/file:line）与关联路径 |
 | `features-prd-missing` | 没有 prd.md 的空态（引导去 prd.md） |
 | `features-no-fr` | PRD 有内容但认不出 `### FR-N` 结构：显示 formatHint 等宽代码块 |
+| `acceptance` | 验收清单主视图（6 条：通过带证据 / 失败 / 阻塞 / 未验，含 URL 证据） |
+| `acceptance-edit` | 自动展开 A4 的证据输入框（验证行内 input） |
+| `acceptance-save` | 自动点 A1「撤销」：验证 POST `/acceptance-result` 成功后刷新面板（A1 变未验、计数同步） |
+| `acceptance-error` | A4 填不存在的证据路径 → Host 409 → 行内「证据文件不存在」 |
+| `acceptance-empty` | 没有验收条目：空态 + `acceptance-draft` 指引 |
+| `acceptance-truncated` | items 被截断（2 条可见）但 `acceptance.passed` 是全局真值：摘要应显示 Host 计数 + 截断提示 |
 | `approved` | 原型已批准：按钮变只读「已于 X 通过原型」 |
 | `pending` | 待人工决策：决策置顶 + 待决策 chip |
 | `degraded` | 读取降级：顶部横幅列原因、主按钮禁用、坏行提示 |

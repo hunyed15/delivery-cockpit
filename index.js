@@ -11,7 +11,7 @@ import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { draftAcceptance } from './lib/acceptance.js'
+import { draftAcceptance, setAcceptanceResult } from './lib/acceptance.js'
 import { approvePrototype } from './lib/approvals.js'
 import { readEvidence } from './lib/evidence.js'
 import { buildFeatureBoard, extractFeatures, readPrdText } from './lib/features.js'
@@ -19,7 +19,7 @@ import { applyInit, planInit } from './lib/init.js'
 import { buildDetailModel, buildOverviewRow } from './lib/model.js'
 import { entryForStage, loadPlaybook, resolveCapabilities, STAGE_DEFS } from './lib/playbook.js'
 import { appendReceipt } from './lib/receipts.js'
-import { createApproveHandler, createInitHandler, createRoutes } from './lib/route.js'
+import { createAcceptanceResultHandler, createApproveHandler, createInitHandler, createRoutes } from './lib/route.js'
 
 export const name = 'delivery-cockpit'
 
@@ -640,9 +640,11 @@ export function apply(ctx, config = {}) {
     planInit: (projectPath) => planInit(projectPath, { templatesDir: TEMPLATES }),
     applyInit: async (projectPath) => applyInit(projectPath, await planInit(projectPath, { templatesDir: TEMPLATES })),
     approvePrototype: (projectPath, iterationId) => approvePrototype(projectPath, iterationId),
+    setAcceptanceResult: (projectPath, input) => setAcceptanceResult(projectPath, input),
   }
   const initHandler = createInitHandler(writeDeps)
   const approveHandler = createApproveHandler(writeDeps)
+  const acceptanceResultHandler = createAcceptanceResultHandler(writeDeps)
 
   const retryAttempts = Number.isFinite(settings.panelRetryAttempts) ? Math.max(1, Math.trunc(settings.panelRetryAttempts)) : 10
   const retryMs = Number.isFinite(settings.panelRetryMs) ? Math.max(1, Math.trunc(settings.panelRetryMs)) : 500
@@ -678,6 +680,13 @@ export function apply(ctx, config = {}) {
         kind: 'exact',
         path: `${ROUTE_PREFIX}/approve-prototype`,
         handler: approveHandler,
+      }),
+    )
+    scope.effect(() =>
+      webServer.register({
+        kind: 'exact',
+        path: `${ROUTE_PREFIX}/acceptance-result`,
+        handler: acceptanceResultHandler,
       }),
     )
     return true

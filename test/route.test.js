@@ -3,13 +3,13 @@ import assert from 'node:assert/strict'
 import { Readable } from 'node:stream'
 import { resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { createApproveHandler, createInitHandler, createRoutes, BASE } from '../lib/route.js'
+import { createAcceptanceResultHandler, createApproveHandler, createInitHandler, createRoutes, BASE } from '../lib/route.js'
 
 const PROJECT = resolve(tmpdir(), 'delivery-cockpit-route-fixture')
 const OTHER = resolve(tmpdir(), 'delivery-cockpit-not-registered')
 
 function makeDeps(overrides = {}) {
-  const calls = { detail: [], plan: [], apply: [], approve: [] }
+  const calls = { detail: [], plan: [], apply: [], approve: [], acceptance: [] }
   const deps = {
     listWorkspaces: async () => [{ id: 'w1', title: 'demo', path: PROJECT }],
     resolveWorkspace: async (path) => (path === PROJECT ? { id: 'w1', title: 'demo', path: PROJECT } : null),
@@ -34,6 +34,30 @@ function makeDeps(overrides = {}) {
       if (iterationId === '') return { ok: false, error: 'iteration-required' }
       if (iterationId === 'v9.9') return { ok: false, error: 'prototype-missing' }
       return { ok: true, approval: { iterationId, prototypeApprovedAt: '2026-01-01T00:00:00.000Z', prototype: 'prototype.html' } }
+    },
+    setAcceptanceResult: async (path, input) => {
+      calls.acceptance.push([path, input])
+      // 与真实 setAcceptanceResult 同语义：字段缺失 ≠ 撤销。
+      if (!Object.prototype.hasOwnProperty.call(input, 'result')) return { ok: false, error: 'bad-result' }
+      if (input.item_id === 'A9') return { ok: false, error: 'item-not-found' }
+      if (input.item_id === 'A-MISMATCH') return { ok: false, error: 'iteration-mismatch', iterationId: 'v0.9' }
+      if (input.item_id === 'A-BROKEN') return { ok: false, error: 'acceptance-broken' }
+      if (input.item_id === 'A-NOITER') return { ok: false, error: 'iteration-required' }
+      if (input.result === 'pass' && !(Array.isArray(input.evidence) && input.evidence.length > 0)) {
+        return { ok: false, error: 'evidence-required' }
+      }
+      if (Array.isArray(input.evidence) && input.evidence.includes('missing.png')) {
+        return { ok: false, error: 'evidence-not-found', detail: 'missing.png' }
+      }
+      return {
+        ok: true,
+        item: {
+          id: input.item_id,
+          result: input.result ?? null,
+          evidence: Array.isArray(input.evidence) ? input.evidence : [],
+          at: input.result == null ? null : '2026-01-01T00:00:00.000Z',
+        },
+      }
     },
     ...overrides,
   }
@@ -280,6 +304,93 @@ test('POST /approve-prototype 用 GET 打过来给 405', async () => {
   const { deps } = makeDeps()
   const res = fakeRes()
   await createApproveHandler(deps)(fakeReq({ method: 'GET' }), res)
+  assert.equal(res.status, 405)
+})
+
+test('POST /acceptance-result：通过必须带证据，缺证据 400 且不落盘', async () => {
+  const { deps, calls } = makeDeps()
+  const res = fakeRes()
+  await createAcceptanceResultHandler(deps)(
+    fakeReq({ body: { path: PROJECT, item_id: 'A1', result: 'pass' } }),
+    res,
+  )
+  assert.equal(res.status, 400)
+  assert.deepEqual(JSON.parse(res.body), { ok: false, error: 'evidence-required', detail: null, iterationId: null })
+  assert.equal(calls.acceptance.length, 1, '参数校验交给 setAcceptanceResult，路由层只做授权与状态码')
+})
+
+test('POST /acceptance-result：证据文件不存在 409，并回传是哪一张', async () => {
+  const { deps } = makeDeps()
+  const res = fakeRes()
+  await createAcceptanceResultHandler(deps)(
+    fakeReq({ body: { path: PROJECT, item_id: 'A1', result: 'pass', evidence: ['missing.png'] } }),
+    res,
+  )
+  assert.equal(res.status, 409)
+  const body = JSON.parse(res.body)
+  assert.equal(body.error, 'evidence-not-found')
+  assert.equal(body.detail, 'missing.png')
+})
+
+test('POST /acceptance-result：条目不存在 404，未授权工作区 403 且不写', async () => {
+  const { deps, calls } = makeDeps()
+  const notFound = fakeRes()
+  await createAcceptanceResultHandler(deps)(fakeReq({ body: { path: PROJECT, item_id: 'A9', result: 'fail' } }), notFound)
+  assert.equal(notFound.status, 404)
+
+  const denied = fakeRes()
+  await createAcceptanceResultHandler(deps)(fakeReq({ body: { path: OTHER, item_id: 'A1', result: 'fail' } }), denied)
+  assert.equal(denied.status, 403)
+  assert.equal(calls.acceptance.length, 1)
+})
+
+test('POST /acceptance-result：成功返回条目；撤销 result:null 也走同一接口', async () => {
+  const { deps, calls } = makeDeps()
+  const passed = fakeRes()
+  await createAcceptanceResultHandler(deps)(
+    fakeReq({ body: { path: PROJECT, item_id: 'A1', result: 'pass', evidence: ['shots/a1.png'] } }),
+    passed,
+  )
+  assert.equal(passed.status, 200)
+  const body = JSON.parse(passed.body)
+  assert.equal(body.ok, true)
+  assert.equal(body.item.result, 'pass')
+
+  const cleared = fakeRes()
+  await createAcceptanceResultHandler(deps)(fakeReq({ body: { path: PROJECT, item_id: 'A1', result: null } }), cleared)
+  assert.equal(cleared.status, 200)
+  assert.equal(JSON.parse(cleared.body).item.result, null)
+
+  assert.equal(calls.acceptance.length, 2)
+})
+
+test('POST /acceptance-result：漏传 result 400 bad-result（≠ 撤销），不写盘', async () => {
+  const { deps, calls } = makeDeps()
+  const res = fakeRes()
+  await createAcceptanceResultHandler(deps)(fakeReq({ body: { path: PROJECT, item_id: 'A1' } }), res)
+  assert.equal(res.status, 400)
+  assert.deepEqual(JSON.parse(res.body), { ok: false, error: 'bad-result', detail: null, iterationId: null })
+  assert.equal(calls.acceptance.length, 1)
+})
+
+test('POST /acceptance-result：迭代不匹配 / 坏表 / 无迭代都映射到 409', async () => {
+  const { deps } = makeDeps()
+  for (const [itemId, expectedError] of [
+    ['A-MISMATCH', 'iteration-mismatch'],
+    ['A-BROKEN', 'acceptance-broken'],
+    ['A-NOITER', 'iteration-required'],
+  ]) {
+    const res = fakeRes()
+    await createAcceptanceResultHandler(deps)(fakeReq({ body: { path: PROJECT, item_id: itemId, result: 'fail' } }), res)
+    assert.equal(res.status, 409, `${expectedError} 应是 409`)
+    assert.equal(JSON.parse(res.body).error, expectedError)
+  }
+})
+
+test('POST /acceptance-result：GET 打过来给 405', async () => {
+  const { deps } = makeDeps()
+  const res = fakeRes()
+  await createAcceptanceResultHandler(deps)(fakeReq({ method: 'GET' }), res)
   assert.equal(res.status, 405)
 })
 

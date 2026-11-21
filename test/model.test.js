@@ -229,6 +229,48 @@ test('acceptance-draft：缺必需能力时不得被 hint 解禁（§6.3 优先�
   assert.doesNotMatch(JSON.stringify(model.nextAction.notes), /cockpit_acceptance/, '没有被 hint 改写')
 })
 
+test('验收清单：条目字段原样映射，未知 result 归一成 null，超 100 条标 truncated', () => {
+  const items = Array.from({ length: 101 }, (_, index) => ({
+    id: `A${index + 1}`,
+    feature_ref: 'FR-1',
+    title: `验收 ${index + 1}`,
+    steps: '点新增',
+    expect: '列表出现',
+    result: index === 0 ? 'pass' : index === 1 ? 'weird' : null,
+    evidence: index === 0 ? ['shots/a1.png'] : [],
+    at: index === 0 ? '2026-11-21T00:00:00.000Z' : null,
+  }))
+  const model = build(
+    evidence({
+      acceptance: {
+        items,
+        empty: false,
+        badJson: false,
+        total: 101,
+        withResult: 1,
+        passed: 1,
+        failed: 0,
+        blocked: 0,
+        passWithoutEvidence: 0,
+        appliesToCurrent: true,
+      },
+    }),
+  )
+  assert.equal(model.acceptance.items.length, 100, '最多下发 100 条')
+  assert.equal(model.acceptance.truncated, true)
+  assert.deepEqual(model.acceptance.items[0], {
+    id: 'A1',
+    featureRef: 'FR-1',
+    title: '验收 1',
+    steps: '点新增',
+    expect: '列表出现',
+    result: 'pass',
+    evidence: ['shots/a1.png'],
+    at: '2026-11-21T00:00:00.000Z',
+  })
+  assert.equal(model.acceptance.items[1].result, null, '未知 result 归一成 null（未验）')
+})
+
 test('features：载荷形状、功能进度、未知 bug 用 known=false 表示', async () => {
   const { buildFeatureBoard, extractFeatures } = await import('../lib/features.js')
   const board = buildFeatureBoard({

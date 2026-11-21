@@ -100,7 +100,7 @@ const FEATURES = {
       priority: 'P0',
       status: 'blocked',
       statusLabel: '有阻塞',
-      acceptance: { total: 4, passed: 2, failed: 1, blocked: 0, missingEvidence: 1 },
+      acceptance: { total: 2, passed: 1, failed: 1, blocked: 0, missingEvidence: 0 },
       bugs: {
         blocking: 2,
         known: true,
@@ -122,7 +122,7 @@ const FEATURES = {
       priority: 'P1',
       status: 'done',
       statusLabel: '已完成',
-      acceptance: { total: 3, passed: 3, failed: 0, blocked: 0, missingEvidence: 0 },
+      acceptance: { total: 1, passed: 1, failed: 0, blocked: 0, missingEvidence: 0 },
       bugs: { blocking: 0, known: true, issues: [] },
       lastAt: ago(120),
       lastSummary: '分析结果与验收表全部对过',
@@ -137,7 +137,7 @@ const FEATURES = {
       priority: 'P1',
       status: 'in-progress',
       statusLabel: '进行中',
-      acceptance: { total: 2, passed: 1, failed: 0, blocked: 0, missingEvidence: 0 },
+      acceptance: { total: 1, passed: 0, failed: 0, blocked: 1, missingEvidence: 0 },
       bugs: { blocking: 0, known: true, issues: [] },
       lastAt: ago(40),
       lastSummary: 'Excel 导出跑通，PDF 还没开始',
@@ -152,7 +152,7 @@ const FEATURES = {
       priority: null,
       status: 'not-started',
       statusLabel: '未开始',
-      acceptance: { total: 0, passed: 0, failed: 0, blocked: 0, missingEvidence: 0 },
+      acceptance: { total: 1, passed: 0, failed: 0, blocked: 0, missingEvidence: 1 },
       // known:false 是「没有路径/回执关联，没法判断」：待修列必须显示 —，不能显示 0。
       bugs: { blocking: 0, known: false, issues: [] },
       lastAt: null,
@@ -168,7 +168,7 @@ const FEATURES = {
       priority: 'P1',
       status: 'pending-acceptance',
       statusLabel: '待验收',
-      acceptance: { total: 3, passed: 0, failed: 0, blocked: 0, missingEvidence: 0 },
+      acceptance: { total: 1, passed: 0, failed: 0, blocked: 0, missingEvidence: 1 },
       bugs: { blocking: 0, known: true, issues: [] },
       lastAt: ago(300),
       lastSummary: '页面都改完了，等验收表填结果',
@@ -257,6 +257,71 @@ const PROTOTYPE_ACTION = {  priority: 5,
   buttons: ['copy'],
 }
 
+// 验收清单（panel.acceptance.items）：面板内直接改结果，所以至少覆盖
+// 通过（带证据，含 URL）/ 失败 / 阻塞 / 未填 四种状态。
+const ACCEPTANCE_ITEMS = [
+  {
+    id: 'A1',
+    featureRef: 'FR-1',
+    title: '能添加客户',
+    steps: '打开客户列表 → 点新增 → 填名字 → 保存',
+    expect: '列表出现新客户',
+    result: 'pass',
+    evidence: ['shots/add.png', 'https://ci.example.com/runs/42'],
+    at: ago(20),
+  },
+  {
+    id: 'A2',
+    featureRef: 'FR-1',
+    title: '重复客户会被拦下',
+    steps: '新增同名客户两次',
+    expect: '第二次提示已存在',
+    result: 'fail',
+    evidence: ['shots/dup.png'],
+    at: ago(90),
+  },
+  {
+    id: 'A3',
+    featureRef: 'FR-3',
+    title: '导出 Excel 含全部列',
+    steps: '点导出 → 打开文件对照列表',
+    expect: '字段与列表一致',
+    result: 'blocked',
+    evidence: [],
+    at: ago(180),
+  },
+  {
+    id: 'A4',
+    featureRef: 'FR-4',
+    title: '普通成员看不到管理入口',
+    steps: '用成员账号登录',
+    expect: '侧栏没有设置入口',
+    result: null,
+    evidence: [],
+    at: null,
+  },
+  {
+    id: 'A5',
+    featureRef: 'FR-5',
+    title: '手机上能完成新增',
+    steps: '360px 宽度走一遍新增',
+    expect: '按钮不遮挡、能保存',
+    result: null,
+    evidence: [],
+    at: null,
+  },
+  {
+    id: 'A6',
+    featureRef: 'FR-2',
+    title: '分析结果与标准样本一致',
+    steps: '跑标准样本 → 对比结果',
+    expect: '误差在阈值内',
+    result: 'pass',
+    evidence: ['shots/analyze.png'],
+    at: ago(240),
+  },
+]
+
 function makePanel(overrides = {}) {
   const base = {
     ok: true,
@@ -300,7 +365,17 @@ function makePanel(overrides = {}) {
       missing: false,
       lastAt: RECEIPTS[0].at,
     },
-    acceptance: { total: 6, withResult: 4, passed: 3, failed: 1, blocked: 0, empty: false, badJson: false },
+    acceptance: {
+      total: 6,
+      withResult: 4,
+      passed: 2,
+      failed: 1,
+      blocked: 1,
+      empty: false,
+      badJson: false,
+      truncated: false,
+      items: ACCEPTANCE_ITEMS,
+    },
     review: { available: true, reason: null, rounds: 2, blocking: 0, fixed: 0, issues: [] },
     tasks: {
       available: true,
@@ -481,6 +556,50 @@ export function panelFor(scenario) {
         features: FEATURES_NO_FR,
         dataGaps: [{ source: 'prd', message: 'PRD 里没找到「### FR-N 标题」结构' }],
       })
+    case 'acceptance-truncated': {
+      // 只下发 2 条可见条目，但全局 passed/total 是完整账本的：验证摘要用 Host 真值。
+      const base = makePanel()
+      return {
+        ...base,
+        acceptance: {
+          ...base.acceptance,
+          total: 40,
+          withResult: 33,
+          passed: 5,
+          failed: 3,
+          blocked: 1,
+          truncated: true,
+          items: base.acceptance.items.slice(0, 2),
+        },
+      }
+    }
+    case 'acceptance-empty': {
+      const base = makePanel()
+      return {
+        ...base,
+        acceptance: {
+          total: 0,
+          withResult: 0,
+          passed: 0,
+          failed: 0,
+          blocked: 0,
+          empty: true,
+          badJson: false,
+          truncated: false,
+          items: [],
+        },
+        nextAction: {
+          ...base.nextAction,
+          kind: 'acceptance-draft',
+          stageId: 'verification',
+          stageName: '验效果',
+          title: '生成验收清单',
+          reason: '验收表还是空的，先让 Agent 起草第一版。',
+          instruction: '请用 `cockpit_acceptance` 起草人话验收清单：每条写清步骤与期望，放进 .dsh/plugin-state/acceptance.json。',
+          buttons: ['copy'],
+        },
+      }
+    }
     default:
       return makePanel()
   }

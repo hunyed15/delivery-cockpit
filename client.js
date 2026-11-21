@@ -78,6 +78,29 @@ window.__ModuleLoader__.load({
     const SEVERITY_TEXT = { critical: '严重', important: '重要', minor: '次要' }
     const STRATEGY_TEXT = { 'fr-section': '功能需求节', 'fr-global': '全文扫描', none: '未识别' }
 
+    // 验收结果：面板内可直接点（写动作走 POST /acceptance-result）。
+    const ACCEPTANCE_RESULT_TEXT = { pass: '通过', fail: '失败', blocked: '阻塞' }
+    const ACCEPTANCE_RESULT_TONE = { pass: 'ok', fail: 'bad', blocked: 'warn' }
+    const ACCEPTANCE_ERROR_TEXT = {
+      'item-required': '缺少验收项 ID，刷新面板再试。',
+      'bad-result': '结果只能是 通过 / 失败 / 阻塞 / 撤销。',
+      'evidence-required': '通过必须附证据。',
+      'evidence-not-found': '证据文件不存在：先确认路径。',
+      'acceptance-broken': '验收表不是合法 JSON，先修好。',
+      'iteration-mismatch': '验收表属于别的迭代。',
+      'iteration-required': '当前迭代还没确定。',
+      'item-not-found': '这条验收项已不存在，刷新面板。',
+      'workspace-not-allowed': '这个工作区不在已登记列表里。',
+    }
+
+    function explainAcceptanceError(raw) {
+      const message = String(raw == null ? '' : raw)
+      for (const [code, text] of Object.entries(ACCEPTANCE_ERROR_TEXT)) {
+        if (message.indexOf(code) >= 0) return text
+      }
+      return explainError(message)
+    }
+
     // 后端错误码对用户没有意义；翻成人话，原文留在 title 里供排查。
     const ERROR_TEXT = {
       'workspace-not-allowed': '这个工作区不在已登记列表里。在某个项目目录里打开会话后回到这里，或点重试。',
@@ -389,6 +412,29 @@ h2.dc-name { margin:0; font-size:16px; font-weight:650; line-height:1.3; letter-
 .dc-receipts > summary:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; }
 .dc-receipts .dc-ledger-list { margin-top:6px; }
 .dc-receipts .dc-details { margin-top:6px; }
+/* 验收清单：默认展开的写操作区。 */
+.dc-acceptance { margin-top:12px; }
+.dc-acceptance > summary { cursor:pointer; font-size:12.5px; font-weight:600; color:var(--dsw-alias-label-primary); padding:4px 0; }
+.dc-acceptance > summary:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; }
+.dc-acceptance .dc-table-wrap { margin-top:6px; }
+.dc-acc-table { min-width:780px; }
+.dc-acc-table td { vertical-align:top; }
+.dc-acc-id { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:11.5px; color:var(--dsw-alias-label-secondary); margin-right:6px; }
+.dc-acc-title { font-weight:600; overflow-wrap:anywhere; }
+.dc-acc-steps { margin-top:2px; font-size:11px; color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere;
+  display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden; }
+.dc-acc-actions { display:flex; gap:4px; flex-wrap:wrap; }
+.dc-btn-sm { padding:2px 8px; font-size:11px; border-radius:6px; }
+.dc-evidence-input { width:100%; min-width:180px; max-width:100%; box-sizing:border-box;
+  border:1px solid var(--dsw-alias-border-l2); border-radius:6px; padding:3px 6px;
+  font:inherit; font-size:11.5px; background:var(--dsw-alias-bg-base); color:inherit; }
+.dc-evidence-input:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:1px; }
+.dc-evidence-summary { font-size:11.5px; overflow-wrap:anywhere; }
+.dc-evidence-edit { margin-top:3px; }
+.dc-acc-error { margin-top:3px; font-size:11px; color:var(--dsw-alias-state-error-primary); overflow-wrap:anywhere; }
+.dc-acc-saved { margin-top:3px; font-size:11px; color:var(--dsw-alias-state-success-primary); }
+/* 窄屏下表格要横滑：给一句提示，否则用户会以为列丢了。 */
+.dc-scroll-hint { display:none; font-size:11px; color:var(--dsw-alias-label-secondary); margin-top:2px; }
 .dc-empty-line { margin:0; font-size:12px; color:var(--dsw-alias-label-secondary); }
 .dc-details { margin-top:8px; font-size:11.5px; color:var(--dsw-alias-label-secondary); }
 .dc-details summary { cursor:pointer; }
@@ -426,6 +472,7 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
   .dc-cards { grid-template-columns:1fr; }
   /* 窄屏下把账本的自由滚动让给页面本身：局部滚动+隐藏滚动条看起来像内容被截断。 */
   .dc-ledger-list { max-height:none; overflow:visible; }
+  .dc-scroll-hint { display:block; }
 }
 `
 
@@ -1613,6 +1660,278 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
       )
     }
 
+    function AcceptanceResultChip(props) {
+      const result = props.result || null
+      return h(
+        Chip,
+        { tone: ACCEPTANCE_RESULT_TONE[result] || 'unknown' },
+        ACCEPTANCE_RESULT_TEXT[result] || '未验',
+      )
+    }
+
+    function evidenceLabel(value) {
+      const raw = String(value == null ? '' : value).trim()
+      if (raw === '') return ''
+      const withoutQuery = raw.split(/[?#]/)[0]
+      const parts = withoutQuery.split(/[\\/]/).filter(Boolean)
+      return parts.length > 0 ? parts[parts.length - 1] : raw
+    }
+
+    // 验收清单：面板内可直接记录结果（通过/失败/阻塞/撤销）。
+    // 写动作只发「项目路径 + 验收项 + 结果 + 证据路径」，文件校验与迭代归属由 Host 负责；
+    // 成功后重新拉面板，让 Host 返回的 result/at/evidence 成为唯一事实源。
+    function AcceptancePanel(props) {
+      const acceptance = props.acceptance || {}
+      const items = asArray(acceptance.items)
+      const truncated = acceptance.truncated === true
+      // 通过数用 Host 的全局真值：items 最多 100 条，截断时本地 filter 只覆盖可见项。
+      // 条目自身的 result/证据仍然逐行显示（单条真值），不从 counts 反推。
+      const passedRaw = Number(acceptance.passed)
+      const passedCount = Number.isFinite(passedRaw)
+        ? passedRaw
+        : items.filter((item) => item && item.result === 'pass').length
+      const [editing, setEditing] = React.useState({})
+      const [drafts, setDrafts] = React.useState({})
+      const [rowState, setRowState] = React.useState({})
+      const mounted = React.useRef(true)
+      React.useEffect(
+        () => () => {
+          mounted.current = false
+        },
+        [],
+      )
+
+      const setEditingFor = (id, value) => setEditing((previous) => ({ ...previous, [id]: value }))
+      const setDraft = (id, value) => setDrafts((previous) => ({ ...previous, [id]: value }))
+      const setRow = (id, patch) =>
+        setRowState((previous) => ({ ...previous, [id]: { ...(previous[id] || {}), ...patch } }))
+      const draftFor = (item) => {
+        const id = item.id
+        if (Object.prototype.hasOwnProperty.call(drafts, id)) return drafts[id]
+        return asArray(item.evidence).join(', ')
+      }
+      // 证据支持多张：逗号/中文逗号/分号/换行分隔。
+      const parseEvidence = (text) =>
+        String(text == null ? '' : text)
+          .split(/[\n,，;；]+/)
+          .map((part) => part.trim())
+          .filter(Boolean)
+
+      const submit = async (item, result) => {
+        const id = item.id
+        if (!id) return
+        const evidence = parseEvidence(draftFor(item))
+        // 通过必须有证据：前端先拦一次（Host 也会再校验 evidence-required）。
+        if (result === 'pass' && evidence.length === 0) {
+          setRow(id, { saving: false, saved: false, error: '通过必须附证据' })
+          return
+        }
+        setRow(id, { saving: true, saved: false, error: '' })
+        try {
+          const body = await postJson(`${API}/acceptance-result`, {
+            path: props.projectPath,
+            item_id: id,
+            result,
+            evidence,
+          })
+          if (!body || body.ok !== true) throw new Error('acceptance-failed')
+          if (!mounted.current) return
+          setRow(id, { saving: false, saved: true, error: '' })
+          setEditingFor(id, false)
+          if (props.onRefresh) props.onRefresh()
+          setTimeout(() => {
+            if (mounted.current) setRow(id, { saved: false })
+          }, 2500)
+        } catch (failure) {
+          if (!mounted.current) return
+          // 失败保留输入，只显示行内错误：用户不用重新填一遍证据。
+          setRow(id, {
+            saving: false,
+            saved: false,
+            error: explainAcceptanceError(messageOf(failure)),
+          })
+        }
+      }
+
+      let content = null
+      if (items.length === 0) {
+        content = h(
+          'div',
+          { className: 'dc-empty-box' },
+          h('div', { className: 'dc-banner-title' }, '还没有验收清单：让 Agent 用 cockpit_acceptance 起草'),
+          props.actionKind === 'acceptance-draft'
+            ? h('p', { className: 'dc-empty-line' }, '下一步就是「生成验收清单」，生成后回到这里逐条点结果。')
+            : null,
+        )
+      } else {
+        content = h(
+          React.Fragment,
+          null,
+          acceptance.badJson
+            ? h('p', { className: 'dc-hint dc-hint-bad' }, '验收表不是合法 JSON，先修好文件再记录结果。')
+            : null,
+          truncated ? h('p', { className: 'dc-hint' }, '验收表超过 100 条，只显示前 100 条。') : null,
+          h(
+            'div',
+            { className: 'dc-table-wrap' },
+            h(
+              'table',
+              { className: 'dc-table dc-acc-table' },
+              h('caption', { className: 'dc-sr' }, '验收清单：逐条记录通过、失败或阻塞'),
+              h(
+                'thead',
+                null,
+                h(
+                  'tr',
+                  null,
+                  h('th', { scope: 'col' }, '验收点'),
+                  h('th', { scope: 'col' }, '功能'),
+                  h('th', { scope: 'col' }, '结果'),
+                  h('th', { scope: 'col' }, '证据'),
+                  h('th', { scope: 'col' }, '操作'),
+                ),
+              ),
+              h(
+                'tbody',
+                null,
+                items.map((item) => {
+                  if (!item || !item.id) return null
+                  const id = item.id
+                  const state = rowState[id] || {}
+                  const evidence = asArray(item.evidence)
+                  const editingRow = editing[id] === true
+                  const stepsTitle = [
+                    item.steps ? `步骤：${item.steps}` : '',
+                    item.expect ? `期望：${item.expect}` : '',
+                  ]
+                    .filter(Boolean)
+                    .join('\n')
+                  return h(
+                    'tr',
+                    { key: id, 'data-acceptance-id': id },
+                    h(
+                      'td',
+                      null,
+                      h('span', { className: 'dc-acc-id' }, id),
+                      h(
+                        'span',
+                        { className: 'dc-acc-title', title: stepsTitle || undefined },
+                        item.title || '（没有标题）',
+                      ),
+                      stepsTitle
+                        ? h('div', { className: 'dc-acc-steps', title: stepsTitle }, stepsTitle.replace(/\n/g, ' · '))
+                        : null,
+                    ),
+                    h('td', { className: 'dc-cell-mono' }, item.featureRef || '—'),
+                    h('td', null, h(AcceptanceResultChip, { result: item.result })),
+                    h(
+                      'td',
+                      null,
+                      editingRow
+                        ? h(
+                            React.Fragment,
+                            null,
+                            h('input', {
+                              className: 'dc-evidence-input',
+                              value: draftFor(item),
+                              placeholder: '截图路径或 URL，如 shots/a1.png',
+                              autoFocus: true,
+                              'aria-label': `验收项 ${id} 的证据`,
+                              onChange: (event) => setDraft(id, event.target.value),
+                            }),
+                            h('div', { className: 'dc-hint' }, '逗号或换行分隔，支持多张；项目内相对路径或 http(s) URL。'),
+                          )
+                        : h(
+                            React.Fragment,
+                            null,
+                            h(
+                              'div',
+                              { className: 'dc-evidence-summary', title: evidence.join('\n') || '' },
+                              evidence.length > 0
+                                ? `证据 ${evidence.length} 个 · ${evidenceLabel(evidence[0])}`
+                                : '—',
+                            ),
+                            h(
+                              'button',
+                              {
+                                type: 'button',
+                                className: 'dc-btn dc-btn-sm dc-evidence-edit',
+                                onClick: () => setEditingFor(id, true),
+                              },
+                              '编辑',
+                            ),
+                          ),
+                    ),
+                    h(
+                      'td',
+                      null,
+                      h(
+                        'div',
+                        { className: 'dc-acc-actions' },
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            className: 'dc-btn dc-btn-sm dc-btn-primary',
+                            disabled: state.saving === true,
+                            onClick: () => submit(item, 'pass'),
+                          },
+                          '通过',
+                        ),
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            className: 'dc-btn dc-btn-sm',
+                            disabled: state.saving === true,
+                            onClick: () => submit(item, 'fail'),
+                          },
+                          '失败',
+                        ),
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            className: 'dc-btn dc-btn-sm',
+                            disabled: state.saving === true,
+                            onClick: () => submit(item, 'blocked'),
+                          },
+                          '阻塞',
+                        ),
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            className: 'dc-btn dc-btn-sm',
+                            disabled: state.saving === true,
+                            onClick: () => submit(item, null),
+                          },
+                          '撤销',
+                        ),
+                      ),
+                      state.saving ? h('div', { className: 'dc-hint' }, '保存中…') : null,
+                      state.error ? h('div', { className: 'dc-acc-error', role: 'alert' }, state.error) : null,
+                      state.saved
+                        ? h('div', { className: 'dc-acc-saved', role: 'status' }, '已保存，面板已刷新')
+                        : null,
+                    ),
+                  )
+                }),
+              ),
+            ),
+          ),
+          h('div', { className: 'dc-scroll-hint' }, '表格可左右滑动查看全部列'),
+        )
+      }
+
+      return h(
+        'details',
+        { className: 'dc-acceptance', open: true },
+        h('summary', null, `验收清单（${items.length} 条 · ${passedCount} 已通过）`),
+        content,
+      )
+    }
+
     function FeatureBoardSection(props) {
       const features = props.features || {}
       const ledger = props.ledger || {}
@@ -1728,6 +2047,7 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
               ),
             ),
           ),
+          h('div', { className: 'dc-scroll-hint' }, '表格可左右滑动查看全部列'),
         )
       }
 
@@ -1760,6 +2080,13 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
               notes.slice(0, 6).map((note, index) => h('li', { key: `featureNote${index}` }, note)),
             )
           : null,
+        // 验收清单紧跟在功能表下面：功能账看状态，这里做记录动作。
+        h(AcceptancePanel, {
+          acceptance: props.acceptance,
+          projectPath: props.projectPath,
+          actionKind: props.actionKind,
+          onRefresh: props.onRefresh,
+        }),
         // 缺陷账的另一半：按路径匹配不到功能的阻塞必须单列，不能悄悄丢掉。
         unattributedBlocking > 0
           ? h(
@@ -1999,6 +2326,10 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
           }),
           h(FeatureBoardSection, {
             features: panel.features,
+            acceptance: panel.acceptance,
+            actionKind: action.kind,
+            projectPath: project.path || props.selectedPath,
+            onRefresh: props.refresh,
             ledger,
             warnings: panel.warnings,
             dataGaps: panel.dataGaps,
