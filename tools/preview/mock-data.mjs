@@ -84,8 +84,123 @@ const RECEIPTS = [
   },
 ]
 
-const PROTOTYPE_ACTION = {
-  priority: 5,
+// 功能账（panel.features）：形状逐字照 IMPLEMENTATION §3.13。
+// 三路证据的状态由 Host 推导，这里直接给结论；界面只负责如实呈现。
+const FEATURES = {
+  source: 'prd',
+  prdPath: 'docs/prd.md',
+  strategy: 'fr-section',
+  formatHint: null,
+  counts: { total: 5, done: 1, blocked: 1, inProgress: 1, pendingAcceptance: 1, notStarted: 1 },
+  progress: { done: 1, total: 5 },
+  items: [
+    {
+      id: 'FR-1',
+      title: '信号采集',
+      priority: 'P0',
+      status: 'blocked',
+      statusLabel: '有阻塞',
+      acceptance: { total: 4, passed: 2, failed: 1, blocked: 0, missingEvidence: 1 },
+      bugs: {
+        blocking: 2,
+        known: true,
+        issues: [
+          { severity: 'critical', title: '采集线程退出后不再重连', file: 'src/collector/run.ts', line: 42 },
+          { severity: 'important', title: '断线时 UI 仍显示正常', file: 'src/ui/status.ts', line: 17 },
+        ],
+      },
+      lastAt: ago(3),
+      lastSummary: '修了采集重连，还剩一个并发 bug',
+      receipts: 4,
+      paths: ['src/collector/**', 'src/ui/status.ts'],
+    },
+    {
+      id: 'FR-2',
+      title: '信号分析',
+      priority: 'P1',
+      status: 'done',
+      statusLabel: '已完成',
+      acceptance: { total: 3, passed: 3, failed: 0, blocked: 0, missingEvidence: 0 },
+      bugs: { blocking: 0, known: true, issues: [] },
+      lastAt: ago(120),
+      lastSummary: '分析结果与验收表全部对过',
+      receipts: 2,
+      paths: ['src/analyze/**'],
+    },
+    {
+      id: 'FR-3',
+      title: '报表导出',
+      priority: 'P1',
+      status: 'in-progress',
+      statusLabel: '进行中',
+      acceptance: { total: 2, passed: 1, failed: 0, blocked: 0, missingEvidence: 0 },
+      bugs: { blocking: 0, known: true, issues: [] },
+      lastAt: ago(40),
+      lastSummary: 'Excel 导出跑通，PDF 还没开始',
+      receipts: 2,
+      paths: ['src/export/**'],
+    },
+    {
+      id: 'FR-4',
+      title: '用户权限',
+      priority: null,
+      status: 'not-started',
+      statusLabel: '未开始',
+      acceptance: { total: 0, passed: 0, failed: 0, blocked: 0, missingEvidence: 0 },
+      // known:false 是「没有路径/回执关联，没法判断」：待修列必须显示 —，不能显示 0。
+      bugs: { blocking: 0, known: false, issues: [] },
+      lastAt: null,
+      lastSummary: null,
+      receipts: 0,
+      paths: [],
+    },
+    {
+      id: 'FR-5',
+      title: '移动端适配',
+      priority: 'P1',
+      status: 'pending-acceptance',
+      statusLabel: '待验收',
+      acceptance: { total: 3, passed: 0, failed: 0, blocked: 0, missingEvidence: 0 },
+      bugs: { blocking: 0, known: true, issues: [] },
+      lastAt: ago(300),
+      lastSummary: '页面都改完了，等验收表填结果',
+      receipts: 1,
+      paths: ['src/app/**'],
+    },
+  ],
+  unattributed: {
+    blocking: 1,
+    known: true,
+    issues: [{ severity: 'important', title: '全局错误提示重复弹出', file: 'src/shared/toast.ts', line: 8 }],
+  },
+  notes: ['功能状态由验收、归属 bug、回执三路证据推导；没有证据的功能不显示 0'],
+}
+
+const FEATURES_PRD_MISSING = {
+  source: 'prd-missing',
+  prdPath: null,
+  strategy: 'none',
+  formatHint: null,
+  counts: { total: 0, done: 0, blocked: 0, inProgress: 0, pendingAcceptance: 0, notStarted: 0 },
+  progress: { done: 0, total: 0 },
+  items: [],
+  unattributed: { blocking: 0, known: false, issues: [] },
+  notes: ['想清楚阶段会产出 prd.md'],
+}
+
+const FEATURES_NO_FR = {
+  source: 'prd',
+  prdPath: 'docs/prd.md',
+  strategy: 'none',
+  formatHint: '在 prd.md 里写「## 功能需求」，其下每行用「### FR-1 标题」列功能',
+  counts: { total: 0, done: 0, blocked: 0, inProgress: 0, pendingAcceptance: 0, notStarted: 0 },
+  progress: { done: 0, total: 0 },
+  items: [],
+  unattributed: { blocking: 0, known: false, issues: [] },
+  notes: ['PRD 里有内容，但没找到「功能需求」节或 ### FR-N 结构'],
+}
+
+const PROTOTYPE_ACTION = {  priority: 5,
   kind: 'prototype',
   stageId: 'prototype',
   stageName: '看原型',
@@ -189,6 +304,7 @@ function makePanel(overrides = {}) {
       ],
     },
     warnings: [],
+    features: FEATURES,
     dataGaps: [{ source: 'tasks', message: '任务状态来自回执自报，不是 Agent Teams 实时读取' }],
     degraded: { flag: false, reasons: [] },
   }
@@ -343,6 +459,17 @@ export function panelFor(scenario) {
         tasks: { available: false, total: 0, open: 0, completed: 0, items: [] },
         warnings: [],
         dataGaps: [{ source: 'trellis', message: '项目还没初始化' }],
+        features: FEATURES_PRD_MISSING,
+      })
+    case 'features-prd-missing':
+      return makePanel({
+        features: FEATURES_PRD_MISSING,
+        dataGaps: [{ source: 'prd', message: '项目里还没有 prd.md' }],
+      })
+    case 'features-no-fr':
+      return makePanel({
+        features: FEATURES_NO_FR,
+        dataGaps: [{ source: 'prd', message: 'PRD 里没找到「### FR-N 标题」结构' }],
       })
     default:
       return makePanel()

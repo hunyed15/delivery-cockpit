@@ -13,6 +13,7 @@ import { join } from 'node:path'
 
 import { approvePrototype } from '../lib/approvals.js'
 import { readEvidence } from '../lib/evidence.js'
+import { buildFeatureBoard, extractFeatures, readPrdText } from '../lib/features.js'
 import { applyInit, planInit } from '../lib/init.js'
 import { buildDetailModel, buildOverviewRow } from '../lib/model.js'
 import { entryForStage, loadPlaybook, resolveCapabilities, STAGE_DEFS } from '../lib/playbook.js'
@@ -223,6 +224,73 @@ test('面板详情与总览来自同一份证据：金额/数字不跨源', asyn
     assert.equal(row.nextKind, model.nextAction.kind)
     assert.equal(row.degraded, false)
     assert.equal(row.path, project)
+  } finally {
+    await rm(project, { recursive: true, force: true })
+  }
+})
+
+test('功能账端到端：PRD 的 FR 标题 → 回执 → 验收，三路证据串成一张表', async () => {
+  const project = await makeProject()
+  try {
+    const plan = await planInit(project)
+    await applyInit(project, plan)
+    await writeFile(
+      join(project, 'prd.md'),
+      ['# 客户管理', '', '## 4. 功能需求', '', '### FR-1 客户列表（P0）', '', '### FR-2 客户导入（P1）', ''].join('\n'),
+      'utf8',
+    )
+    await appendReceipt(project, {
+      iteration_id: 'v1.0',
+      stage: 'coding',
+      status: 'completed',
+      summary_for_human: '客户列表做完了',
+      feature_ids: ['FR-1'],
+      task_ref: 'T1',
+      write_scope: ['web/orders/**'],
+      artifacts: ['web/orders/list.ts'],
+    })
+    await appendReceipt(project, {
+      iteration_id: 'v1.0',
+      stage: 'coding',
+      status: 'completed',
+      summary_for_human: '导入写完，等验收',
+      feature_ids: ['FR-2'],
+      task_ref: 'T2',
+      write_scope: ['web/import/**'],
+    })
+    await writeFile(
+      join(project, '.dsh', 'plugin-state', 'acceptance.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        iteration_id: 'v1.0',
+        items: [
+          { id: 'A1', feature_ref: 'FR-1', title: '能添加客户', result: 'pass', evidence: ['shots/add.png'] },
+          { id: 'A2', feature_ref: 'FR-2', title: '能导入 Excel', result: null, evidence: [] },
+        ],
+      }),
+      'utf8',
+    )
+
+    const evidence = await readEvidence(project)
+    assert.equal(evidence.prd.path, 'prd.md')
+    const prdText = await readPrdText(project, evidence.prd.path)
+    const board = buildFeatureBoard({
+      extracted: extractFeatures(prdText.text),
+      prd: { path: evidence.prd.path, missing: prdText.missing },
+      receipts: evidence.receipts.receipts,
+      acceptance: evidence.acceptance,
+      review: evidence.review,
+    })
+
+    assert.equal(board.source, 'prd')
+    assert.equal(board.counts.total, 2)
+    const fr1 = board.items.find((item) => item.id === 'FR-1')
+    const fr2 = board.items.find((item) => item.id === 'FR-2')
+    assert.equal(fr1.status, 'done', '验收 pass + 证据 ⇒ 已完成')
+    assert.equal(fr1.acceptance.passed, 1)
+    assert.equal(fr2.status, 'pending-acceptance', '有验收条目但没人填结果 ⇒ 待验收')
+    // 没有审核账本：bug 数不可知，必须 known=false（界面显示 —），不能显示 0
+    assert.equal(fr1.bugs.known, false)
   } finally {
     await rm(project, { recursive: true, force: true })
   }

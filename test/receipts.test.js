@@ -231,3 +231,17 @@ test('没超限时 truncated=false，读取口径不变', async () => {
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('feature_ids：可选，给了必须是字符串数组，落盘统一大写去空格', () => {
+  const ok = validateReceipt({ ...base, feature_ids: [' fr-1 ', 'FR-2'] })
+  assert.equal(ok.ok, true)
+  assert.deepEqual(ok.value.feature_ids, ['FR-1', 'FR-2'])
+
+  // 可选：不传就是空数组（不是 undefined），下游不用到处判空
+  assert.deepEqual(validateReceipt(base).value.feature_ids, [])
+
+  // 给了就必须干净：字符串、非空、数组
+  assert.equal(validateReceipt({ ...base, feature_ids: 'FR-1' }).ok, false)
+  assert.equal(validateReceipt({ ...base, feature_ids: [1] }).ok, false)
+  assert.equal(validateReceipt({ ...base, feature_ids: [''] }).ok, false)
+})

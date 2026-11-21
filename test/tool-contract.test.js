@@ -46,6 +46,9 @@ test('cockpit_report 的必填与枚举与账本常量一致', () => {
   // task_ref / write_scope 即使 V1 不做并发防撞也要留在签名里，后面迭代不用改接口
   assert.ok(report.parameters.properties.task_ref)
   assert.ok(report.parameters.properties.write_scope)
+  // feature_ids 可选：功能账靠它把回执挂到 PRD 的 FR 编号上
+  assert.ok(report.parameters.properties.feature_ids)
+  assert.ok(!report.parameters.required.includes('feature_ids'), 'feature_ids 必须可选，否则旧调用全挂')
   assert.deepEqual(report.output.schema.required, ['ok', 'receiptId'])
 })
 

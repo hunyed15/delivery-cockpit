@@ -443,6 +443,84 @@ export function apply(ctx, config = {})
 - `test/route.test.js`：未授权路径 403、缺 path 400、`confirm` 必须 true、POST 非 JSON 415/400、GET 正常 200、未知路由 404。
 - `test/client-smoke.test.js`：模块 id、三个 slot 注册、API 前缀、无 DSH 包 require、CSS 前缀、无 `document.body.appendChild`。
 
+### 3.13 Lead · `lib/features.js`（功能账：PRD 功能清单 + 三路证据推导）
+
+> 背景：design §4 的第四区是「功能账 + 缺陷账」，不是回执流水账。V1.0 实现成流水账是取舍错误，
+> 本轮补齐。功能清单**不解析自由文本**：只认 PRD 里的受控结构（`### FR-N 标题`），认不到就直说。
+
+```js
+export function extractFeatures(prdText)
+// -> { strategy: 'fr-section'|'fr-global'|'none', sectionTitle: string|null,
+//      features: [{ id:'FR-1', title:'信号采集', priority:'P0'|'P1'|null, line:number }],
+//      warnings: [{source,message}] }
+
+export async function readPrdText(projectPath, prdRelPath)   // -> { text, missing, error }
+
+export function buildFeatureBoard({ extracted, prd, receipts, acceptance, review })
+// -> {
+//   source: 'prd'|'prd-missing'|'prd-empty',
+//   strategy, formatHint: string|null,
+//   counts: { total, done, blocked, inProgress, pendingAcceptance, notStarted },
+//   items: [...], unattributed: { blocking, known, issues }, notes: []
+// }
+```
+
+**提取规则（确定性，不做 NLP）**
+
+1. 先找二级标题文本含「功能需求」的那一节（到下一个 `##` 为止）；在这一节里取 `### FR-<数字> <标题>`。
+2. 没有该节时，回退到全文扫描 `### FR-<数字>`；两者都没有 ⇒ `strategy:'none'`、`features:[]`。
+3. 标题里的 `（P0）`/`(P1)`/`（P0，核心）` 解析成 `priority`，并从标题里去掉（保留人话标题）。
+4. **跳过代码围栏**（``` 内的 `###` 不算标题）；按 id 去重（先出现者胜）；保持文件顺序。
+5. 认不到结构时 `formatHint = '在 prd.md 里写「## 功能需求」，其下每行用「### FR-1 标题」列功能'`，绝不猜。
+
+**状态推导（三路证据，缺数据就是 `—`）**，按优先级：
+
+| 条件 | status |
+|---|---|
+| 归属到该功能的未处置 blocking > 0 | `blocked` |
+| 该功能验收条目全部 pass 且都有证据 | `done` |
+| 验收条目存在但没人填结果（全 null） | `pending-acceptance` |
+| 验收部分通过/有失败，或有关联的 `in_progress`/`blocked` 回执 | `in-progress` |
+| 有关联的 `completed` 回执但没有验收条目 | `pending-acceptance` |
+| 三路都读不到（审核 `read-error`、验收坏 JSON、无回执） | `unknown`（显示 `—`） |
+| 没有任何关联证据 | `not-started` |
+
+语义说明：验收条目的 `result:'blocked'` 只计入 `acceptance.blocked` 统计，状态仍按**进行中**处理 ——
+"有阻塞"在本面板专指**审核发现的未处置 bug**，两件事不能混成一个状态。
+
+**关联规则（杜绝猜测）**
+
+- 回执 → 功能：回执新增可选 `feature_ids: string[]`（`cockpit_report` 签名扩展）；`feature_ids` 含该 id 的回执即关联。
+- 功能 → 路径：这些关联回执的 `write_scope` + `artifacts` 并集（去重、归一成正斜杠、去掉尾部 `/**`、`/*`、`/`）。
+- 验收 → 功能：验收条目新增可选 `feature_ref`（等于功能 id）。
+- 审核 bug → 功能：blocking issue 的 `file` 与功能路径做**前缀匹配**（`file === path` 或 `file` 以 `path + '/'` 开头）；匹配不上任何功能 ⇒ 进 `unattributed` 单列。
+- 没有任何路径/回执关联的功能：bug 数显示 `—`（`bugs.known=false`），不显示 0。
+
+**模型载荷（给界面，逐字）**
+
+```js
+features: {
+  source: 'prd' | 'prd-missing' | 'prd-empty',
+  prdPath: string|null,
+  strategy: 'fr-section'|'fr-global'|'none',
+  formatHint: string|null,
+  counts: { total, done, blocked, inProgress, pendingAcceptance, notStarted },
+  progress: { done, total },            // 区③ 顶部「功能进度 x/y」
+  items: [{
+    id, title, priority,
+    status, statusLabel,                // 已完成/有阻塞/进行中/待验收/未开始/—
+    acceptance: { total, passed, failed, blocked, missingEvidence },
+    bugs: { blocking, severe, known, issues: [{severity,title,file,line}] },   // issues ≤ 3；severe 按全量归属结果算
+    lastAt, lastSummary, receipts, paths,
+  }],
+  unattributed: { blocking, known, issues },
+  notes: [string],
+}
+```
+
+界面口径：区④ 从「只列回执」改成「功能账表格 + 缺陷账（未归属）+ 执行回执（折叠次要）」；
+`source==='prd-missing'` 显示「还没有 prd.md」；`strategy==='none'` 显示格式提示；`bugs.known=false` 显示 `—`。
+
 ## 4. 验收（真机）
 
 1. `npm test`（= `node --test "test/*.test.js"`）全绿。
@@ -453,13 +531,15 @@ export function apply(ctx, config = {})
 6. 视觉：`tools/preview` 截图核对四区、窄屏不溢出、degraded 横幅一致。
 7. 独立评审：`claude_review` 跑一次，blocking 清零。
 
-实测记录（2026-11-20，DSH 0.2.2-rc.5 / Node 24.20）：
+实测记录（2026-11-20/21，DSH 0.2.2-rc.5 / Node 24.20）：
 
-- 1/2/3/4/6 全部通过；`npm test` = 205 用例全绿。
+- 1/2/3/4/6 全部通过；`npm test` = 244 用例全绿。
 - 安装返回 `application: applied`；`listTools` 可见 `cockpit_report` / `cockpit_init`；`Slots.listSubTree` 在 live 页面里看到 `main` 与 `sidebar.panellist` 都有 `delivery-cockpit`（active）。
 - HTTP 实测（本机 `Invoke-WebRequest`）：未登记路径 403、缺 path 400、无原型批准 409、同源 POST 200、跨源 POST 403、二次 init `applied:false / created:[]`。
-- 第 5 条的 **页面内点击** 属人工确认项（agent 打不开带鉴权的 GUI）；视觉由 `tools/preview` 的真实 React + CDP 截图覆盖：`normal.png` / `degraded.png` / `overview.png` / `normal-360.png`。
-- 改动 Host 代码后需要**重载插件**（disable→enable 或重启 DSH）才生效，文件改动本身不会热替换已加载的模块。
+- **功能账 live 实测**（临时夹具：PRD 4 条 FR + 3 条回执 + 验收表 + 审核账本 1 条归属 bug、1 条未归属）：FR-1 = 有阻塞（bug 归属到 `web/orders/list.ts`）、FR-2/FR-3 = 进行中、FR-4 = 未开始且待修列 `—`（known=false）、未归属 1 条、功能进度 0/4。夹具用完已清理，未留在仓库。
+- **真实 PRD 实测**：`D:\Coding\EasyVod` 的 `docs/prd.md`（959 行）→ 稳定提取 10 条功能（FR-1…FR-10，P0/P1 正确，`（P0，核心差异化）` 这类写法也能正确剥出标题与优先级），状态全部「未开始」、待修列 `—`（没有审核账本），如实反映"只有 PRD、还没有执行证据"。
+- 第 5 条的 **页面内点击** 属人工确认项（agent 打不开带鉴权的 GUI）；视觉由 `tools/preview` 的真实 React + CDP 截图覆盖：`features.png`（功能账主视图）/ `features-prd-missing.png` / `features-no-fr.png` / `degraded.png` / `overview.png` / `features-360.png`（360px 无横向溢出）。
+- 改动 Host 代码后需要**重载插件**（disable→enable 或重启 DSH）才生效；只改 `client.js` 需要**刷新页面**。
 
 ## 5. 实现偏差记录（实现期确认，均已在测试中固化）
 
@@ -486,6 +566,16 @@ export function apply(ctx, config = {})
 - `ledger.receipts[].needsDecision` 返回**决策对象或 null**（不是布尔）：账本区要展示 title/options。
 - 优先级 2 的 title 取回执 `needs_human_decision.title`，但会去反引号并按 20 字截断（人话硬约束优先）。
 - `progression` 保证**最多一个** `current`：整轮已发布（优先级 14）时该轨没有 current，不为凑数伪造。
+
+**功能账（V1.0.1 补）**
+
+- `evidence.review` 新增 `blockingIssues`（全量，上限 200；`issues` 仍是前 3 条给列表用）：功能账要按文件路径归属 bug，只给 3 条会把其余 bug 误算成「未归属」。
+- `cockpit_report` 新增可选 `feature_ids: string[]`（落盘统一去空格 + 大写）；`acceptance.json` 条目的 `feature_ref` 直接透传（evidence 的 items 保留原始字段）。
+- 状态优先级按实现收敛为：`有阻塞`（归属 bug）> `已完成`（验收全 pass 且有证据）> `进行中`（in_progress/blocked 回执，或验收部分有结果）> `待验收`（completed 回执但没验收通过）> `未开始`（无任何关联证据）> `—`（验收表坏了且无证据）。
+  - 关键修正：**验收草稿（result 全 null）不是证据**——它曾经让"什么都没做"的功能显示「待验收」，语义反了。
+- 每条功能的 `bugs.known` 独立判断：账本不可用，或该功能没有任何可归属路径而账本里确有 bug ⇒ `false`（界面显示 `—`）。**不写 0**。
+- 路径匹配：`write_scope`/`artifacts` 归一成正斜杠、去 `./`、折叠重复斜杠、去尾部 `/**`/`/*`/`/`；按"等于或前缀 + `/`"匹配 issue.file。
+- PRD 提取跳过代码围栏、按 id 去重、`(P0)`/`（P1）` 解析并从标题剥离；没有「功能需求」小节时全文兜底并留一条建议；完全没有 FR 结构 ⇒ 空 + 格式提示。
 
 **接线层**
 

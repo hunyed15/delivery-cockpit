@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 
 import { approvePrototype } from './lib/approvals.js'
 import { readEvidence } from './lib/evidence.js'
+import { buildFeatureBoard, extractFeatures, readPrdText } from './lib/features.js'
 import { applyInit, planInit } from './lib/init.js'
 import { buildDetailModel, buildOverviewRow } from './lib/model.js'
 import { entryForStage, loadPlaybook, resolveCapabilities, STAGE_DEFS } from './lib/playbook.js'
@@ -55,6 +56,11 @@ const COCKPIT_REPORT = {
       artifacts: { type: 'array', items: { type: 'string' } },
       task_ref: { type: 'string', description: '改代码时必填' },
       write_scope: { type: 'array', items: { type: 'string' }, description: '改代码时必填' },
+      feature_ids: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '这条回执对应 PRD 里的功能编号（如 FR-3），用于把回执挂到「功能账」上；可省略',
+      },
       needs_human_decision: {
         type: 'object',
         required: ['title'],
@@ -411,8 +417,24 @@ export function apply(ctx, config = {}) {
     for (const stage of STAGE_DEFS) {
       stageCapabilities[stage.id] = await resolveCapabilities(entryForStage(loaded.playbook, stage.id), services)
     }
+
+    // 功能账：PRD 只认受控结构（### FR-N），认不到就空着并给格式提示，绝不猜。
+    const prdText = await readPrdText(projectPath, evidence.prd?.path)
+    const extracted = extractFeatures(prdText.text)
+    const features = buildFeatureBoard({
+      extracted,
+      prd: { path: evidence.prd?.path, missing: prdText.missing, error: prdText.error, truncated: prdText.truncated },
+      receipts: evidence.receipts?.receipts,
+      acceptance: evidence.acceptance,
+      review: evidence.review,
+    })
+    for (const warning of features.warnings ?? []) {
+      evidence.warnings = Array.isArray(evidence.warnings) ? evidence.warnings : []
+      evidence.warnings.push(warning)
+    }
+
     const generatedAt = new Date().toISOString()
-    return buildDetailModel({ evidence, playbook: loaded.playbook, stageCapabilities, generatedAt })
+    return buildDetailModel({ evidence, playbook: loaded.playbook, stageCapabilities, generatedAt, features })
   }
 
   const readOverview = async () => {

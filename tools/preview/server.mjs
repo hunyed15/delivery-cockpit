@@ -185,6 +185,15 @@ const HARNESS = `(function () {
             return
           }
         }
+        // features-expanded：展开第一行，验证 bug 明细与关联路径的渲染。
+        if (scenario === 'features-expanded') {
+          var toggle = document.querySelector('.dc-row-toggle')
+          if (toggle) {
+            toggle.click()
+            waitFor('.dc-feature-detail-row', function () { document.title = 'ready:' + scenario })
+            return
+          }
+        }
         document.title = 'ready:' + scenario
       })
     },

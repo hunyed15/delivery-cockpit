@@ -18,6 +18,7 @@ const DETAIL_KEYS = [
   'acceptance',
   'dataGaps',
   'degraded',
+  'features',
   'generatedAt',
   'iteration',
   'ledger',
@@ -154,10 +155,64 @@ function build(ev, options = {}) {
     playbook: options.playbook ?? makePlaybook(),
     stageCapabilities: options.stageCapabilities ?? makeStageCapabilities(),
     generatedAt: '2026-11-20T12:00:00.000Z',
+    features: options.features,
   })
 }
 
 const currentNodes = (model) => [...model.progression.coldStart, ...model.progression.cycle].filter((node) => node.state === 'current')
+
+test('features：载荷形状、功能进度、未知 bug 用 known=false 表示', async () => {
+  const { buildFeatureBoard, extractFeatures } = await import('../lib/features.js')
+  const board = buildFeatureBoard({
+    extracted: extractFeatures(['## 功能需求', '### FR-1 采集（P0）', '### FR-2 转存'].join('\n')),
+    prd: { path: 'prd.md' },
+    receipts: [
+      receipt({ stage: 'coding', status: 'completed', feature_ids: ['FR-1'], write_scope: ['web/orders/**'] }),
+      receipt({ stage: 'coding', status: 'in_progress', feature_ids: ['FR-2'] }),
+    ],
+    acceptance: { items: [], appliesToCurrent: true, badJson: false, missing: true, empty: true, total: 0 },
+    review: { available: true, rounds: 1, blocking: 1, fixed: 0, lastRound: 1, issues: [], blockingIssues: [{ severity: 'critical', title: '按钮失效', file: 'web/orders/list.ts', line: 3 }] },
+  })
+  const model = build(evidence(), { features: board })
+
+  assert.deepEqual(model.features.progress, { done: 0, total: 2 })
+  assert.equal(model.features.source, 'prd')
+  assert.equal(model.features.items.length, 2)
+  const first = model.features.items.find((item) => item.id === 'FR-1')
+  assert.equal(first.status, 'blocked')
+  assert.equal(first.statusLabel, '有阻塞')
+  assert.equal(first.bugs.severe, 1, '严重数用 Host 的全量值')
+  assert.deepEqual(first.bugs.issues[0], { severity: 'critical', title: '按钮失效', file: 'web/orders/list.ts', line: 3 })
+  const second = model.features.items.find((item) => item.id === 'FR-2')
+  assert.equal(second.status, 'in-progress')
+  // 没有可归属路径的功能：bug 数不可知 ⇒ known=false，界面据此显示 —。
+  assert.equal(second.bugs.known, false)
+})
+
+test('features：缺省时给 prd-missing 空结构，界面不会因字段缺失崩', () => {
+  const model = build(evidence())
+  assert.equal(model.features.source, 'prd-missing')
+  assert.deepEqual(model.features.progress, { done: 0, total: 0 })
+  assert.deepEqual(model.features.items, [])
+  assert.equal(model.features.unattributed.known, false)
+})
+
+test('features：未知 status 归一成 unknown（显示 —），不冒充未开始', async () => {
+  const board = {
+    source: 'prd',
+    prdPath: 'prd.md',
+    strategy: 'fr-section',
+    formatHint: null,
+    counts: { total: 1, done: 0, blocked: 0, inProgress: 0, pendingAcceptance: 0, notStarted: 0 },
+    items: [{ id: 'FR-1', title: '采集', status: 'wat', bugs: { blocking: 0, known: false, issues: [] } }],
+    unattributed: { blocking: 0, known: false, issues: [] },
+    notes: [],
+    warnings: [],
+  }
+  const model = build(evidence(), { features: board })
+  assert.equal(model.features.items[0].status, 'unknown')
+  assert.equal(model.features.items[0].statusLabel, '—')
+})
 
 test('总览行：形状固定，阶段名是人话，待决策与上次回执来自同一份证据', () => {
   const ev = evidence({

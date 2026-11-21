@@ -96,6 +96,7 @@ test('项目路径不存在：ok:false + 空结构 + 降级，不抛错', async 
     fixed: null,
     lastRound: null,
     issues: [],
+    blockingIssues: [],
   })
   for (const key of CONTRACT_KEYS) assert.ok(key in evidence)
 })
@@ -446,6 +447,7 @@ test('审核账本缺失：available=false, reason=no-ledger，且不算降级',
       fixed: null,
       lastRound: null,
       issues: [],
+      blockingIssues: [],
     })
     assert.equal(evidence.degraded.flag, false)
   })

@@ -43,6 +43,10 @@ node tools/preview/shot.mjs "http://127.0.0.1:4711/?scenario=normal" 360 --measu
 | 值 | 用途 |
 |---|---|
 | `normal` | 详情正常态：看原型阶段、可复制指令、可点「通过原型」 |
+| `features` | 功能账主视图（5 个功能覆盖 done/blocked/in-progress/not-started/pending-acceptance + 1 条未归属 bug） |
+| `features-expanded` | 自动展开第一行，验证 bug 明细（severity/标题/file:line）与关联路径 |
+| `features-prd-missing` | 没有 prd.md 的空态（引导去 prd.md） |
+| `features-no-fr` | PRD 有内容但认不出 `### FR-N` 结构：显示 formatHint 等宽代码块 |
 | `approved` | 原型已批准：按钮变只读「已于 X 通过原型」 |
 | `pending` | 待人工决策：决策置顶 + 待决策 chip |
 | `degraded` | 读取降级：顶部横幅列原因、主按钮禁用、坏行提示 |

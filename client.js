@@ -58,6 +58,26 @@ window.__ModuleLoader__.load({
       unknown: { text: '无法检测', tone: 'unknown' },
     }
 
+    // 功能状态是 Host 三路证据推导的结果：界面只把 status/statusLabel 如实画出来，不自己推断。
+    const FEATURE_STATUS_TEXT = {
+      done: '已完成',
+      blocked: '有阻塞',
+      'in-progress': '进行中',
+      'pending-acceptance': '待验收',
+      'not-started': '未开始',
+      unknown: '—',
+    }
+    const FEATURE_STATUS_TONE = {
+      done: 'ok',
+      blocked: 'bad',
+      'in-progress': 'brand',
+      'pending-acceptance': 'warn',
+      'not-started': 'idle',
+      unknown: 'unknown',
+    }
+    const SEVERITY_TEXT = { critical: '严重', important: '重要', minor: '次要' }
+    const STRATEGY_TEXT = { 'fr-section': '功能需求节', 'fr-global': '全文扫描', none: '未识别' }
+
     // 后端错误码对用户没有意义；翻成人话，原文留在 title 里供排查。
     const ERROR_TEXT = {
       'workspace-not-allowed': '这个工作区不在已登记列表里。在某个项目目录里打开会话后回到这里，或点重试。',
@@ -315,6 +335,60 @@ h2.dc-name { margin:0; font-size:16px; font-weight:650; line-height:1.3; letter-
 .dc-ledger-summary { margin:3px 0 0; font-size:12px; overflow-wrap:anywhere; }
 .dc-ledger-meta { margin-top:2px; font-size:10.5px; color:var(--dsw-alias-label-secondary);
   display:flex; gap:8px; flex-wrap:wrap; overflow-wrap:anywhere; }
+/* 功能进度：单独一条，不混进阶段门（PRD 功能 ≠ 流程阶段）。 */
+.dc-progress-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 8px; padding:7px 10px;
+  border:1px dashed var(--dsw-alias-border-l2); border-radius:8px; background:var(--dsw-alias-bg-base); }
+.dc-progress-label { font-size:11.5px; color:var(--dsw-alias-label-secondary); }
+.dc-progress-value { font-size:13px; font-weight:650; font-variant-numeric:tabular-nums; }
+.dc-progress-bar { flex:1 1 120px; max-width:260px; height:6px; border-radius:999px; background:var(--dsw-alias-bg-layer-2); overflow:hidden; }
+.dc-progress-fill { display:block; height:100%; border-radius:999px; background:var(--dsw-alias-brand-primary); }
+.dc-board-meta { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:8px; font-size:11.5px; color:var(--dsw-alias-label-secondary); }
+.dc-board-counts { color:var(--dsw-alias-label-primary); font-weight:600; }
+/* 主表允许内部横向滚动：窄屏下表格不把整页拖宽。 */
+.dc-table-wrap { max-width:100%; overflow-x:auto; scrollbar-width:thin; }
+.dc-table { width:100%; min-width:680px; border-collapse:collapse; }
+.dc-table th { text-align:left; font-size:11.5px; font-weight:600; color:var(--dsw-alias-label-secondary);
+  padding:6px 8px; border-bottom:1px solid var(--dsw-alias-border-l1); white-space:nowrap; }
+.dc-table td { padding:7px 8px; border-bottom:1px solid var(--dsw-alias-border-l1); vertical-align:top; font-size:12px; }
+.dc-table tbody tr:last-child td { border-bottom:0; }
+.dc-table th:first-child { width:40%; }
+.dc-feature-cell { display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; min-width:0; }
+.dc-row-toggle { appearance:none; border:0; background:transparent; color:inherit; font:inherit; padding:0;
+  display:inline-flex; align-items:center; gap:4px; cursor:pointer; text-align:left; min-width:0; }
+.dc-row-toggle:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; border-radius:3px; }
+.dc-caret { color:var(--dsw-alias-label-secondary); font-size:10px; flex:none; }
+.dc-feature-id { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:11.5px; color:var(--dsw-alias-label-secondary); flex:none; }
+.dc-feature-title { font-weight:600; overflow-wrap:anywhere; }
+.dc-pri { font-size:10px; font-weight:600; border:1px solid currentColor; border-radius:4px; padding:0 4px; flex:none; }
+.dc-pri-p0 { color:var(--dsw-alias-state-error-primary); }
+.dc-pri-p1 { color:var(--dsw-alias-state-warn-primary); }
+.dc-cell-bad { color:var(--dsw-alias-state-error-primary); font-weight:600; }
+.dc-cell-mono { font-variant-numeric:tabular-nums; }
+.dc-last-cell { color:var(--dsw-alias-label-secondary); }
+.dc-feature-detail-row td { background:var(--dsw-alias-bg-layer-2); padding:8px 10px; }
+.dc-feature-detail { display:flex; flex-direction:column; gap:6px; font-size:12px; min-width:0; }
+.dc-bug-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:3px; }
+.dc-bug-item { display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; min-width:0; }
+.dc-bug-sev { font-size:11px; font-weight:600; flex:none; }
+.dc-bug-sev-critical { color:var(--dsw-alias-state-error-primary); }
+.dc-bug-sev-important { color:var(--dsw-alias-state-warn-primary); }
+.dc-bug-sev-minor { color:var(--dsw-alias-label-secondary); }
+.dc-bug-title { overflow-wrap:anywhere; }
+.dc-bug-file { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:11px; color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere; }
+.dc-path-row { font-size:11.5px; color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere; }
+.dc-sub-title { margin:12px 0 6px; font-size:12px; font-weight:600; color:var(--dsw-alias-state-warn-primary); }
+.dc-defects { margin-top:10px; padding:8px 10px; border:1px solid var(--dsw-alias-state-warn-primary); border-radius:8px; }
+.dc-defects .dc-bug-list { margin-top:4px; }
+.dc-empty-box { border:1px dashed var(--dsw-alias-border-l2); border-radius:8px; padding:10px 12px;
+  display:flex; flex-direction:column; gap:6px; background:var(--dsw-alias-bg-base); }
+.dc-code-block { margin:0; padding:8px 10px; border:1px solid var(--dsw-alias-border-l1); border-radius:6px;
+  background:var(--dsw-alias-bg-layer-2); font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-size:11.5px; line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
+.dc-receipts { margin-top:10px; }
+.dc-receipts > summary { cursor:pointer; font-size:12px; font-weight:600; color:var(--dsw-alias-label-primary); padding:4px 0; }
+.dc-receipts > summary:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; }
+.dc-receipts .dc-ledger-list { margin-top:6px; }
+.dc-receipts .dc-details { margin-top:6px; }
 .dc-empty-line { margin:0; font-size:12px; color:var(--dsw-alias-label-secondary); }
 .dc-details { margin-top:8px; font-size:11.5px; color:var(--dsw-alias-label-secondary); }
 .dc-details summary { cursor:pointer; }
@@ -1260,6 +1334,11 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
       const review = props.review || {}
       const tasks = props.tasks || {}
       const prototype = iteration.prototype || {}
+      const features = props.features || {}
+      const featureProgress = features.progress || {}
+      const featureTotal = Number(featureProgress.total) || 0
+      const featureDone = Number(featureProgress.done) || 0
+      const featurePercent = featureTotal > 0 ? Math.round((featureDone / featureTotal) * 100) : 0
 
       // 契约保证只有一个 current；万一模型给多了，只强高亮决策指向的那个，避免「两个当前」。
       const firstCurrent = cold.concat(cycle).find((node) => node && node.state === 'current')
@@ -1294,6 +1373,27 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
         'section',
         { className: 'dc-card' },
         h('h2', { className: 'dc-card-title' }, '③ 迭代进度'),
+        // 功能进度与阶段门是两套口径：前者来自 PRD 功能清单，后者是流程阶段。
+        h(
+          'div',
+          { className: 'dc-progress-row' },
+          h('span', { className: 'dc-progress-label' }, '功能进度'),
+          h(
+            'span',
+            { className: 'dc-progress-value' },
+            featureTotal > 0 ? `${featureDone}/${featureTotal}` : '—',
+          ),
+          featureTotal > 0
+            ? h(
+                'span',
+                { className: 'dc-progress-bar', 'aria-hidden': 'true' },
+                h('span', { className: 'dc-progress-fill', style: { width: `${featurePercent}%` } }),
+              )
+            : null,
+          featureTotal === 0
+            ? h('span', { className: 'dc-hint' }, '还没有识别到 PRD 功能清单')
+            : h('span', { className: 'dc-hint' }, `已完成 ${featureDone}，共 ${featureTotal} 个功能`),
+        ),
         h('div', { className: 'dc-track-label' }, '冷启动（每项目一次）'),
         h(
           'ol',
@@ -1338,22 +1438,286 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
       )
     }
 
-    // ---------- 详情 · ④ 人话账本 ----------
+    // ---------- 详情 · ④ 功能账 & 缺陷账 ----------
+    //
+    // 功能状态由 Host 用三路证据（验收 / 归属 bug / 回执）推导后下发，这里只如实呈现：
+    // 不根据标题猜、不把「读不到」显示成 0。缺陷账分「功能内」与「未归属」两处。
 
-    function LedgerSection(props) {
+    function FeatureStatusChip(props) {
+      const status = props.status || 'unknown'
+      const text = props.label || FEATURE_STATUS_TEXT[status] || '—'
+      return h(Chip, { tone: FEATURE_STATUS_TONE[status] || 'unknown' }, text)
+    }
+
+    function BugList(props) {
+      const issues = asArray(props.issues)
+      if (issues.length === 0) return null
+      return h(
+        'ul',
+        { className: 'dc-bug-list' },
+        issues.map((issue, index) =>
+          h(
+            'li',
+            { key: (issue && (issue.key || issue.title)) || `bug${index}`, className: 'dc-bug-item' },
+            h(
+              'span',
+              { className: `dc-bug-sev dc-bug-sev-${(issue && issue.severity) || 'minor'}` },
+              SEVERITY_TEXT[issue && issue.severity] || (issue && issue.severity) || '问题',
+            ),
+            h('span', { className: 'dc-bug-title' }, (issue && issue.title) || '（没有标题）'),
+            issue && issue.file
+              ? h(
+                  'span',
+                  { className: 'dc-bug-file' },
+                  `${issue.file}${issue.line ? `:${issue.line}` : ''}`,
+                )
+              : null,
+          ),
+        ),
+      )
+    }
+
+    function FeatureRow(props) {
+      const item = props.item || {}
+      const acceptance = item.acceptance || {}
+      const bugs = item.bugs || {}
+      // known === false 是「路径/回执关联不足，没法判断」——必须显示 —，绝不能显示 0。
+      const known = bugs.known !== false
+      const blockingRaw = Number(bugs.blocking)
+      const blocking = Number.isFinite(blockingRaw) ? blockingRaw : 0
+      const issues = asArray(bugs.issues)
+      // 严重数优先用 Host 算好的全量值；Host 没给时才退回数下发的前 3 条（老数据兼容）。
+      const severeRaw = Number(bugs.severe)
+      const severeCount = Number.isFinite(severeRaw)
+        ? severeRaw
+        : issues.filter((issue) => issue && issue.severity === 'critical').length
+      let bugText = '—'
+      if (known) {
+        if (blocking > 0) bugText = severeCount > 0 ? `${blocking}（严重 ${severeCount}）` : String(blocking)
+        else bugText = '0'
+      }
+      const acceptanceTotal = Number(acceptance.total) || 0
+      const acceptanceText = acceptanceTotal > 0
+        ? `${Number(acceptance.passed) || 0}/${acceptanceTotal}`
+        : '—'
+      const paths = asArray(item.paths)
+      const receipts = Number(item.receipts) || 0
+      const expandable = issues.length > 0 || paths.length > 0 || receipts > 0
+      const expanded = props.expanded === true
+      const when = item.lastAt ? formatRelative(item.lastAt) : ''
+      const summary = String(item.lastSummary || '').trim()
+      const lastText = when || summary ? [when, summary].filter(Boolean).join(' · ') : '—'
+
+      return h(
+        React.Fragment,
+        null,
+        h(
+          'tr',
+          null,
+          h(
+            'td',
+            null,
+            h(
+              'div',
+              { className: 'dc-feature-cell' },
+              expandable
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dc-row-toggle',
+                      'aria-expanded': expanded ? 'true' : 'false',
+                      onClick: props.onToggle,
+                      title: expanded ? '收起明细' : '展开 bug 明细与关联路径',
+                    },
+                    h('span', { className: 'dc-caret', 'aria-hidden': 'true' }, expanded ? '▾' : '▸'),
+                    h('span', { className: 'dc-feature-id' }, item.id || '—'),
+                    item.priority
+                      ? h(
+                          'span',
+                          { className: `dc-pri dc-pri-${String(item.priority).toLowerCase()}` },
+                          item.priority,
+                        )
+                      : null,
+                    h('span', { className: 'dc-feature-title' }, item.title || '（没有标题）'),
+                  )
+                : h(
+                    React.Fragment,
+                    null,
+                    h('span', { className: 'dc-caret', 'aria-hidden': 'true' }, '·'),
+                    h('span', { className: 'dc-feature-id' }, item.id || '—'),
+                    item.priority
+                      ? h(
+                          'span',
+                          { className: `dc-pri dc-pri-${String(item.priority).toLowerCase()}` },
+                          item.priority,
+                        )
+                      : null,
+                    h('span', { className: 'dc-feature-title' }, item.title || '（没有标题）'),
+                  ),
+            ),
+          ),
+          h('td', null, h(FeatureStatusChip, { status: item.status, label: item.statusLabel })),
+          h('td', { className: blocking > 0 ? 'dc-cell-bad dc-cell-mono' : 'dc-cell-mono' }, bugText),
+          h('td', { className: 'dc-cell-mono' }, acceptanceText),
+          h('td', { className: 'dc-last-cell' }, lastText),
+        ),
+        expanded && expandable
+          ? h(
+              'tr',
+              { className: 'dc-feature-detail-row' },
+              h(
+                'td',
+                { colSpan: 5 },
+                h(
+                  'div',
+                  { className: 'dc-feature-detail' },
+                  issues.length > 0
+                    ? h(
+                        'div',
+                        null,
+                        h('div', { className: 'dc-caps-label' }, '该功能上的未处置阻塞'),
+                        h(BugList, { issues }),
+                      )
+                    : h('div', { className: 'dc-hint' }, known ? '该功能没有未处置阻塞。' : '关联证据不足，待修数未知（—）。'),
+                  paths.length > 0
+                    ? h(
+                        'div',
+                        { className: 'dc-path-row' },
+                        '关联路径：',
+                        h('code', { className: 'dc-code' }, paths.join('、')),
+                      )
+                    : null,
+                  receipts > 0 ? h('div', { className: 'dc-hint' }, `关联回执 ${receipts} 条`) : null,
+                ),
+              ),
+            )
+          : null,
+      )
+    }
+
+    function FeatureBoardSection(props) {
+      const features = props.features || {}
       const ledger = props.ledger || {}
       const receipts = asArray(ledger.receipts)
       const warnings = asArray(props.warnings)
       const dataGaps = asArray(props.dataGaps)
+      const items = asArray(features.items)
+      const source = features.source || 'prd'
+      const strategy = features.strategy || 'none'
+      const formatHint = String(features.formatHint || '')
+      const unattributed = features.unattributed || {}
+      const unattributedBlocking = Number(unattributed.blocking) || 0
+      const notes = asArray(features.notes)
+      const totalReceipts = Number(ledger.total) || receipts.length
+      const [expanded, setExpanded] = React.useState({})
+      const toggle = (id) => setExpanded((previous) => ({ ...previous, [id]: !previous[id] }))
+
       // 待决策置顶：needs_human_decision 非空即最高优，与 status 无关（design §7）。
       const decisionReceipt = receipts.find((receipt) => receipt && receipt.needsDecision) || null
       const decision = decisionReceipt && decisionReceipt.needsDecision
-      const total = Number(ledger.total) || receipts.length
+
+      let board = null
+      if (source === 'prd-missing') {
+        board = h(
+          'div',
+          { className: 'dc-empty-box' },
+          h('div', { className: 'dc-banner-title' }, '还没有 prd.md —— 想清楚阶段会产出它'),
+          h(
+            'p',
+            { className: 'dc-empty-line' },
+            '功能账需要 PRD 里的受控功能清单。把 prd.md 放到项目根目录（或 docs/prd.md），写好功能需求节后再回来看。',
+          ),
+          h('code', { className: 'dc-code' }, 'prd.md  /  docs/prd.md'),
+        )
+      } else if (strategy === 'none') {
+        board = h(
+          'div',
+          { className: 'dc-empty-box' },
+          h('div', { className: 'dc-banner-title' }, '认不出功能清单'),
+          formatHint ? h('pre', { className: 'dc-code-block' }, formatHint) : null,
+          h(
+            'p',
+            { className: 'dc-empty-line' },
+            '面板不解析自由文本，只认这个结构：在 prd.md 里写「## 功能需求」，其下每条用「### FR-1 标题」。',
+          ),
+        )
+      } else if (items.length === 0) {
+        board = h(
+          'div',
+          { className: 'dc-empty-box' },
+          h('div', { className: 'dc-banner-title' }, 'PRD 里还没有功能条目'),
+          h('p', { className: 'dc-empty-line' }, '功能需求节存在，但里面没有解析到「### FR-N 标题」条目。补上后刷新即可。'),
+        )
+      } else {
+        const counts = features.counts || {}
+        board = h(
+          React.Fragment,
+          null,
+          h(
+            'div',
+            { className: 'dc-board-meta' },
+            h('span', { className: 'dc-board-counts' }, `共 ${Number(counts.total) || items.length} 个功能`),
+            h('span', { className: 'dc-sub' }, '·'),
+            // 六态要全列且能加得上：只列四态时总数对不上，读的人会以为漏了功能。
+            h(
+              'span',
+              null,
+              [
+                `已完成 ${Number(counts.done) || 0}`,
+                `有阻塞 ${Number(counts.blocked) || 0}`,
+                `进行中 ${Number(counts.inProgress) || 0}`,
+                `待验收 ${Number(counts.pendingAcceptance) || 0}`,
+                `未开始 ${Number(counts.notStarted) || 0}`,
+              ].join(' · '),
+            ),
+            h('span', { className: 'dc-sub' }, '·'),
+            h('span', null, `清单来源 ${features.prdPath || '—'}`),
+            h('span', { className: 'dc-sub' }, '·'),
+            h('span', null, `识别方式 ${STRATEGY_TEXT[strategy] || strategy}`),
+          ),
+          h(
+            'div',
+            { className: 'dc-table-wrap' },
+            h(
+              'table',
+              { className: 'dc-table' },
+              h('caption', { className: 'dc-sr' }, '功能账：状态、待修、验收与最近进展'),
+              h(
+                'thead',
+                null,
+                h(
+                  'tr',
+                  null,
+                  h('th', { scope: 'col' }, '功能'),
+                  h('th', { scope: 'col' }, '状态'),
+                  h('th', { scope: 'col' }, '待修'),
+                  h('th', { scope: 'col' }, '验收'),
+                  h('th', { scope: 'col' }, '最近进展'),
+                ),
+              ),
+              h(
+                'tbody',
+                null,
+                items.map((item, index) => {
+                  const key = (item && item.id) || `feature${index}`
+                  return h(FeatureRow, {
+                    key,
+                    item,
+                    expanded: expanded[key] === true,
+                    onToggle: () => toggle(key),
+                  })
+                }),
+              ),
+            ),
+          ),
+        )
+      }
 
       return h(
         'section',
         { className: 'dc-card' },
-        h('h2', { className: 'dc-card-title' }, '④ 人话账本'),
+        h('h2', { className: 'dc-card-title' }, '④ 功能账 & 缺陷账'),
         decision
           ? h(
               'div',
@@ -1371,17 +1735,23 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
                 : null,
             )
           : null,
-        receipts.length === 0
-          ? h('p', { className: 'dc-empty-line' }, '还没有回执。Agent 每完成一步会写一条，这里按时间倒序显示。')
-          : h(
-              'ol',
-              { className: 'dc-ledger-list' },
-              receipts.map((receipt, index) =>
-                h(LedgerRow, { key: (receipt && receipt.id) || `receipt${index}`, receipt }),
-              ),
-            ),
-        total > receipts.length
-          ? h('p', { className: 'dc-hint' }, `只显示最近 ${receipts.length} 条，共 ${total} 条回执。`)
+        board,
+        notes.length > 0
+          ? h(
+              'ul',
+              { className: 'dc-notes' },
+              notes.slice(0, 6).map((note, index) => h('li', { key: `featureNote${index}` }, note)),
+            )
+          : null,
+        // 缺陷账的另一半：按路径匹配不到功能的阻塞必须单列，不能悄悄丢掉。
+        unattributedBlocking > 0
+          ? h(
+              'section',
+              { className: 'dc-defects' },
+              h('h3', { className: 'dc-sub-title' }, `未归属缺陷（${unattributedBlocking} 条）`),
+              h('p', { className: 'dc-hint' }, '按路径没匹配到任何功能，可能是共享代码或全项目问题。'),
+              h(BugList, { issues: unattributed.issues }),
+            )
           : null,
         warnings.length > 0 || dataGaps.length > 0
           ? h(
@@ -1400,6 +1770,24 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
               ),
             )
           : null,
+        // 回执退到折叠区：功能账是主视图，流水账只做次要证据。
+        h(
+          'details',
+          { className: 'dc-receipts' },
+          h('summary', null, `执行回执（${receipts.length} 条）`),
+          receipts.length === 0
+            ? h('p', { className: 'dc-empty-line' }, '还没有回执。Agent 每完成一步会写一条，这里按时间倒序显示。')
+            : h(
+                'ol',
+                { className: 'dc-ledger-list' },
+                receipts.map((receipt, index) =>
+                  h(LedgerRow, { key: (receipt && receipt.id) || `receipt${index}`, receipt }),
+                ),
+              ),
+          totalReceipts > receipts.length
+            ? h('p', { className: 'dc-hint' }, `只显示最近 ${receipts.length} 条，共 ${totalReceipts} 条回执。`)
+            : null,
+        ),
       )
     }
 
@@ -1590,8 +1978,10 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
             acceptance: panel.acceptance,
             review: panel.review,
             tasks: panel.tasks,
+            features: panel.features,
           }),
-          h(LedgerSection, {
+          h(FeatureBoardSection, {
+            features: panel.features,
             ledger,
             warnings: panel.warnings,
             dataGaps: panel.dataGaps,

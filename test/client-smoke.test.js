@@ -123,7 +123,7 @@ test('记住上次项目', () => {
 })
 
 test('一屏四区与底部状态', () => {
-  for (const title of ['① 项目名片 & 迭代头', '② 唯一下一步', '③ 迭代进度', '④ 人话账本']) {
+  for (const title of ['① 项目名片 & 迭代头', '② 唯一下一步', '③ 迭代进度', '④ 功能账 & 缺陷账']) {
     assert.ok(source.includes(title), `缺少区域标题：${title}`)
   }
   for (const text of ['上次回执', '引擎正常', '数据待确认', '主会话活跃']) {
@@ -131,6 +131,62 @@ test('一屏四区与底部状态', () => {
   }
   assert.ok(source.includes('coldStart') && source.includes('cycle'), '进度必须消费 progression.coldStart/cycle')
   assert.ok(source.includes('stageId === highlightId'), '当前阶段必须有且只有一个强高亮')
+})
+
+test('功能进度独立于阶段门', () => {
+  assert.ok(source.includes('features.progress'), '必须消费 features.progress')
+  assert.ok(source.includes("'功能进度'"), '区③ 必须有「功能进度」标签')
+  assert.ok(source.includes("featureTotal > 0 ? `${featureDone}/${featureTotal}` : '—'"),
+    'total===0 时功能进度必须显示 —')
+  assert.ok(source.includes('dc-progress-row'), '功能进度必须是独立一条，不混进阶段轨道')
+})
+
+test('功能账表格：三路证据如实呈现', () => {
+  assert.ok(source.includes('features.items'), '必须消费 features.items')
+  assert.ok(source.includes('FeatureBoardSection'), '必须有功能账区组件')
+  for (const text of ['已完成', '有阻塞', '进行中', '待验收', '未开始', '—']) {
+    assert.ok(source.includes(text), `缺少功能状态文案：${text}`)
+  }
+  assert.ok(source.includes('statusLabel'), '状态必须优先使用 Host 下发的 statusLabel')
+  for (const header of ["'功能'", "'状态'", "'待修'", "'验收'", "'最近进展'"]) {
+    assert.ok(source.includes(`h('th', { scope: 'col' }, ${header})`), `缺少表头 ${header}`)
+  }
+  assert.ok(source.includes('dc-feature-detail-row'), '行必须可展开显示 bug 明细')
+  assert.ok(source.includes('dc-path-row') && source.includes('关联路径'), '展开区必须显示关联路径')
+  assert.ok(source.includes('dc-pri'), 'priority 必须有 P0/P1 小徽章')
+  assert.ok(source.includes('lastSummary'), '最近进展必须来自 lastSummary')
+})
+
+test('缺陷账：known 不能伪造成 0，未归属必须单列', () => {
+  assert.ok(source.includes('bugs.known !== false'), '必须区分 bugs.known===false')
+  assert.ok(source.includes('if (known) {'), 'known 分支必须存在')
+  assert.ok(source.includes("let bugText = '—'"), 'known===false 时待修列初始为 —')
+  assert.ok(source.includes("else bugText = '0'"), 'known===true 且无阻塞时才显示 0')
+  assert.ok(source.includes('acceptanceTotal > 0'), '验收 total===0 时必须显示 —')
+  assert.ok(source.includes('unattributed.blocking'), '必须消费 unattributed.blocking')
+  assert.ok(source.includes('未归属缺陷'), '未归属阻塞必须单列')
+  assert.ok(source.includes('按路径没匹配到任何功能'), '未归属区必须注明匹配口径')
+  assert.ok(source.includes('SEVERITY_TEXT'), 'bug 明细必须显示 severity 中文')
+})
+
+test('功能账空态：PRD 缺失 / 结构认不出 / 无条目 分开写', () => {
+  assert.ok(source.includes("source === 'prd-missing'"), '必须处理 prd-missing')
+  assert.ok(source.includes('还没有 prd.md —— 想清楚阶段会产出它'), 'PRD 缺失文案必须逐字')
+  assert.ok(source.includes('prd.md  /  docs/prd.md'), 'PRD 缺失要引导到 prd.md')
+  assert.ok(source.includes("strategy === 'none'"), "必须处理 strategy==='none'")
+  assert.ok(source.includes('formatHint'), '必须渲染 formatHint')
+  assert.ok(source.includes('dc-code-block'), 'formatHint 必须是等宽代码块')
+  assert.ok(source.includes('面板不解析自由文本，只认这个结构'), '必须说明只认受控结构')
+  assert.ok(source.includes('PRD 里还没有功能条目'), 'items.length===0 要有独立文案')
+})
+
+test('执行回执退到折叠区（默认折叠）', () => {
+  assert.ok(source.includes('dc-receipts'), '回执必须有独立折叠区')
+  assert.ok(source.includes('执行回执（'), '折叠标题必须是「执行回执（N 条）」')
+  assert.ok(source.includes('条）'), '折叠标题必须带条数')
+  // 回执区不能默认展开：details 上不能带 open。
+  assert.ok(!/h\('details',\s*\{\s*className:\s*'dc-receipts',\s*open:/.test(source), '回执区默认不得展开')
+  assert.ok(source.includes("h('summary', null, `执行回执"), '回执折叠区必须有 summary')
 })
 
 test('降级矩阵：横幅、坏行、缺失能力', () => {

@@ -133,16 +133,34 @@ await sleep(250)
 const measureExpression = `(() => {
   const root = document.querySelector('.dc-root')
   const vw = innerWidth
+  // 表格允许在自己的横向滚动容器里滚动；这类元素不算「页面溢出」。
+  const insideXScroller = (el) => {
+    let node = el.parentElement
+    while (node && node !== document.documentElement) {
+      const style = getComputedStyle(node)
+      if (/(auto|scroll)/.test(style.overflowX)) return true
+      node = node.parentElement
+    }
+    return false
+  }
   const offenders = []
   for (const el of document.querySelectorAll('.dc-root *')) {
     const rect = el.getBoundingClientRect()
     if (rect.width > vw + 1 || rect.right > vw + 1) {
+      if (insideXScroller(el)) continue
       offenders.push({
         tag: el.tagName.toLowerCase(),
         cls: (el.getAttribute('class') || '').slice(0, 48),
         w: Math.round(rect.width),
         right: Math.round(rect.right),
       })
+    }
+  }
+  const scrollers = []
+  for (const el of document.querySelectorAll('.dc-root *')) {
+    const style = getComputedStyle(el)
+    if (/(auto|scroll)/.test(style.overflowX) && el.scrollWidth > el.clientWidth + 1) {
+      scrollers.push({ cls: (el.getAttribute('class') || '').slice(0, 48), scrollWidth: el.scrollWidth })
     }
   }
   return JSON.stringify({
@@ -152,6 +170,7 @@ const measureExpression = `(() => {
     rootScrollWidth: root ? root.scrollWidth : null,
     rootClientHeight: root ? root.clientHeight : null,
     rootScrollHeight: root ? root.scrollHeight : null,
+    xScrollers: scrollers.slice(0, 5),
     offenders: offenders.slice(0, 12),
   }, null, 2)
 })()`

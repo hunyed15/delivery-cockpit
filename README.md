@@ -1,9 +1,30 @@
 # dsh-project-cockpit
 
-DSH 插件 **交付驾驶舱**：把项目的真实状态收拢成一屏——**做到哪了、卡在哪、谁在干、下一步做什么用什么**。
+DSH 插件 **交付驾驶舱**：把项目的真实状态收拢成一屏——**哪个功能做完/没做完/有 bug、卡在哪、下一步做什么用什么**。
 
 它**接线**：把现成的 agent loop、现成的 skills/MCP、现成的会话与 worktree 连起来，把人需要知道的信息抄到仪表上。
 **不复制 agent 的判断**：插件决定"干什么、什么时候、干完没有"，agent 决定"怎么干、用哪个技能、失败怎么办"。
+
+## 功能账（面板的核心）
+
+功能清单只来自 `prd.md` 的**受控结构**（不解析自由文本）：
+
+```markdown
+## 功能需求
+
+### FR-1 信号采集（P0）
+### FR-2 检索与打分（P1）
+```
+
+每条功能的状态由**三路证据**推导，缺哪路就显示 `—`、不补 0：
+
+| 证据 | 来源 | 推导出的状态 |
+|---|---|---|
+| 验收通过 + 证据 | `acceptance.json` 条目 `feature_ref: "FR-1"` + `result:"pass"` + `evidence[]` | 已完成 |
+| 归属的未处置 bug | 审核账本 blocking 的 `file` 命中该功能的路径（回执 `write_scope`） | 有阻塞 |
+| 进行中的回执 | `cockpit_report` 的 `feature_ids: ["FR-1"]` | 进行中 / 待验收 |
+
+配套规则：没有可归属路径的功能，待修列显示 `—`；未归属的 bug 单列；PRD 没识别到 `### FR-N` 时直说并给格式提示。
 
 ## 文档
 
@@ -26,8 +47,9 @@ DSH 插件 **交付驾驶舱**：把项目的真实状态收拢成一屏——**
 - [x] 一屏四区面板（总览 → 详情）
 - [x] 真机安装验收：`application: applied`、`listTools` 可见两工具、两处 slot 已注册、HTTP 路由 200/403/409 实测、二次 init 幂等
 - [x] 原型批准最小写路径（`POST /approve-prototype`，按 `iteration_id` 落盘）—— 没有它状态机第 4 条永远过不去；视觉画廊仍属 Phase 2
+- [x] **功能账（V1.0.1）**：PRD `### FR-N` 提取 + 三路证据状态 + 缺陷按路径归属 + 未归属单列（用户反馈后补齐，取代原来的回执流水账）
 
-**测试**：`npm test` = `node --test "test/*.test.js"`，当前 **214 个用例全绿**（含一条从空项目走到下一轮迭代的端到端用例，以及写授权 fail-closed 的专项用例）。
+**测试**：`npm test` = `node --test "test/*.test.js"`，当前 **246 个用例全绿**（含端到端状态机推进、功能账三路证据、写授权 fail-closed 专项）。
 
 > 勾选只在**实现并通过验收**之后做。`node --test test/`（目录形式）在本机 Node 24 不支持，请用上面的 glob 形式或 `npm test`。
 
@@ -47,6 +69,7 @@ lib/detect.js       技术栈探测（只读文件，不猜）
 lib/project-card.js 项目名片（探测字段 + 人填两字段）
 lib/init.js         状态目录初始化（幂等 / dry-run / 只写四个文件）
 lib/playbook.js     阶段能力路由（内置 + 项目覆盖 + 存在性检测）
+lib/features.js     功能账（PRD 受控结构提取 + 三路证据状态推导 + bug 路径归属）
 lib/evidence.js     只读证据聚合（trellis / prd / 回执 / 批准 / 验收表 / 任务 / 审核账本）
 lib/state.js        状态机：唯一动作
 lib/model.js        面板模型（总览行 + 详情一屏四区）
