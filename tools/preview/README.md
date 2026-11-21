@@ -53,6 +53,11 @@ node tools/preview/shot.mjs "http://127.0.0.1:4711/?scenario=normal" 360 --measu
 | `acceptance-error` | A4 填不存在的证据路径 → Host 409 → 行内「证据文件不存在」 |
 | `acceptance-empty` | 没有验收条目：空态 + `acceptance-draft` 指引 |
 | `acceptance-truncated` | items 被截断（2 条可见）但 `acceptance.passed` 是全局真值：摘要应显示 Host 计数 + 截断提示 |
+| `acceptance-shot` | 自动展开 A4 截图框、填本地 URL 并截图成功：验证缩略图 + 「已截图并附到证据」 |
+| `acceptance-shotting` | 同上但截图请求被 mock 延迟 2.4s：抓按钮「截图中…」禁用态 |
+| `acceptance-shot-error` | 配 `&shotError=browser-not-found`：验证失败文案且保留 URL |
+
+`shotError=` 可换成 `no-url` / `invalid-url` / `url-not-loopback` / `timeout` / `capture-failed` / `browser-failed` 等，mock 按真实状态码返回；`/delivery-cockpit/api/shot` 用 `shots/normal.png` 当缩略图占位。
 | `approved` | 原型已批准：按钮变只读「已于 X 通过原型」 |
 | `pending` | 待人工决策：决策置顶 + 待决策 chip |
 | `degraded` | 读取降级：顶部横幅列原因、主按钮禁用、坏行提示 |

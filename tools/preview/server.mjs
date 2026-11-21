@@ -154,6 +154,24 @@ const HARNESS = `(function () {
     setTimeout(function () { waitForRowText(id, text, callback, attempt + 1) }, 100)
   }
 
+  // 截图场景：点「截图」→ 填预览地址 → 点「截图并附到证据」。
+  function openShotBoxAndSetUrl(id) {
+    if (!clickInRow(id, '截图')) return false
+    waitFor('.dc-shot-url', function () {
+      var input = rowFor(id) && rowFor(id).querySelector('.dc-shot-url')
+      if (input) setReactInput(input, 'http://127.0.0.1:5173')
+      clickInRow(id, '截图并附到证据')
+      if (scenario === 'acceptance-shot') {
+        waitForRowText(id, '已截图并附到证据', function () { document.title = 'ready:' + scenario })
+      } else if (scenario === 'acceptance-shotting') {
+        waitForRowText(id, '截图中…', function () { document.title = 'ready:' + scenario })
+      } else {
+        waitFor('.dc-acc-error', function () { document.title = 'ready:' + scenario })
+      }
+    })
+    return true
+  }
+
   window.__harness = {
     boot: function () {
       var ctx = {
@@ -249,6 +267,14 @@ const HARNESS = `(function () {
             return
           }
         }
+        // acceptance-shot*：展开 A4 的截图框、填预览地址、点「截图并附到证据」。
+        if (
+          scenario === 'acceptance-shot' ||
+          scenario === 'acceptance-shotting' ||
+          scenario === 'acceptance-shot-error'
+        ) {
+          if (openShotBoxAndSetUrl('A4')) return
+        }
         document.title = 'ready:' + scenario
       })
     },
@@ -262,6 +288,25 @@ let currentScenario = 'normal'
 let approved = false
 // 验收结果写操作的内存覆盖：模拟 Host 落盘后 /panel 的变化（截图才能看到刷新后的结果）。
 let acceptanceOverrides = new Map()
+// 截图场景的错误注入：?shotError=browser-not-found 之类，模拟 Host 的失败码。
+let currentShotError = null
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const SHOT_ERROR_STATUS = {
+  'item-required': 400,
+  'no-url': 400,
+  'invalid-url': 400,
+  'url-not-loopback': 400,
+  'item-not-found': 404,
+  'browser-not-found': 409,
+  'acceptance-broken': 409,
+  'iteration-mismatch': 409,
+  'iteration-required': 409,
+  timeout: 504,
+  'browser-failed': 502,
+  'capture-failed': 502,
+}
 
 function scenarioOf(url) {
   return url.searchParams.get('scenario') || currentScenario
@@ -291,6 +336,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname === '/') currentScenario = url.searchParams.get('scenario') || 'normal'
   if (url.pathname === '/') approved = false
   if (url.pathname === '/') acceptanceOverrides = new Map()
+  if (url.pathname === '/') currentShotError = url.searchParams.get('shotError') || null
   const scenario = scenarioOf(url)
 
   try {
@@ -438,6 +484,65 @@ const server = createServer(async (req, res) => {
           : { result: body.result, evidence, at: new Date().toISOString() }
       acceptanceOverrides.set(item.id, patch)
       return sendJson(res, 200, { ok: true, item: { ...item, ...patch } })
+    }
+
+    if (url.pathname === '/delivery-cockpit/api/acceptance-screenshot' && req.method === 'POST') {
+      const body = await readBody(req)
+      if (!body || !body.item_id) {
+        return sendJson(res, 400, { ok: false, error: 'item-required' })
+      }
+      // 错误注入：?shotError=browser-not-found 等
+      if (currentShotError) {
+        const status = SHOT_ERROR_STATUS[currentShotError] || 400
+        const detail =
+          currentShotError === 'capture-failed' ? '页面截图失败：Timeout waiting for selector' : undefined
+        return sendJson(res, status, { ok: false, error: currentShotError, detail })
+      }
+      const base = panelFor(scenario)
+      const items = base && base.acceptance && Array.isArray(base.acceptance.items) ? base.acceptance.items : []
+      const item = items.find((candidate) => candidate.id === body.item_id)
+      if (!item) return sendJson(res, 404, { ok: false, error: 'item-not-found' })
+      const urlValue = body.url || (base.project && base.project.commands && base.project.commands.previewUrl)
+      if (!urlValue) return sendJson(res, 400, { ok: false, error: 'no-url' })
+      let parsed = null
+      try {
+        parsed = new URL(String(urlValue))
+      } catch {
+        return sendJson(res, 400, { ok: false, error: 'invalid-url' })
+      }
+      if (!/^https?:$/.test(parsed.protocol)) {
+        return sendJson(res, 400, { ok: false, error: 'invalid-url' })
+      }
+      const host = parsed.hostname
+      if (!(host === '127.0.0.1' || host === 'localhost' || host === '::1')) {
+        return sendJson(res, 400, { ok: false, error: 'url-not-loopback' })
+      }
+      // 截图中场景需要请求持续一段时间，截图脚本才能抓到按钮禁用态。
+      await sleep(scenario === 'acceptance-shotting' ? 2400 : 200)
+      const file = `.dsh/plugin-state/shots/${item.id}-preview.png`
+      const override = acceptanceOverrides.get(item.id) || {}
+      const evidence = [...(override.evidence || item.evidence || []), file]
+      acceptanceOverrides.set(item.id, { ...override, evidence })
+      return sendJson(res, 200, {
+        ok: true,
+        item: { ...item, ...override, evidence },
+        shot: { file, width: 1280, height: 900, url: urlValue },
+        added: 1,
+      })
+    }
+
+    // 缩略图：预览环境用一张本地 PNG 占位（真实 Host 会按证据路径校验并返回原图）。
+    if (url.pathname === '/delivery-cockpit/api/shot' && req.method === 'GET') {
+      const file = url.searchParams.get('file')
+      if (!file) return sendJson(res, 400, { ok: false, error: 'file-required' })
+      try {
+        const bytes = await readFile(join(HERE, 'shots', 'thumb.png'))
+        res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' })
+        return res.end(bytes)
+      } catch {
+        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+        return res.end('shot placeholder missing')
+      }
     }
 
     res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })

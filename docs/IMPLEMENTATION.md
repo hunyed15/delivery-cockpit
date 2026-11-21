@@ -394,6 +394,8 @@ export function createRoutes(deps) // -> { handle(request): Promise<Response> }
 | POST | `/init` | body `{path, confirm:true}`；`confirm!==true` ⇒ 400 `confirm-required`；未授权 ⇒ 403；成功 `{ok:true, applied, created, skipped, gitignoreHint}` |
 | POST | `/approve-prototype` | body `{path, iteration_id}`；未授权 ⇒ 403；迭代为空/bootstrap ⇒ 400 `iteration-required`；找不到 `prototype.html` ⇒ 409 `prototype-missing`；成功 `{ok:true, approval:{iterationId, prototypeApprovedAt, prototype}}` |
 | POST | `/acceptance-result` | body `{path, item_id, result:'pass'\|'fail'\|'blocked'\|null, evidence?: string[]}`；400 `item-required`/`bad-result`/`bad-evidence`/`evidence-required`；404 `item-not-found`；409 `evidence-not-found`/`acceptance-broken`/`iteration-mismatch`/`iteration-required`；成功 `{ok:true, item}`（`null` = 撤销，清空 result/at/evidence） |
+| POST | `/acceptance-screenshot` | body `{path, item_id, url?}`（url 缺省用项目名片 `commands.previewUrl`）；只允许回环 http(s)；成功 `{ok:true, item, shot:{file,width,height,url}, added}`；400 `item-required`/`no-url`/`invalid-url`/`url-not-loopback`；404 `item-not-found`；409 `browser-not-found`/`acceptance-broken`/`iteration-*`；504 `timeout`；502 `browser-failed`/`capture-failed`。**只挂证据、不改 result** |
+| GET | `/shot?path=&file=` | 证据图片字节（png/jpeg/webp/gif，≤10 MiB，`cache-control:no-store`）；415 `not-image`/413 `file-too-large`/404 `shot-not-found`/403 未授权 |
 | 其他 | — | 404 `not found` |
 
 - 资源路由只接 GET/HEAD（DSH 实测对 resource 的非 GET 回 405）；POST 走 `kind:'exact'` 的 **handler 路由**（`initHandler(deps)`，签名 `(req, res) => Promise<void>`）。
@@ -562,6 +564,22 @@ features: {
   - 落盘只改这一条的结果/证据/时间，不动标题与步骤；迭代不匹配、坏表、条目不存在都 fail-closed。
   - HTTP 层：`POST /acceptance-result`（已登记工作区授权 + 同源 + JSON + body 上限），错误码 → 状态码见 §3.9。
 
+### 3.16 Lead · `lib/screenshot.js`（面板截图引擎，CDP 版）
+
+> 为什么不直接用 Playwright MCP：本机 profile 没有装（实测 `playwright` 缺失），而"点一下出截图"必须由 Host 做。
+> 装了 Playwright 的机器上 Agent 仍可走 MCP；这里的引擎只依赖本机已有浏览器，零 npm 依赖。
+
+- `parsePreviewUrl(value)`：**只放行 http(s) 的回环地址**（`127.0.0.1` / `localhost` / `[::1]`），其他返回 `url-not-loopback`/`invalid-url`/`no-url`。不做任意 URL 抓取（SSRF）。
+- `detectBrowser(explicitPath)`：显式配置 → `CHROME_PATH` → Chrome → Edge（Windows/macOS/Linux 常见路径）；都没有返回 `null` ⇒ 工具报 `browser-not-found`，**不偷偷装依赖**。
+- `captureScreenshot({url,width,height,timeoutMs,browserPath,signal})`：spawn `--headless=new --remote-debugging-port=<free>`，等 CDP target → `Page.enable` → `Emulation.setDeviceMetricsOverride`（deviceScaleFactor=1，避免 125% DPI 裁切）→ `Page.navigate` → poll `document.readyState==='complete'` → settle 700ms → `Page.captureScreenshot`；PNG ≤10 MiB。
+  - **单一 deadline 贯穿全程**：每一步都吃"剩余预算"，不会出现"4 段各自 30s"的最坏 100s+（实测卡死页在 6s 预算下 6.3s 返回 `timeout`）。
+  - **客户端断开即中止**：路由层把 `res 'close'` 转成 AbortSignal 传进来；截图期间断开 ⇒ 返回 `aborted`、**不写盘不挂证据**（避免"客户端报超时、服务端其实已成功"的重复截图）。
+  - **进程树清理**：Windows 用 `taskkill /PID <pid> /T /F`（裸 `child.kill()` 只杀主进程，renderer 会残留），失败回退 `SIGKILL`；临时 profile 删除失败会延迟重试一次，仍失败打 stderr 提示（不静默）。
+- `writeScreenshot(projectPath, name, png)`：写到 **`.dsh/plugin-state/shots/`**（守住"插件只写自己的状态目录"），返回项目相对路径。
+- 组合（`index.js` 的 `takeAcceptanceScreenshot`）：先确认条目存在（不存在的条目不为它起浏览器）→ 取 url（body.url 或项目名片 `commands.previewUrl`）→ 截图 → 落盘 → `addAcceptanceEvidence` 只追加证据、**不改 result**。
+- 读图（`readShot`）：只允许项目内、图片扩展名、≤10 MiB；路径穿越/非图片/超大一律拒绝。桌面端 `GET /shot` 用它，客户端据此渲染缩略图。
+- 配置（`cordis.patch.yml` 可覆盖）：`browserPath`（''=自动探测）、`screenshotWidth`（1280）、`screenshotHeight`（900）、`screenshotTimeoutMs`（30000）。
+
 ## 4. 验收（真机）
 
 1. `npm test`（= `node --test "test/*.test.js"`）全绿。
@@ -648,6 +666,16 @@ features: {
   路由层只透传客户端真的给了的字段，避免"漏字段"被下游解释成"清空人已经填好的结果"。
 - **证据按结果分级校验**（独立评审第 2 轮 important）：`pass` 才校验文件存在；`fail`/`blocked` 只规整不校验；
   `null`（撤销）无条件成功、完全不碰磁盘。理由：撤销/改判不该被"旧截图已被删除"卡死。
+
+**功能账（V1.0.4 补：面板截图）**
+
+- 截图引擎用 **CDP + 本机 Chrome/Edge**，不引 Playwright 依赖：本机没装 Playwright MCP 时"点一下就出图"必须由 Host 实现；装了 Playwright 的机器 Agent 仍可走 MCP。
+- 只允许**回环地址**（SSRF 边界写死，不做任意 URL 抓取）；浏览器不存在时明确报 `browser-not-found`，不静默降级、不自动安装。
+- 截图写进 `.dsh/plugin-state/shots/`（不是项目的 `shots/`）：插件仍然只写自己的状态目录。
+- **截图只挂证据、不改 result**：截了图 ≠ 验过了，通过仍要人点。这是"证据"与"判断"之间的线。
+- 缩略图经 `GET /shot` 读取：只允许项目内图片、≤10 MiB，路径穿越/非图片一律拒绝（避免变成任意文件下载器）。
+- **独立评审第 1 轮 2 条 important 已修**：① Windows 上杀整个进程树（taskkill /T）+ 临时 profile 延迟重删；② 单一 deadline 贯穿 + 客户端断开经 AbortSignal 中止（断开时不写盘、不挂证据）。
+- **第 2 轮 3 条 minor 已修**：截图返回前再查一次 abort（断开不写盘）；挂证据失败时删除已写的孤儿截图；`SCREENSHOT_STATUS` 补 `evidence-not-found`→409 / `bad-evidence`→400；客户端截图超时改 90s 常量并注明必须大于 Host 的 `screenshotTimeoutMs`。
 
 **接线层**
 

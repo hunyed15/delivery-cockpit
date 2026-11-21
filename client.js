@@ -101,6 +101,34 @@ window.__ModuleLoader__.load({
       return explainError(message)
     }
 
+    // 浏览器截图：只挂证据、不改 result（截了图 ≠ 验过了）。
+    const SHOT_ERROR_TEXT = {
+      'item-required': '缺少验收项 ID，刷新面板再试。',
+      'no-url': '先填预览地址（或把 previewUrl 写进 .dsh/plugin-state/project.json）',
+      'invalid-url': '预览地址格式不对，检查一下（要带 http:// 或 https://）。',
+      'url-not-loopback': '只允许截本机地址（127.0.0.1 / localhost）',
+      'browser-not-found': '本机没找到 Chrome/Edge，截图需要本机浏览器；也可手工把图放进项目再点「编辑」填路径',
+      timeout: '截图超时：页面太慢或浏览器没起来',
+      'acceptance-broken': '验收表不是合法 JSON，先修好。',
+      'iteration-mismatch': '验收表属于别的迭代。',
+      'iteration-required': '当前迭代还没确定。',
+      'item-not-found': '这条验收项已不存在，刷新面板。',
+      'workspace-not-allowed': '这个工作区不在已登记列表里。',
+    }
+
+    function explainShotError(raw) {
+      const message = String(raw == null ? '' : raw)
+      for (const [code, text] of Object.entries(SHOT_ERROR_TEXT)) {
+        if (message.indexOf(code) >= 0) return text
+      }
+      // capture-failed / browser-failed 的可读原因在 detail 里（requestJson 已拼进 message）。
+      if (/capture-failed|browser-failed/.test(message)) {
+        const detail = message.replace(/^(?:capture-failed|browser-failed):?\s*/, '')
+        return `截图失败：${detail && detail.indexOf('capture-failed') < 0 && detail.indexOf('browser-failed') < 0 ? detail : '浏览器执行出错，稍后重试'}`
+      }
+      return explainAcceptanceError(message)
+    }
+
     // 后端错误码对用户没有意义；翻成人话，原文留在 title 里供排查。
     const ERROR_TEXT = {
       'workspace-not-allowed': '这个工作区不在已登记列表里。在某个项目目录里打开会话后回到这里，或点重试。',
@@ -204,9 +232,9 @@ window.__ModuleLoader__.load({
 
     // ---------- 网络：只走自己的 Host 路由 ----------
 
-    async function requestJson(url, options) {
+    async function requestJson(url, options, timeoutMs) {
       const controller = typeof AbortController === 'function' ? new AbortController() : null
-      const timer = controller ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS) : null
+      const timer = controller ? setTimeout(() => controller.abort(), Number(timeoutMs) || REQUEST_TIMEOUT_MS) : null
       try {
         const response = await fetch(url, {
           credentials: 'same-origin',
@@ -220,10 +248,18 @@ window.__ModuleLoader__.load({
         } catch {
           body = null
         }
-        if (!response.ok) throw new Error((body && body.error) || `HTTP ${response.status}`)
+        if (!response.ok) {
+          // Host 失败时可能带 detail（截图/浏览器类错误）：保留它，界面才能显示可排查的原因。
+          const code = (body && body.error) || `HTTP ${response.status}`
+          const detail = body && body.detail
+          throw new Error(detail ? `${code}: ${detail}` : String(code))
+        }
         // 200 + 非 JSON（登录页拦截、代理改写）必须报错，否则界面会永远停在「加载中」。
         if (body === null) throw new Error('响应不是 JSON，可能被登录页或代理拦截')
-        if (body.ok === false) throw new Error(body.error || '请求失败')
+        if (body.ok === false) {
+          const detail = body.detail
+          throw new Error(detail ? `${body.error || '请求失败'}: ${detail}` : body.error || '请求失败')
+        }
         return body
       } catch (error) {
         if (error && error.name === 'AbortError') throw new Error('请求超时')
@@ -233,12 +269,16 @@ window.__ModuleLoader__.load({
       }
     }
 
-    async function postJson(url, payload) {
-      return requestJson(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', accept: 'application/json' },
-        body: JSON.stringify(payload),
-      })
+    async function postJson(url, payload, timeoutMs) {
+      return requestJson(
+        url,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json' },
+          body: JSON.stringify(payload),
+        },
+        timeoutMs,
+      )
     }
 
     // ---------- 样式（全局只注入一次；面板/详情是同一个挂载点） ----------
@@ -417,7 +457,10 @@ h2.dc-name { margin:0; font-size:16px; font-weight:650; line-height:1.3; letter-
 .dc-acceptance > summary { cursor:pointer; font-size:12.5px; font-weight:600; color:var(--dsw-alias-label-primary); padding:4px 0; }
 .dc-acceptance > summary:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; }
 .dc-acceptance .dc-table-wrap { margin-top:6px; }
-.dc-acc-table { min-width:780px; }
+.dc-acc-table { min-width:880px; }
+.dc-acc-table th:first-child { width:34%; }
+/* 功能列放 FR-N，别让窄列把标识符拆成竖排。 */
+.dc-acc-table th:nth-child(2), .dc-acc-table td:nth-child(2) { width:64px; white-space:nowrap; }
 .dc-acc-table td { vertical-align:top; }
 .dc-acc-id { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:11.5px; color:var(--dsw-alias-label-secondary); margin-right:6px; }
 .dc-acc-title { font-weight:600; overflow-wrap:anywhere; }
@@ -435,6 +478,19 @@ h2.dc-name { margin:0; font-size:16px; font-weight:650; line-height:1.3; letter-
 .dc-acc-saved { margin-top:3px; font-size:11px; color:var(--dsw-alias-state-success-primary); }
 /* 窄屏下表格要横滑：给一句提示，否则用户会以为列丢了。 */
 .dc-scroll-hint { display:none; font-size:11px; color:var(--dsw-alias-label-secondary); margin-top:2px; }
+/* 证据缩略图：点开新标签看大图；最多 3 张，多出显示 +N。 */
+.dc-thumbs { display:flex; align-items:center; gap:4px; flex-wrap:wrap; margin-top:4px; }
+.dc-thumb { appearance:none; padding:0; border:1px solid var(--dsw-alias-border-l1); border-radius:6px;
+  background:var(--dsw-alias-bg-base); width:30px; height:30px; overflow:hidden; cursor:pointer; flex:none; }
+.dc-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.dc-thumb:hover { border-color:var(--dsw-alias-brand-primary); }
+.dc-thumb:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:1px; }
+.dc-thumb-more { font-size:11px; color:var(--dsw-alias-label-secondary); }
+.dc-evidence-actions { display:flex; gap:4px; flex-wrap:wrap; margin-top:3px; }
+.dc-shot-box { margin-top:6px; display:flex; flex-direction:column; gap:4px; max-width:340px; }
+.dc-shot-row { display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
+/* 注意：shot-box 是 column flex，input 不能再写 flex:1（会沿纵轴长成一大块）。 */
+.dc-shot-url { width:100%; min-width:0; flex:none; }
 .dc-empty-line { margin:0; font-size:12px; color:var(--dsw-alias-label-secondary); }
 .dc-details { margin-top:8px; font-size:11.5px; color:var(--dsw-alias-label-secondary); }
 .dc-details summary { cursor:pointer; }
@@ -1677,6 +1733,60 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
       return parts.length > 0 ? parts[parts.length - 1] : raw
     }
 
+    const IMAGE_EVIDENCE_RE = /\.(png|jpe?g|webp|gif)(?:[?#].*)?$/i
+
+    // 只有项目内相对路径走 /shot（Host 会校验目录穿越与大小）；
+    // http(s) 证据直接当图片地址用（契约明确允许）。
+    function isImageEvidence(value) {
+      const raw = String(value == null ? '' : value).trim()
+      if (raw === '') return false
+      return /^https?:\/\//i.test(raw) || IMAGE_EVIDENCE_RE.test(raw)
+    }
+
+    function evidenceSrc(value, projectPath) {
+      const raw = String(value == null ? '' : value).trim()
+      if (/^https?:\/\//i.test(raw)) return raw
+      return `${API}/shot?path=${encodeURIComponent(projectPath || '')}&file=${encodeURIComponent(raw)}`
+    }
+
+    function openEvidenceShot(value, projectPath) {
+      const src = evidenceSrc(value, projectPath)
+      try {
+        window.open(src, '_blank', 'noopener')
+      } catch {
+        // 弹窗被拦截时什么都不做：证据本身仍然可读
+      }
+    }
+
+    // 最多 3 张缩略图，多出的显示 +N；非图片证据不在这里处理（保持文本列表）。
+    function EvidenceThumbs(props) {
+      const images = asArray(props.values).filter((value) => isImageEvidence(value))
+      if (images.length === 0) return null
+      const shown = images.slice(0, 3)
+      const rest = images.slice(3)
+      return h(
+        'div',
+        { className: 'dc-thumbs' },
+        shown.map((value, index) =>
+          h(
+            'button',
+            {
+              key: `${value}#${index}`,
+              type: 'button',
+              className: 'dc-thumb',
+              title: value,
+              'aria-label': `打开证据 ${evidenceLabel(value) || value}`,
+              onClick: () => openEvidenceShot(value, props.projectPath),
+            },
+            h('img', { src: evidenceSrc(value, props.projectPath), alt: '', loading: 'lazy' }),
+          ),
+        ),
+        rest.length > 0
+          ? h('span', { className: 'dc-thumb-more', title: rest.join('\n') }, `+${rest.length}`)
+          : null,
+      )
+    }
+
     // 验收清单：面板内可直接记录结果（通过/失败/阻塞/撤销）。
     // 写动作只发「项目路径 + 验收项 + 结果 + 证据路径」，文件校验与迭代归属由 Host 负责；
     // 成功后重新拉面板，让 Host 返回的 result/at/evidence 成为唯一事实源。
@@ -1693,6 +1803,7 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
       const [editing, setEditing] = React.useState({})
       const [drafts, setDrafts] = React.useState({})
       const [rowState, setRowState] = React.useState({})
+      const [shotUrls, setShotUrls] = React.useState({})
       const mounted = React.useRef(true)
       React.useEffect(
         () => () => {
@@ -1716,6 +1827,44 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
           .split(/[\n,，;；]+/)
           .map((part) => part.trim())
           .filter(Boolean)
+
+      // 截图用行的预览地址：默认取项目名片里的 previewUrl，用户可改，失败时保留。
+      const shotUrlFor = (id) =>
+        Object.prototype.hasOwnProperty.call(shotUrls, id)
+          ? shotUrls[id]
+          : String(props.previewUrl || '')
+      const setShotUrl = (id, value) => setShotUrls((previous) => ({ ...previous, [id]: value }))
+
+      const capture = async (item) => {
+        const id = item.id
+        if (!id) return
+        const url = String(shotUrlFor(id) || '').trim()
+        setRow(id, { capturing: true, shotOpen: true, shotError: '', shotSaved: false })
+        try {
+          const payload = { path: props.projectPath, item_id: id }
+          if (url) payload.url = url
+          // 真实截图 2–10 秒，给 90s 兜底；不要用默认 10s 超时把它打断。
+          // 注意：必须大于 Host 的 screenshotTimeoutMs（默认 30s，可在 cordis.patch.yml 调大），
+          // 否则客户端先超时、服务端其实还在截——虽然服务端会因断开中止，但体验上等于白等。
+          const SHOT_REQUEST_TIMEOUT_MS = 90000
+          const body = await postJson(`${API}/acceptance-screenshot`, payload, SHOT_REQUEST_TIMEOUT_MS)
+          if (!body || body.ok !== true) throw new Error('shot-failed')
+          if (!mounted.current) return
+          setRow(id, { capturing: false, shotError: '', shotSaved: true })
+          if (props.onRefresh) props.onRefresh()
+          setTimeout(() => {
+            if (mounted.current) setRow(id, { shotSaved: false })
+          }, 4000)
+        } catch (failure) {
+          if (!mounted.current) return
+          // 失败保留已填 URL（shotUrls 不动），方便直接重试。
+          setRow(id, {
+            capturing: false,
+            shotSaved: false,
+            shotError: explainShotError(messageOf(failure)),
+          })
+        }
+      }
 
       const submit = async (item, result) => {
         const id = item.id
@@ -1847,11 +1996,28 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
                             h(
                               'div',
                               { className: 'dc-evidence-summary', title: evidence.join('\n') || '' },
-                              evidence.length > 0
-                                ? `证据 ${evidence.length} 个 · ${evidenceLabel(evidence[0])}`
-                                : '—',
+                              evidence.length === 0
+                                ? '—'
+                                : isImageEvidence(evidence[0]) || evidence.some((value) => isImageEvidence(value))
+                                  ? `证据 ${evidence.length} 个 · ${evidenceLabel(evidence[0])}`
+                                  : evidence.join('、'),
                             ),
-                            h(
+                            h(EvidenceThumbs, { values: evidence, projectPath: props.projectPath }),
+                          ),
+                      h(
+                        'div',
+                        { className: 'dc-evidence-actions' },
+                        editingRow
+                          ? h(
+                              'button',
+                              {
+                                type: 'button',
+                                className: 'dc-btn dc-btn-sm',
+                                onClick: () => setEditingFor(id, false),
+                              },
+                              '收起编辑',
+                            )
+                          : h(
                               'button',
                               {
                                 type: 'button',
@@ -1860,7 +2026,69 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
                               },
                               '编辑',
                             ),
-                          ),
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            className: 'dc-btn dc-btn-sm',
+                            'aria-expanded': state.shotOpen === true ? 'true' : 'false',
+                            onClick: () =>
+                              setRow(id, {
+                                shotOpen: state.shotOpen !== true,
+                                shotError: state.shotOpen === true ? '' : state.shotError,
+                              }),
+                          },
+                          state.shotOpen === true ? '收起截图' : '截图',
+                        ),
+                      ),
+                      state.shotOpen === true
+                        ? h(
+                            'div',
+                            { className: 'dc-shot-box' },
+                            h('input', {
+                              className: 'dc-evidence-input dc-shot-url',
+                              value: shotUrlFor(id),
+                              placeholder: '预览地址，如 http://127.0.0.1:5173',
+                              'aria-label': `验收项 ${id} 的预览地址`,
+                              onChange: (event) => setShotUrl(id, event.target.value),
+                            }),
+                            h(
+                              'div',
+                              { className: 'dc-shot-row' },
+                              h(
+                                'button',
+                                {
+                                  type: 'button',
+                                  className: 'dc-btn dc-btn-sm dc-btn-primary',
+                                  disabled: state.capturing === true,
+                                  onClick: () => capture(item),
+                                },
+                                state.capturing === true ? '截图中…' : '截图并附到证据',
+                              ),
+                              h(
+                                'button',
+                                {
+                                  type: 'button',
+                                  className: 'dc-btn dc-btn-sm',
+                                  disabled: state.capturing === true,
+                                  onClick: () => setRow(id, { shotOpen: false }),
+                                },
+                                '取消',
+                              ),
+                            ),
+                            h(
+                              'div',
+                              { className: 'dc-hint' },
+                              '只允许本机地址（127.0.0.1 / localhost）；截图只挂到证据，不会自动改成「通过」。',
+                            ),
+                            state.shotError
+                              ? h('div', { className: 'dc-acc-error', role: 'alert' }, state.shotError)
+                              : null,
+                            state.shotSaved
+                              ? h('div', { className: 'dc-acc-saved', role: 'status' }, '已截图并附到证据')
+                              : null,
+                          )
+                        : null,
                     ),
                     h(
                       'td',
@@ -2084,6 +2312,7 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
         h(AcceptancePanel, {
           acceptance: props.acceptance,
           projectPath: props.projectPath,
+          previewUrl: props.previewUrl,
           actionKind: props.actionKind,
           onRefresh: props.onRefresh,
         }),
@@ -2329,6 +2558,7 @@ h2.dc-state-title { margin:0 0 6px; font-size:15px; font-weight:600; }
             acceptance: panel.acceptance,
             actionKind: action.kind,
             projectPath: project.path || props.selectedPath,
+            previewUrl: project.commands && project.commands.previewUrl,
             onRefresh: props.refresh,
             ledger,
             warnings: panel.warnings,

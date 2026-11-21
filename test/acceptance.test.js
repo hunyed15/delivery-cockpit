@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   acceptancePathOf,
+  addAcceptanceEvidence,
   draftAcceptance,
   normalizeDraftItems,
   normalizeEvidence,
@@ -369,5 +370,48 @@ test('normalizeEvidence：空数组合法、非字符串拒绝、超过上限截
     const capped = await normalizeEvidence(project, many)
     assert.equal(capped.ok, true)
     assert.equal(capped.evidence.length, 20)
+  })
+})
+
+test('加证据（截图）：只追加证据，绝不改结果与时间', async () => {
+  await withProject(async (project) => {
+    await seedTable(project, true)
+    await writeFile(join(project, 'shots', 'a2.png'), Buffer.from([1]))
+    const passed = await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['shots/a1.png'] })
+
+    const added = await addAcceptanceEvidence(project, { item_id: 'A1', evidence: ['shots/a2.png'] })
+    assert.equal(added.ok, true)
+    assert.equal(added.added, 1)
+    assert.deepEqual(added.item.evidence, ['shots/a1.png', 'shots/a2.png'])
+    assert.equal(added.item.result, 'pass', '截图不改结果：截了图不等于验过了')
+    assert.equal(added.item.at, passed.item.at, '也不刷新结果时间')
+
+    // 同一张再挂一次不重复
+    const again = await addAcceptanceEvidence(project, { item_id: 'A1', evidence: ['shots/a2.png'] })
+    assert.equal(again.ok, true)
+    assert.equal(again.added, 0)
+    assert.deepEqual(again.item.evidence, ['shots/a1.png', 'shots/a2.png'])
+  })
+})
+
+test('加证据：文件不存在 / 条目不存在 / 无迭代 都拒绝', async () => {
+  await withProject(async (project) => {
+    await seedTable(project)
+    const missing = await addAcceptanceEvidence(project, { item_id: 'A1', evidence: ['shots/nope.png'] })
+    assert.equal(missing.ok, false)
+    assert.equal(missing.error, 'evidence-not-found')
+
+    const noItem = await addAcceptanceEvidence(project, { item_id: 'A9', evidence: [] })
+    assert.equal(noItem.ok, false)
+    assert.equal(noItem.error, 'item-not-found')
+
+    const noEvidence = await addAcceptanceEvidence(project, { item_id: 'A1', evidence: [] })
+    assert.equal(noEvidence.ok, false)
+    assert.equal(noEvidence.error, 'evidence-required')
+  })
+  await withProject(async (project) => {
+    const noIteration = await addAcceptanceEvidence(project, { item_id: 'A1', evidence: ['x.png'] })
+    assert.equal(noIteration.ok, false)
+    assert.equal(noIteration.error, 'iteration-required')
   })
 })

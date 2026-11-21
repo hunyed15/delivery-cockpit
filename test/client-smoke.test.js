@@ -78,7 +78,7 @@ test('侧栏图标是纯 SVG 且用 currentColor', () => {
 
 test('API 前缀与端点逐字对接契约', () => {
   assert.ok(source.includes("const API = '/delivery-cockpit/api'"), 'API 前缀必须逐字')
-  for (const endpoint of ['/workspaces', '/panel?path=', '/init-plan?path=', '/init', '/approve-prototype', '/acceptance-result']) {
+  for (const endpoint of ['/workspaces', '/panel?path=', '/init-plan?path=', '/init', '/approve-prototype', '/acceptance-result', '/acceptance-screenshot']) {
     assert.ok(source.includes(`\${API}${endpoint}`), `缺少接口 ${endpoint}`)
   }
   // 写盘动作必须显式确认 + 按迭代批准；缺任何一个都会写坏状态。
@@ -233,6 +233,39 @@ test('验收结果错误码全部翻人话', () => {
     assert.ok(source.includes(text), `错误码 ${code} 没翻成人话`)
   }
   assert.ok(source.includes('explainAcceptanceError'), '错误码必须收口到一个映射函数')
+})
+
+test('浏览器截图进证据：只挂证据、不改 result', () => {
+  assert.ok(source.includes('${API}/acceptance-screenshot'), '必须调用 acceptance-screenshot 端点')
+  assert.ok(source.includes('/shot?path='), '项目内证据缩略图必须走 /shot 接口')
+  assert.ok(source.includes("window.open(src, '_blank', 'noopener')"), '点缩略图必须新标签打开')
+  assert.ok(source.includes('IMAGE_EVIDENCE_RE'), '必须能识别图片证据扩展名')
+  assert.ok(source.includes('dc-thumb') && source.includes('dc-thumb-more'), '必须渲染缩略图与 +N')
+  assert.ok(source.includes('const shown = images.slice(0, 3)'), '缩略图最多显示 3 张')
+  assert.ok(source.includes('capturing'), '必须有截图中状态')
+  assert.ok(source.includes("state.capturing === true ? '截图中…' : '截图并附到证据'"), '截图按钮文案要随状态切换')
+  assert.ok(source.includes('已截图并附到证据'), '成功提示文案必须逐字')
+  assert.ok(source.includes('SHOT_REQUEST_TIMEOUT_MS = 90000'), '截图请求必须给 90s 超时兜底（要大于 Host 的 screenshotTimeoutMs 默认 30s）')
+  // 截图 payload 里只有 path/item_id（可选 url），没有 result —— 截图不等于验收通过。
+  assert.ok(source.includes('const payload = { path: props.projectPath, item_id: id }'), '截图 payload 不允许带 result')
+  assert.ok(source.includes('if (url) payload.url = url'), 'url 可选')
+  assert.ok(source.includes('不会自动改成「通过」'), '界面必须说明截图不改结果')
+  assert.ok(source.includes('只允许本机地址（127.0.0.1 / localhost）'), '必须提示只能是回环地址')
+})
+
+test('截图错误码全部翻人话', () => {
+  for (const [code, text] of [
+    ['no-url', '先填预览地址（或把 previewUrl 写进 .dsh/plugin-state/project.json）'],
+    ['browser-not-found', '本机没找到 Chrome/Edge，截图需要本机浏览器；也可手工把图放进项目再点「编辑」填路径'],
+    ['url-not-loopback', '只允许截本机地址（127.0.0.1 / localhost）'],
+    ['timeout', '截图超时：页面太慢或浏览器没起来'],
+    ['capture-failed', '截图失败'],
+    ['browser-failed', '截图失败'],
+  ]) {
+    assert.ok(source.includes(code), `缺少截图错误码映射 ${code}`)
+    assert.ok(source.includes(text), `截图错误码 ${code} 没翻成人话`)
+  }
+  assert.ok(source.includes('explainShotError'), '截图错误码必须收口到一个映射函数')
 })
 
 test('降级矩阵：横幅、坏行、缺失能力', () => {

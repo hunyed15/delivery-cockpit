@@ -10,7 +10,7 @@
 //
 // 浏览器探测顺序：CHROME_PATH -> Chrome -> Edge。都没有就报错，不偷偷装依赖。
 import { spawn } from 'node:child_process'
-import { writeFile, mkdtemp } from 'node:fs/promises'
+import { writeFile, mkdtemp, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -59,6 +59,15 @@ const chrome = spawn(
   { stdio: 'ignore' },
 )
 
+// 浏览器进程与临时 profile 都要收干净：之前每截一张就在 %TEMP% 留一个目录。
+const stop = async () => {
+  try {
+    chrome.kill()
+  } catch {
+    // 已经退出
+  }
+  await rm(profile, { recursive: true, force: true }).catch(() => {})
+}
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 let wsUrl = null
@@ -76,7 +85,7 @@ for (let attempt = 0; attempt < 80; attempt++) {
   }
 }
 if (!wsUrl) {
-  chrome.kill()
+  await stop()
   console.error('CDP target 未就绪')
   process.exit(1)
 }
@@ -182,7 +191,7 @@ if (measureOnly) {
   console.log(probe.result.value)
   console.log(overflow ? `OVERFLOW: 横向溢出（viewport=${width}）` : `OK: 无横向溢出（viewport=${width}）`)
   ws.close()
-  chrome.kill()
+  await stop()
   process.exit(overflow ? 1 : 0)
 }
 
@@ -212,5 +221,5 @@ console.log(
 )
 
 ws.close()
-chrome.kill()
+await stop()
 process.exit(title.startsWith('ready:') && !overflow ? 0 : title.startsWith('ready:') ? 3 : 4)

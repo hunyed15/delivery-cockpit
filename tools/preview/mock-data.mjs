@@ -267,7 +267,7 @@ const ACCEPTANCE_ITEMS = [
     steps: '打开客户列表 → 点新增 → 填名字 → 保存',
     expect: '列表出现新客户',
     result: 'pass',
-    evidence: ['shots/add.png', 'https://ci.example.com/runs/42'],
+    evidence: ['.dsh/plugin-state/shots/a1.png', 'shots/add.png', 'shots/add-2.png', 'https://ci.example.com/runs/42'],
     at: ago(20),
   },
   {
@@ -317,7 +317,7 @@ const ACCEPTANCE_ITEMS = [
     steps: '跑标准样本 → 对比结果',
     expect: '误差在阈值内',
     result: 'pass',
-    evidence: ['shots/analyze.png'],
+    evidence: ['shots/analyze.png', '.dsh/plugin-state/shots/a6.png'],
     at: ago(240),
   },
 ]
@@ -701,3 +701,4 @@ export function approveResult(iterationId) {
     },
   }
 }
+

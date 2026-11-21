@@ -6,20 +6,22 @@
  * 2. 插件自己只写 `.dsh/plugin-state/`（外加 init 建 `.trellis/` 空目录）；项目别的文件一律不碰。
  * 3. 读不到就说读不到：所有降级都由 lib/evidence.js 聚合，这里不补默认值。
  */
-import { readFile, readdir, stat } from 'node:fs/promises'
+import { readFile, readdir, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { draftAcceptance, setAcceptanceResult } from './lib/acceptance.js'
+import { addAcceptanceEvidence, draftAcceptance, readAcceptanceFile, setAcceptanceResult } from './lib/acceptance.js'
 import { approvePrototype } from './lib/approvals.js'
 import { readEvidence } from './lib/evidence.js'
 import { buildFeatureBoard, extractFeatures, readPrdText } from './lib/features.js'
 import { applyInit, planInit } from './lib/init.js'
 import { buildDetailModel, buildOverviewRow } from './lib/model.js'
 import { entryForStage, loadPlaybook, resolveCapabilities, STAGE_DEFS } from './lib/playbook.js'
+import { readProjectCard } from './lib/project-card.js'
 import { appendReceipt } from './lib/receipts.js'
-import { createAcceptanceResultHandler, createApproveHandler, createInitHandler, createRoutes } from './lib/route.js'
+import { createAcceptanceResultHandler, createAcceptanceScreenshotHandler, createApproveHandler, createInitHandler, createRoutes } from './lib/route.js'
+import { captureScreenshot, writeScreenshot } from './lib/screenshot.js'
 
 export const name = 'delivery-cockpit'
 
@@ -36,6 +38,11 @@ const DEFAULT_CONFIG = {
   panelRetryMs: 500,
   panelWatchdogMs: 15_000,
   reviewStorage: 'auto',
+  // 截图（面板「截图」按钮）：本机浏览器 + CDP；不填 browserPath 时自动探测 Chrome/Edge。
+  browserPath: '',
+  screenshotWidth: 1280,
+  screenshotHeight: 900,
+  screenshotTimeoutMs: 30_000,
 }
 
 const REPORT_STAGES = ['init', 'scaffold', 'brainstorm', 'prototype', 'coding', 'code_review', 'verification', 'release']
@@ -624,11 +631,93 @@ export function apply(ctx, config = {}) {
   }
 
   // ---- 面板路由（可选能力，失败不影响工具）----
+  /**
+   * 面板「截图」：用本机浏览器截一张真实页面 → 存进 .dsh/plugin-state/shots/ → 挂到该条验收的证据上。
+   * 截图只挂证据，不改 result：截了图不等于验过了。
+   */
+  const takeAcceptanceScreenshot = async (projectPath, input = {}) => {
+    const itemId = typeof input?.item_id === 'string' ? input.item_id.trim() : ''
+    if (itemId === '') return { ok: false, error: 'item-required' }
+
+    // 先确认条目存在：不要为了一个不存在的条目白启动一次浏览器。
+    const table = await readAcceptanceFile(projectPath)
+    if (table.error) return { ok: false, error: 'acceptance-broken', detail: String(table.error?.code ?? table.error) }
+    if (table.badJson) return { ok: false, error: 'acceptance-broken' }
+    const items = Array.isArray(table.table?.items) ? table.table.items : []
+    if (!items.some((item) => String(item?.id ?? '') === itemId)) return { ok: false, error: 'item-not-found' }
+
+    let url = typeof input?.url === 'string' && input.url.trim() !== '' ? input.url.trim() : ''
+    if (url === '') {
+      const card = await readProjectCard(projectPath)
+      const configured = card?.card?.commands?.previewUrl
+      url = typeof configured === 'string' ? configured.trim() : ''
+    }
+    if (url === '') return { ok: false, error: 'no-url' }
+
+    const captured = await captureScreenshot({
+      url,
+      width: settings.screenshotWidth,
+      height: settings.screenshotHeight,
+      timeoutMs: settings.screenshotTimeoutMs,
+      browserPath: settings.browserPath === '' ? undefined : settings.browserPath,
+      signal: input?.signal,
+    })
+    if (!captured.ok) return captured
+    // 截图刚好完成时客户端才断开：不再写盘、不挂证据（与文档"断开不产生副作用"一致）。
+    if (input?.signal?.aborted === true) return { ok: false, error: 'aborted' }
+
+    const safeId = itemId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 32) || 'item'
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const file = await writeScreenshot(projectPath, `${safeId}-${stamp}.png`, captured.png)
+    const attached = await addAcceptanceEvidence(projectPath, { item_id: itemId, evidence: [file] })
+    if (!attached.ok) {
+      // 挂不上去就别留孤儿文件（比如条目在截图期间被删掉了）。
+      await rm(join(projectPath, file), { force: true }).catch(() => {})
+      return attached
+    }
+    return {
+      ok: true,
+      item: attached.item,
+      added: attached.added,
+      shot: { file, width: captured.width, height: captured.height, url: captured.url },
+    }
+  }
+
+  /** 证据图片读取：只允许项目内的图片文件，且限制体积（避免变成任意文件下载器）。 */
+  const readShot = async (projectPath, file) => {
+    if (typeof file !== 'string' || file.trim() === '') return { ok: false, error: 'shot-not-found' }
+    const root = resolve(projectPath)
+    const absolute = resolve(root, file.trim())
+    const rel = relative(root, absolute)
+    if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+      return { ok: false, error: 'shot-not-found' }
+    }
+    const contentType = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.webp': 'image/webp',
+      '.gif': 'image/gif',
+    }[extname(absolute).toLowerCase()]
+    if (!contentType) return { ok: false, error: 'not-image' }
+    let info
+    try {
+      info = await stat(absolute)
+    } catch {
+      return { ok: false, error: 'shot-not-found' }
+    }
+    if (!info.isFile()) return { ok: false, error: 'shot-not-found' }
+    if (info.size > 10 * 1024 * 1024) return { ok: false, error: 'file-too-large' }
+    const bytes = await readFile(absolute)
+    return { ok: true, bytes, contentType }
+  }
+
   const routes = createRoutes({
     listWorkspaces,
     resolveWorkspace,
     readOverview,
     readDetail,
+    readShot,
     planInit: (projectPath) => planInit(projectPath, { templatesDir: TEMPLATES }),
     applyInit: async (projectPath) => applyInit(projectPath, await planInit(projectPath, { templatesDir: TEMPLATES })),
   })
@@ -637,14 +726,17 @@ export function apply(ctx, config = {}) {
     resolveWorkspace,
     readOverview,
     readDetail,
+    readShot,
     planInit: (projectPath) => planInit(projectPath, { templatesDir: TEMPLATES }),
     applyInit: async (projectPath) => applyInit(projectPath, await planInit(projectPath, { templatesDir: TEMPLATES })),
     approvePrototype: (projectPath, iterationId) => approvePrototype(projectPath, iterationId),
     setAcceptanceResult: (projectPath, input) => setAcceptanceResult(projectPath, input),
+    takeAcceptanceScreenshot: (projectPath, input) => takeAcceptanceScreenshot(projectPath, input),
   }
   const initHandler = createInitHandler(writeDeps)
   const approveHandler = createApproveHandler(writeDeps)
   const acceptanceResultHandler = createAcceptanceResultHandler(writeDeps)
+  const acceptanceScreenshotHandler = createAcceptanceScreenshotHandler(writeDeps)
 
   const retryAttempts = Number.isFinite(settings.panelRetryAttempts) ? Math.max(1, Math.trunc(settings.panelRetryAttempts)) : 10
   const retryMs = Number.isFinite(settings.panelRetryMs) ? Math.max(1, Math.trunc(settings.panelRetryMs)) : 500
@@ -687,6 +779,13 @@ export function apply(ctx, config = {}) {
         kind: 'exact',
         path: `${ROUTE_PREFIX}/acceptance-result`,
         handler: acceptanceResultHandler,
+      }),
+    )
+    scope.effect(() =>
+      webServer.register({
+        kind: 'exact',
+        path: `${ROUTE_PREFIX}/acceptance-screenshot`,
+        handler: acceptanceScreenshotHandler,
       }),
     )
     return true

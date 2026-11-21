@@ -10,3 +10,10 @@
         # 审核账本口径：auto = 有 .trellis 任务账本用 trellis，否则用本地 .dsh/claude-review/ledger。
         # 驾驶舱只读账本，不写；读不到就不做功过判定，绝不猜。
         reviewStorage: auto
+        # 面板「截图」按钮：用本机浏览器（Chrome/Edge）的 CDP 截真实页面。
+        # 留空自动探测；也可写绝对路径强制指定。只允许回环地址（127.0.0.1/localhost）。
+        browserPath: ''
+        screenshotWidth: 1280
+        screenshotHeight: 900
+        # 截一张图的总超时（毫秒）；浏览器起不来会直接报 browser-not-found，不会静默降级。
+        screenshotTimeoutMs: 30000

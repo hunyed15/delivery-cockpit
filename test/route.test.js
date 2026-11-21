@@ -3,13 +3,20 @@ import assert from 'node:assert/strict'
 import { Readable } from 'node:stream'
 import { resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { createAcceptanceResultHandler, createApproveHandler, createInitHandler, createRoutes, BASE } from '../lib/route.js'
+import {
+  createAcceptanceResultHandler,
+  createAcceptanceScreenshotHandler,
+  createApproveHandler,
+  createInitHandler,
+  createRoutes,
+  BASE,
+} from '../lib/route.js'
 
 const PROJECT = resolve(tmpdir(), 'delivery-cockpit-route-fixture')
 const OTHER = resolve(tmpdir(), 'delivery-cockpit-not-registered')
 
 function makeDeps(overrides = {}) {
-  const calls = { detail: [], plan: [], apply: [], approve: [], acceptance: [] }
+  const calls = { detail: [], plan: [], apply: [], approve: [], acceptance: [], shot: [], screenshot: [] }
   const deps = {
     listWorkspaces: async () => [{ id: 'w1', title: 'demo', path: PROJECT }],
     resolveWorkspace: async (path) => (path === PROJECT ? { id: 'w1', title: 'demo', path: PROJECT } : null),
@@ -35,8 +42,29 @@ function makeDeps(overrides = {}) {
       if (iterationId === 'v9.9') return { ok: false, error: 'prototype-missing' }
       return { ok: true, approval: { iterationId, prototypeApprovedAt: '2026-01-01T00:00:00.000Z', prototype: 'prototype.html' } }
     },
-    setAcceptanceResult: async (path, input) => {
-      calls.acceptance.push([path, input])
+    readShot: async (projectPath, file) => {
+      calls.shot.push([projectPath, file])
+      if (file === 'notes.txt') return { ok: false, error: 'not-image' }
+      if (file === 'huge.png') return { ok: false, error: 'file-too-large' }
+      if (file === 'gone.png') return { ok: false, error: 'shot-not-found' }
+      return { ok: true, bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47]), contentType: 'image/png' }
+    },
+    takeAcceptanceScreenshot: async (projectPath, input) => {
+      calls.screenshot.push([projectPath, input])
+      if (input.item_id === 'A9') return { ok: false, error: 'item-not-found' }
+      if (!input.url && input.item_id === 'A-NOURL') return { ok: false, error: 'no-url' }
+      if (input.url === 'http://example.com') return { ok: false, error: 'url-not-loopback', detail: 'example.com' }
+      if (input.url === 'http://127.0.0.1:9/slow') return { ok: false, error: 'timeout' }
+      if (input.url === 'http://127.0.0.1:9/abort') return { ok: false, error: 'aborted' }
+      return {
+        ok: true,
+        added: 1,
+        shot: { file: '.dsh/plugin-state/shots/A1-x.png', width: 1280, height: 900, url: input.url ?? 'http://127.0.0.1:3000' },
+        item: { id: input.item_id, result: null, evidence: ['.dsh/plugin-state/shots/A1-x.png'] },
+      }
+    },
+    setAcceptanceResult: async (projectPath, input) => {
+      calls.acceptance.push([projectPath, input])
       // 与真实 setAcceptanceResult 同语义：字段缺失 ≠ 撤销。
       if (!Object.prototype.hasOwnProperty.call(input, 'result')) return { ok: false, error: 'bad-result' }
       if (input.item_id === 'A9') return { ok: false, error: 'item-not-found' }
@@ -391,6 +419,67 @@ test('POST /acceptance-result：GET 打过来给 405', async () => {
   const { deps } = makeDeps()
   const res = fakeRes()
   await createAcceptanceResultHandler(deps)(fakeReq({ method: 'GET' }), res)
+  assert.equal(res.status, 405)
+})
+
+test('GET /shot：只回图片；非图片 415、过大 413、缺失 404、未授权 403', async () => {
+  const { deps, calls } = makeDeps()
+  const routes = createRoutes(deps)
+  const shotUrl = (path, file) => `${BASE}/shot?path=${encodeURIComponent(path)}&file=${encodeURIComponent(file)}`
+
+  const ok = await routes.handle(get(shotUrl(PROJECT, '.dsh/plugin-state/shots/a1.png')))
+  assert.equal(ok.status, 200)
+  assert.equal(ok.headers.get('content-type'), 'image/png')
+  assert.equal(ok.headers.get('cache-control'), 'no-store')
+  assert.deepEqual([...new Uint8Array(await ok.arrayBuffer())], [0x89, 0x50, 0x4e, 0x47])
+
+  assert.equal((await routes.handle(get(shotUrl(PROJECT, 'notes.txt')))).status, 415)
+  assert.equal((await routes.handle(get(shotUrl(PROJECT, 'huge.png')))).status, 413)
+  assert.equal((await routes.handle(get(shotUrl(PROJECT, 'gone.png')))).status, 404)
+  assert.equal((await routes.handle(get(shotUrl(OTHER, 'a.png')))).status, 403)
+  assert.equal(calls.shot.length, 4, '未授权时不读文件')
+})
+
+test('POST /acceptance-screenshot：成功返回条目与截图；错误码映射', async () => {
+  const { deps, calls } = makeDeps()
+  const handler = createAcceptanceScreenshotHandler(deps)
+
+  const ok = fakeRes()
+  await handler(
+    fakeReq({ body: { path: PROJECT, item_id: 'A1', url: 'http://127.0.0.1:3000' } }),
+    ok,
+  )
+  assert.equal(ok.status, 200)
+  const body = JSON.parse(ok.body)
+  assert.equal(body.ok, true)
+  assert.equal(body.shot.file, '.dsh/plugin-state/shots/A1-x.png')
+  assert.equal(body.added, 1)
+
+  const cases = [
+    [{ path: PROJECT, item_id: 'A9', url: 'http://127.0.0.1:3000' }, 404, 'item-not-found'],
+    [{ path: PROJECT, item_id: 'A-NOURL' }, 400, 'no-url'],
+    [{ path: PROJECT, item_id: 'A1', url: 'http://example.com' }, 400, 'url-not-loopback'],
+    [{ path: PROJECT, item_id: 'A1', url: 'http://127.0.0.1:9/slow' }, 504, 'timeout'],
+    [{ path: PROJECT, item_id: 'A1', url: 'http://127.0.0.1:9/abort' }, 499, 'aborted'],
+  ]
+  for (const [payload, status, error] of cases) {
+    const res = fakeRes()
+    await handler(fakeReq({ body: payload }), res)
+    assert.equal(res.status, status, `${error} 的状态码`)
+    assert.equal(JSON.parse(res.body).error, error)
+  }
+
+  const denied = fakeRes()
+  await handler(fakeReq({ body: { path: OTHER, item_id: 'A1' } }), denied)
+  assert.equal(denied.status, 403)
+  assert.equal(calls.screenshot.length, 6, '未授权时不触发截图')
+  assert.ok(calls.screenshot[0][1].signal, '截图必须能收到中断信号（客户端断开时提前收手）')
+})
+
+test('POST /acceptance-screenshot：GET 打过来给 405', async () => {
+  const { deps } = makeDeps()
+  const res = fakeRes()
+  await createAcceptanceScreenshotHandler(deps)(fakeReq({ method: 'GET' }), res)
   assert.equal(res.status, 405)
 })
 
