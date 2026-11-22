@@ -20,20 +20,24 @@
 
 ### S1 项目立项
 
+> 交接物：`docs/brief.md`（一页概念：目标用户 / 场景 / 价值 / 约束 / 初步范围 / 不做什么）
+
 | 能力 | 内容 | 现状 |
 |---|---|---|
-| agent | 初始化目录、探测技术栈、写首条 receipt | ● 可用 |
+| agent | 采集脑洞、初始化目录、探测技术栈、写首条 receipt | ● 可用 |
+| skill | **`grill`（拷问式追问，把脑洞问清楚）**；`trellis-start`（原） | ⚠ 本机无 grill skill（见 §5 缺口） |
 | tool | `cockpit_init`（释放 RULES/项目名片/验收空表） | ● 可用（本插件） |
-| skill | 原 `trellis-start` | ⚠ 缺失（回退：`inline:plugin-init` 已覆盖） |
 | mcp | — | — |
-| human | 无（自动门） | — |
+| human | **立项确认**（这个想法做不做） | 待实现 |
 
 ### S2 需求定义
 
+> 输入：`docs/brief.md`；交接物：`docs/prd.md`（FR 清单 + 优先级 + 验收标准）
+
 | 能力 | 内容 | 现状 |
 |---|---|---|
-| agent | 访谈、收敛范围、写 `docs/prd.md` | ● 可用 |
-| skill | `trellis-brainstorm`；替代：`writing-plans` + PRD 模板 | ⚠ trellis 缺失（回退可用） |
+| agent | 从 brief 生成 PRD、拆 FR、写验收标准 | ● 可用 |
+| skill | `trellis-brainstorm`（原，缺失）；替代：**`grill` + PRD 模板 + `writing-plans`** | ⚠ trellis 缺失（回退可用） |
 | tool | `cockpit_acceptance`（按 FR 起草验收条目） | ● 可用 |
 | mcp | — | — |
 | human | **范围签核**（功能范围与优先级） | 待实现 |
@@ -109,6 +113,20 @@
 | tool | `release.json` 校验器（P0 新增） | 待实现 |
 | human | **发布批准** | 待实现 |
 
+## 2.5 阶段交接物链（Handoff）
+
+每个阶段的输出就是下一阶段的输入，不允许跳步：
+
+    脑洞
+     → S1 项目立项：docs/brief.md（grill 追问后的一页概念）+ 环境就绪
+     → S2 需求定义：docs/prd.md（FR 清单 / 优先级 / 验收标准）
+     → S3 架构契约：docs/architecture.md + docs/api.md（组件 / 数据模型 / 接口 / ADR）
+     → S4 原型设计：prototype.html（假数据；甲方点通过）
+     → S5 代码开发：任务清单 + 代码 + 每条任务的 receipt（含写入范围）
+     → S6 测试验证：test-report.json（命令 / 通过 / 失败 / 时间）
+     → S7 代码复核：审核账本（blocking=0）
+     → S8 验收确认：acceptance.json + 截图/差异（甲方逐条签核）
+     → S9 部署发布：release.json（版本 / 产物 / 回滚 / 变更记录；甲方批准）
 ## 3. 当前 profile 探测结果（2026-11-22）
 
 - **已装 Skills**：`claude-code-review`、`frontend-design`、`impeccable`、`ponytail`、`test-driven-development`、`systematic-debugging`、`verification-before-completion`、`finishing-a-development-branch`、`writing-plans`、`executing-plans`、`requesting-code-review`、`receiving-code-review`、`ui-ux-pro-max`、`using-git-worktrees`、`subagent-driven-development`、`dispatching-parallel-agents`、`writing-skills`。
@@ -147,6 +165,6 @@
 
 1. **必需 vs 可选**：只有 S3（架构契约）、S6（测试验证）、S9（部署发布）的**技术门**是硬的；skills/MCP 绝大多数是"可选 + 回退"，避免因缺插件卡死全流程。
 2. **硬依赖只有一个**：S7 的复核工具（`claude_review`）。缺失时 S7 技术门无法通过，面板必须明确阻塞并给安装/启用指引。
-3. **缺口优先级**：① 架构模板（S3，可先做提示词模板，不必新 skill）；② 部署 MCP 推荐与指引（S9）；③ Playwright 安装指引（S4/S6/S8，已有 CDP 回退）；④ 回执/任务板（S5）。
+3. **缺口优先级**：⓪ **grill skill（S1/S2 的想法澄清）——本机没有，建议用 `writing-skills` 自建一个精简版**（固定追问清单 + `brief.md` 模板，比装第三方更可控）；① 架构模板（S3，可先做提示词模板，不必新 skill）；② 部署 MCP 推荐与指引（S9）；③ Playwright 安装指引（S4/S6/S8，已有 CDP 回退）；④ 回执/任务板（S5）。
 4. **人工门共 5 个**：范围签核、架构签核、原型通过、验收签核、发布批准。
 5. **探测即规划**：矩阵写进 playbook 后，面板直接显示每阶段的"必需能力 / 可选能力 / 缺失 / 回退方案"，不需要人记。
