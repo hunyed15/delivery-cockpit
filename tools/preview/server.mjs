@@ -90,8 +90,8 @@ const HTML = `<!doctype html>
 <title>delivery-cockpit-preview</title>
 <link rel="stylesheet" href="/tokens.css">
 <style>
-html, body { margin:0; background:var(--dsw-alias-bg-base); }
-#root { min-height:100vh; }
+html, body { margin:0; height:100%; background:var(--dsw-alias-bg-base); }
+#root { height:100%; }
 </style>
 </head><body>
 <div id="root"></div>
@@ -611,10 +611,21 @@ const server = createServer(async (req, res) => {
           : {}),
       }
       acceptanceOverrides.set(item.id, patch)
+      // 失效留痕的实际形状与 Host 一致：receiptId 挂在 shot 下（写失败时用 receiptWarning 覆盖该路径）。
+      const receiptFailed = url.searchParams.get('receiptError') === '1'
       return sendJson(res, 200, {
         ok: true,
         item: { ...item, ...patch },
-        shot: { file, width: 1280, height: 900, url: urlValue, comparison, invalidated },
+        shot: {
+          file,
+          width: 1280,
+          height: 900,
+          url: urlValue,
+          comparison,
+          invalidated,
+          receiptId: invalidated && !receiptFailed ? 'r-mock-stale' : null,
+          receiptWarning: invalidated && receiptFailed ? 'mock: 账本文件只读' : null,
+        },
         added: 1,
       })
     }

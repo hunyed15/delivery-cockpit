@@ -125,25 +125,32 @@ test('记住上次项目', () => {
   assert.match(source, /localStorage\.setItem\(LAST_PROJECT_KEY/, '要写上次项目')
 })
 
-test('一屏四区与底部状态', () => {
-  for (const title of ['项目名片 & 迭代头', '唯一下一步', '迭代进度', '功能账 & 缺陷账']) {
-    assert.ok(source.includes(title), `缺少区域标题：${title}`)
+test('信息架构：主区四块 + 右栏，页脚已删除', () => {
+  for (const title of ['唯一下一步', '迭代进度', '功能账 & 缺陷账', '验收清单']) {
+    assert.ok(source.includes(`title: '${title}'`), `缺少区标题：${title}`)
   }
   // 四个区不是序列：区标题不再带 ①–④ 圆圈数字。
   assert.ok(!source.includes("title: '① 项目名片"), '区标题不得再带圆圈数字')
-  for (const text of ['上次回执', '引擎正常', '数据待确认', '主会话活跃']) {
-    assert.ok(source.includes(text), `缺少底部状态文案：${text}`)
+  for (const text of ['引擎正常', '数据待确认']) {
+    assert.ok(source.includes(text), `缺少状态文案：${text}`)
   }
+  assert.ok(source.includes('上次 '), '右栏回执标题行必须带「上次 <相对时间>」')
+  assert.ok(!source.includes('主会话活跃'), '页脚（主会话活跃）必须删除')
+  assert.ok(!source.includes("className: 'dc-foot'"), '详情/总览都不再有 footer')
   assert.ok(source.includes('coldStart') && source.includes('cycle'), '进度必须消费 progression.coldStart/cycle')
   assert.ok(source.includes('stageId === highlightId'), '当前阶段必须有且只有一个强高亮')
 })
 
-test('功能进度独立于阶段门', () => {
+test('摘要条取代功能区进度行', () => {
   assert.ok(source.includes('features.progress'), '必须消费 features.progress')
-  assert.ok(source.includes("'功能进度'"), '区③ 必须有「功能进度」标签')
+  assert.ok(source.includes('SummaryBar'), '必须有摘要条组件')
+  for (const label of ["'功能'", "'验收'", "'缺陷'", "'失效'", "'待决策'"]) {
+    assert.ok(source.includes(label), `摘要条缺少统计项 ${label}`)
+  }
   assert.ok(source.includes("featureTotal > 0 ? `${featureDone}/${featureTotal}` : '—'"),
-    'total===0 时功能进度必须显示 —')
-  assert.ok(source.includes('dc-progress-row'), '功能进度必须是独立一条，不混进阶段轨道')
+    'total===0 时功能统计必须显示 —')
+  assert.ok(source.includes('dc-summary-progress') && source.includes('dc-summary-fill'), '摘要条必须有 3px 功能进度条')
+  assert.ok(!source.includes("className: 'dc-progress-row'"), '功能进度不再单独占区③一行')
 })
 
 test('功能账表格：三路证据如实呈现', () => {
@@ -196,21 +203,22 @@ test('功能账空态：PRD 缺失 / 结构认不出 / 无条目 分开写', () 
   assert.ok(source.includes('PRD 里还没有功能条目'), 'items.length===0 要有独立文案')
 })
 
-test('执行回执退到折叠区（默认折叠）', () => {
-  assert.ok(source.includes('dc-receipts'), '回执必须有独立折叠区')
-  assert.ok(source.includes('执行回执（'), '折叠标题必须是「执行回执（N 条）」')
-  assert.ok(source.includes('条）'), '折叠标题必须带条数')
-  // 回执区不能默认展开：details 上不能带 open。
-  assert.ok(!/h\('details',\s*\{\s*className:\s*'dc-receipts',\s*open:/.test(source), '回执区默认不得展开')
-  assert.ok(source.includes("h('summary', null, `执行回执"), '回执折叠区必须有 summary')
+test('执行回执：右栏时间线 + 420 上限', () => {
+  assert.ok(source.includes('ReceiptsTimeline'), '必须有回执时间线组件')
+  assert.ok(source.includes('dc-receipts-timeline'), '回执必须是时间线容器')
+  assert.ok(css.includes('max-height:420px'), '时间线必须有 420 高度上限')
+  assert.ok(source.includes("h('h3', { className: 'dc-rail-title' }, '执行回执')"), '右栏标题必须是「执行回执」')
+  assert.ok(source.includes('dc-timeline-summary') && source.includes('text-overflow:ellipsis'), '一句话摘要必须单行省略')
+  assert.ok(source.includes('共 ${total} 条'), '时间线底部必须显示总条数')
+  assert.ok(source.includes('验收复核') && source.includes('验收失效'), '审计回执要保留复核/失效细徽章')
 })
 
-test('验收清单：面板内可点记录结果', () => {
+test('验收清单：默认只展示需要动作的条目', () => {
   assert.ok(source.includes('acceptance.items'), '必须消费 acceptance.items')
   assert.ok(source.includes('AcceptancePanel'), '必须有验收清单组件')
-  assert.ok(source.includes('验收清单（') && source.includes('条 · ') && source.includes('已通过'),
-    '验收清单标题必须带「N 条 · x 已通过」')
-  assert.ok(source.includes('dc-acceptance') && source.includes('open: true'), '验收清单必须默认展开')
+  assert.ok(source.includes("const actionable = items.filter"), '必须区分需要动作的条目')
+  assert.ok(source.includes('已通过 ${passedCount} 条（展开）'), '已通过条目必须折叠成一行（用 Host 全局通过数）')
+  assert.ok(!source.includes("className: 'dc-acceptance'"), '验收清单不再是默认展开的 details')
   for (const button of ["'通过'", "'失败'", "'阻塞'", "'撤销'"]) {
     assert.ok(source.includes(button), `缺少操作按钮 ${button}`)
   }
@@ -376,8 +384,8 @@ test('账本与人话状态映射', () => {
 
 test('视觉体系：排版、按钮、focus、动效、骨架屏、双主题', () => {
   assert.ok(css.length > 8000, `样式改版后仍应完整（${css.length} 字符）`)
-  // 单栏与层级：1040 居中、hero 20px 是唯一大字号内容、正文 13px。
-  assert.ok(css.includes('max-width:1040px'), '页面必须是 1040px 单栏')
+  // 两栏外壳：1180 页宽；hero 20px 是唯一大字号内容、正文 13px。
+  assert.ok(css.includes('max-width:1180px'), '页面必须是 1180px 两栏外壳')
   assert.ok(css.includes('font-size:20px'), 'hero 标题必须用 20px 层级')
   assert.ok(css.includes('font-size:13px'), '正文必须 13px')
   assert.ok(css.includes('line-height:1.6'), '正文行高必须 1.6')
@@ -412,9 +420,6 @@ test('视觉体系：排版、按钮、focus、动效、骨架屏、双主题', 
   assert.ok(css.includes('content:attr(data-label)'), '窄屏堆叠必须用 data-label 做行标签')
   assert.ok(source.includes("'data-label': '状态'"), '功能行必须带 data-label')
   assert.ok(source.includes("'data-label': '操作'"), '验收操作列必须带 data-label')
-  // 区③ 四个元信息 2×2。
-  assert.ok(css.includes('grid-template-columns:repeat(2,minmax(0,1fr))'), '区③ 元信息必须 2×2 网格')
-  assert.ok(source.includes("未完成`") || source.includes('未完成'), '任务文案必须精简短')
   // 缩略图 28px + hover/focus accent。
   assert.ok(css.includes('width:28px; height:28px'), '证据缩略图必须 28px')
   assert.ok(css.includes('.dc-thumb:hover') && css.includes('.dc-thumb:focus-visible'), '缩略图必须有 hover/focus accent')
@@ -424,3 +429,32 @@ test('视觉体系：排版、按钮、focus、动效、骨架屏、双主题', 
   assert.ok(source.includes('dc-ws-enter'), '总览卡片必须有箭头位移元素')
   assert.ok(css.includes('.dc-ws-card:hover .dc-ws-enter'), '总览箭头必须在 hover 时右移')
 })
+
+test('两栏布局：容器查询 / 摘要条 / 右栏 sticky / 信息降噪', () => {
+  assert.ok(css.includes('container-type:inline-size'), '必须用容器查询而不是窗口 media query')
+  assert.ok(css.includes('@container (min-width:1170px)'), '两栏断点必须是 1170px 容器查询（主区 ≥830 才放得下 820 的验收表）')
+  assert.ok(!/@container \(min-width:880px\)/.test(css), '不得再有两栏 880 断点（会与主区堆叠混排）')
+  assert.ok(!/@container \(min-width:1040px\)/.test(css), '1040 两栏会与主区 ≤700 堆叠在 1040 处相交，产生混合态')
+  assert.ok(css.includes('@container (max-width:700px)'), '表格堆叠必须只在主区 ≤700 时触发')
+  assert.ok(css.includes('grid-template-columns:minmax(0,1fr) 280px'), '两栏必须是主区 + 280px 右栏')
+  assert.ok(css.includes('.dc-rail { position:sticky; top:106px; z-index:2; }'), '右栏必须在 ≥1040 时 sticky 于 106px（header 59 + 摘要 46）')
+  assert.ok(css.includes('.dc-summary-bar {') && css.includes('position:sticky; top:59px'), '摘要条必须随 header 常驻')
+  assert.ok(source.includes('SummaryBar') && source.includes('dc-summary-bar'), '必须有摘要条')
+  assert.ok(source.includes("title: '未处置的审核 blocking，含未归属'"), '缺陷统计必须有 tooltip 说明口径')
+  assert.ok(source.includes('dc-rail-severe') && source.includes('没有未处置阻塞'), '右栏必须有「最严重」一行或空文案')
+  assert.ok(source.includes('mostSevereIssue'), '最严重一条必须从已有 review/features 数据挑，不新造')
+  // 信息不能因为重排被丢掉：回执写失败、功能账提示（含截断）都要有出口。
+  assert.ok(source.includes('receiptWarning'), '截图失效留痕写失败必须如实显示，不能只显示"已截图"')
+  assert.ok(source.includes('props.features && props.features.notes'), '功能账 notes（含截断告警）必须迁移到右栏数据提示')
+  assert.ok(css.includes('height:3px'), '摘要条必须有 3px 功能进度条')
+  assert.ok(source.includes('dc-cold-inline') && source.includes('coldAllDone'), '冷启动完成时必须压成一行')
+  assert.ok(!source.includes("className: 'dc-facts'"), '区③ 2×2 元信息必须删除')
+  assert.ok(!source.includes('状态按三路证据推导'), '功能账下方重复小字说明必须删除')
+  // 验收默认只列需要动作的条目，已通过折叠。
+  assert.ok(source.includes('const cleanPassed = items.filter'), '必须区分已通过条目')
+  assert.ok(source.includes('已通过 ${passedCount} 条（展开）'), '已通过必须折叠成一行')
+  // 总览标题行加项目数元信息。
+  assert.ok(source.includes('共 ${projects.length} 个项目'), '总览标题行必须显示项目数')
+})
+
+
