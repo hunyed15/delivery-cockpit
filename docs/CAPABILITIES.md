@@ -266,6 +266,44 @@
 
 并行规则：**Skill 是提示词，不能并行执行**；并行只能发生在"任务"层——S5 把任务拆给多个子代理，每个子代理各带 1 个 Method（如各自 TDD），由 Orchestrator 汇总回执。一个代理不要同时加载多个 Method。
 
+## 2.9 决策：不使用 superpowers —— 替代装配
+
+> 用户决定不使用 superpowers。它的能力（TDD、writing-plans、executing-plans、subagent-driven-development、worktrees、finishing、verification、requesting/receiving-code-review）需要替代，**但门禁与证据在我们自己的插件里，不依赖任何 skill**。
+
+### 替代映射
+
+| 原 superpowers 能力 | 替代 |
+|---|---|
+| writing-plans / executing-plans | Trellis ``design.md`` + ``implement.md``（计划与执行上下文）；mattpocock ``to-tickets`` 拆垂直 ticket |
+| test-driven-development | 自建「TDD 纪律」提示（写测试→失败→实现→通过→重构）+ Trellis ``check`` 跑测试 |
+| systematic-debugging | 自建「调试纪律」提示（复现→最小化→假设→验证→回归测试）；必要时 mattpocock 诊断流程 |
+| verification-before-completion | 自建「验证纪律」提示（无命令输出/截图/报告不得声称完成）+ 本插件门禁 |
+| subagent-driven-development / dispatching-parallel-agents | DSH 原生 subagent/workflow 工具 + 本驾驶舱 lane 回执 |
+| using-git-worktrees | DSH worktree bundle 或原生 ``git worktree`` 命令 |
+| finishing-a-development-branch | Trellis ``finish-work``（质量门/归档/journal）+ git 收尾 |
+| requesting/receiving-code-review | mattpocock ``code-review`` 五轴清单 + 本插件 ``claude_review`` 引擎（作者侧处置用 ``claude_review_disposition``） |
+
+### 无 superpowers 的九阶段角色表（canonical）
+
+| 阶段 | Method | Constraint | Producer | Verifier | Evidence |
+|---|---|---|---|---|---|
+| 项目立项 | **grilling**（mattpocock） | — | Agent | 本插件（brief + 立项确认） | ``brief.md`` |
+| 需求定义 | **Trellis brainstorm**（或 mattpocock to-spec） | — | Agent | 本插件（FR/验收起草）+ 范围签核 | ``prd.md`` |
+| 架构契约 | **Trellis design.md + 架构模板**（或 BMAD Architect / Spec Kit plan） | **ponytail**（YAGNI） | Agent | 本插件契约校验器 + 架构签核 | ``architecture.md`` / ``api.md`` |
+| 原型设计 | **frontend-design**（Anthropic） | **impeccable**（UI 审计底线） | Agent | impeccable 审计 + 你点通过 | ``prototype.html`` + 截图 |
+| 代码开发 | **自建 TDD 纪律 + Trellis implement.md**（+ to-tickets 拆票） | ponytail | Agent / 子代理 | 测试命令 + 本插件回执校验 | 测试输出 |
+| 测试验证 | **自建验证纪律 + Trellis check** | — | Agent | 本插件测试报告校验器 | ``test-report.json`` + **webapp-testing** |
+| 代码复核 | **mattpocock code-review 五轴清单**（注入引擎提示） | — | **claude_review（独立 Claude Code 进程）** | 审核账本 blocking=0 | ledger |
+| 验收确认 | （可选）自建验证纪律 | — | Agent | **本插件（人工验收 + 视觉回归 + 失效门禁）** | ``acceptance.json`` + 截图/diff |
+| 部署发布 | **Trellis finish-work**（或原生 git 收尾） | — | Agent | 本插件发布清单校验器 + 发布批准 | ``release.json`` |
+
+### 需要自建的两个小 skill（不依赖 superpowers）
+
+1. ``verify-claims``：验证纪律（声称完成前必须有命令输出/截图/报告；失败要附原始输出）；
+2. ``tdd-loop``：TDD 纪律（先写失败测试 → 最小实现 → 通过 → 重构；禁止先写实现再补测试）。
+
+两者都是纯提示词资产，可用 Anthropic ``skill-creator`` 或直接手写，后续由本插件门禁校验其证据。
+
 ## 3. 当前 profile 探测结果（2026-11-22）
 
 ### 4.1 Skill 分布（实扫，2026-11-22）
