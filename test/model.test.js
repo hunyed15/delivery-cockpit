@@ -885,4 +885,7 @@ test('stages：9 阶段只读详情（元信息/门禁/能力/最近记录），
 
   const bootstrap = model.stages.find((stage) => stage.id === 'bootstrap')
   assert.equal(bootstrap.cycle, false)
+  assert.equal(bootstrap.capabilities[0].present, 'yes')
+  assert.equal(model.stages.find((stage) => stage.id === 'implementation').capabilities[0].present, 'yes')
+  // 能力存在性透传 yes/no/unknown，不能折成 unknown
 })
