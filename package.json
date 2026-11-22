@@ -39,6 +39,7 @@
     "client.js",
     "lib",
     "templates",
+    "skills",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",

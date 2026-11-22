@@ -283,6 +283,11 @@
 | finishing-a-development-branch | Trellis ``finish-work``（质量门/归档/journal）+ git 收尾 |
 | requesting/receiving-code-review | mattpocock ``code-review`` 五轴清单 + 本插件 ``claude_review`` 引擎（作者侧处置用 ``claude_review_disposition``） |
 
+**落地状态（2026-11-22）**：
+
+- `skills/verify-claims`、`skills/tdd-loop` 已加入本仓库（随包发布），并已安装到 DSH 全局 `D:\Users\Admin\.dsh\skills`；
+- 旧插件 `scripts/reviewer-role.md` 已注入五轴评审基线（mattpocock code-review rubric），reviewer-role 测试已加；
+- 下一步：把两者声明进 playbook（S5 Method=tdd-loop、S6/S8 Method=verify-claims、S7 rubric），并让 `cockpit_report` 校验 `used_skill_or_mcp`。
 ### 无 superpowers 的九阶段角色表（canonical）
 
 | 阶段 | Method | Constraint | Producer | Verifier | Evidence |
