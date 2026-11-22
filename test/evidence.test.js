@@ -49,6 +49,25 @@ async function writeJson(project, rel, value) {
 const writeState = (project, name, value) => writeJson(project, `.dsh/plugin-state/${name}`, value)
 const writeStateText = (project, name, text) => writeText(project, `.dsh/plugin-state/${name}`, text)
 
+/** 决策门默认全 false：bootstrap / 旧文件缺字段 / 没签核都用这同一个形状。 */
+const noDecisions = () => ({
+  scope: { approved: false, at: null },
+  architecture: { approved: false, at: null },
+  acceptance: { approved: false, at: null },
+  release: { approved: false, at: null },
+})
+
+/** approvals.json 里一条迭代记录的完整形状（旧文件缺的新字段读成 null）。 */
+const approvalEntry = (overrides = {}) => ({
+  prototypeApprovedAt: null,
+  prototype: null,
+  scopeApprovedAt: null,
+  architectureApprovedAt: null,
+  acceptanceApprovedAt: null,
+  releaseApprovedAt: null,
+  ...overrides,
+})
+
 const receiptLine = (overrides) =>
   JSON.stringify({
     iteration_id: 'v1.0',
@@ -199,7 +218,7 @@ test('只有 bootstrap 回执：current=bootstrap，approval 恒 false（bootstr
     const evidence = await readEvidence(project)
     assert.equal(evidence.iteration.current, 'bootstrap')
     assert.equal(evidence.iteration.isBootstrap, true)
-    assert.deepEqual(evidence.approval, { approved: false, at: null, file: null })
+    assert.deepEqual(evidence.approval, { approved: false, at: null, file: null, decisions: noDecisions() })
   })
 })
 
@@ -214,9 +233,14 @@ test('原型批准按迭代：v1.0 的批准不会被 v1.1 误读', async () => 
     ])
     const evidence = await readEvidence(project)
     assert.equal(evidence.iteration.current, 'v1.1')
-    assert.deepEqual(evidence.approval, { approved: false, at: null, file: null })
+    assert.deepEqual(evidence.approval, { approved: false, at: null, file: null, decisions: noDecisions() })
     assert.deepEqual(evidence.iteration.approvals, {
-      map: { 'v1.0': { prototypeApprovedAt: '2026-11-20T22:10:00+08:00', prototype: 'prototype.html' } },
+      map: {
+        'v1.0': approvalEntry({
+          prototypeApprovedAt: '2026-11-20T22:10:00+08:00',
+          prototype: 'prototype.html',
+        }),
+      },
       badJson: false,
       missing: false,
     })
@@ -234,7 +258,42 @@ test('原型批准命中当前迭代：approved/at/file 原样透出', async () 
       approved: true,
       at: '2026-11-20T22:10:00+08:00',
       file: 'docs/prototype.html',
+      decisions: noDecisions(),
     })
+  })
+})
+
+test('决策门签核透出为 approval.decisions：签了的门有 at，没签的是 false', async () => {
+  await withProject(async (project) => {
+    await writeState(project, 'approvals.json', {
+      'v1.0': {
+        prototypeApprovedAt: '2026-11-20T22:10:00+08:00',
+        prototype: 'prototype.html',
+        scopeApprovedAt: '2026-11-20T22:20:00+08:00',
+        architectureApprovedAt: '2026-11-20T22:30:00+08:00',
+      },
+    })
+    await writeReceipts(project, [receiptLine({ iteration_id: 'v1.0', stage: 'brainstorm' })])
+    const evidence = await readEvidence(project)
+    assert.deepEqual(evidence.approval.decisions.scope, { approved: true, at: '2026-11-20T22:20:00+08:00' })
+    assert.deepEqual(evidence.approval.decisions.architecture, { approved: true, at: '2026-11-20T22:30:00+08:00' })
+    // 条目存在但没签：是 false，不是 undefined。
+    assert.deepEqual(evidence.approval.decisions.acceptance, { approved: false, at: null })
+    assert.deepEqual(evidence.approval.decisions.release, { approved: false, at: null })
+  })
+})
+
+test('旧 approvals.json 缺新字段：读成 null（不报错），decisions 全 false', async () => {
+  await withProject(async (project) => {
+    await writeState(project, 'approvals.json', {
+      'v1.0': { prototypeApprovedAt: '2026-11-20T22:10:00+08:00', prototype: 'prototype.html' },
+    })
+    await writeReceipts(project, [receiptLine({ iteration_id: 'v1.0', stage: 'brainstorm' })])
+    const evidence = await readEvidence(project)
+    assert.deepEqual(evidence.approval.decisions, noDecisions())
+    assert.equal(evidence.iteration.approvals.map['v1.0'].scopeApprovedAt, null)
+    assert.equal(evidence.iteration.approvals.map['v1.0'].releaseApprovedAt, null)
+    assert.equal(evidence.iteration.approvals.badJson, false)
   })
 })
 

@@ -12,7 +12,7 @@ import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node
 import { fileURLToPath } from 'node:url'
 
 import { addAcceptanceEvidence, draftAcceptance, readAcceptanceFile, setAcceptanceResult } from './lib/acceptance.js'
-import { approvePrototype } from './lib/approvals.js'
+import { approveDecision, approvePrototype } from './lib/approvals.js'
 import { checkStageCapability } from './lib/capabilities.js'
 import { readEvidence } from './lib/evidence.js'
 import { buildFeatureBoard, extractFeatures, readPrdText } from './lib/features.js'
@@ -21,7 +21,7 @@ import { buildDetailModel, buildOverviewRow } from './lib/model.js'
 import { entryForStage, loadPlaybook, resolveCapabilities, STAGE_DEFS } from './lib/playbook.js'
 import { readProjectCard } from './lib/project-card.js'
 import { appendReceipt, STAGES } from './lib/receipts.js'
-import { createAcceptanceResultHandler, createAcceptanceScreenshotHandler, createApproveHandler, createInitHandler, createRoutes } from './lib/route.js'
+import { createAcceptanceResultHandler, createAcceptanceScreenshotHandler, createApproveHandler, createDecisionHandler, createInitHandler, createRoutes } from './lib/route.js'
 import { captureScreenshot, writeScreenshot } from './lib/screenshot.js'
 import { compareScreenshots, pickBaselineEvidence, renderDiffPng } from './lib/visual-diff.js'
 
@@ -856,11 +856,14 @@ export function apply(ctx, config = {}) {
     planInit: (projectPath) => planInit(projectPath, { templatesDir: TEMPLATES }),
     applyInit: async (projectPath) => applyInit(projectPath, await planInit(projectPath, { templatesDir: TEMPLATES })),
     approvePrototype: (projectPath, iterationId) => approvePrototype(projectPath, iterationId),
+    // 决策门（P1）：范围 / 架构 / 原型 / 验收 / 发布，前置校验全在 lib/approvals.js。
+    approveDecision: (projectPath, iterationId, gate) => approveDecision(projectPath, iterationId, gate),
     setAcceptanceResult: (projectPath, input) => setAcceptanceResult(projectPath, input),
     takeAcceptanceScreenshot: (projectPath, input) => takeAcceptanceScreenshot(projectPath, input),
   }
   const initHandler = createInitHandler(writeDeps)
   const approveHandler = createApproveHandler(writeDeps)
+  const decisionHandler = createDecisionHandler(writeDeps)
   const acceptanceResultHandler = createAcceptanceResultHandler(writeDeps)
   const acceptanceScreenshotHandler = createAcceptanceScreenshotHandler(writeDeps)
 
@@ -891,6 +894,13 @@ export function apply(ctx, config = {}) {
         kind: 'exact',
         path: `${ROUTE_PREFIX}/init`,
         handler: initHandler,
+      }),
+    )
+    scope.effect(() =>
+      webServer.register({
+        kind: 'exact',
+        path: `${ROUTE_PREFIX}/approve`,
+        handler: decisionHandler,
       }),
     )
     scope.effect(() =>

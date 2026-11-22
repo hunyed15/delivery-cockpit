@@ -7,6 +7,7 @@ import {
   createAcceptanceResultHandler,
   createAcceptanceScreenshotHandler,
   createApproveHandler,
+  createDecisionHandler,
   createInitHandler,
   createRoutes,
   BASE,
@@ -16,7 +17,7 @@ const PROJECT = resolve(tmpdir(), 'delivery-cockpit-route-fixture')
 const OTHER = resolve(tmpdir(), 'delivery-cockpit-not-registered')
 
 function makeDeps(overrides = {}) {
-  const calls = { detail: [], plan: [], apply: [], approve: [], acceptance: [], shot: [], screenshot: [] }
+  const calls = { detail: [], plan: [], apply: [], approve: [], decision: [], acceptance: [], shot: [], screenshot: [] }
   const deps = {
     listWorkspaces: async () => [{ id: 'w1', title: 'demo', path: PROJECT }],
     resolveWorkspace: async (path) => (path === PROJECT ? { id: 'w1', title: 'demo', path: PROJECT } : null),
@@ -41,6 +42,26 @@ function makeDeps(overrides = {}) {
       if (iterationId === '') return { ok: false, error: 'iteration-required' }
       if (iterationId === 'v9.9') return { ok: false, error: 'prototype-missing' }
       return { ok: true, approval: { iterationId, prototypeApprovedAt: '2026-01-01T00:00:00.000Z', prototype: 'prototype.html' } }
+    },
+    approveDecision: async (path, iterationId, gate) => {
+      calls.decision.push([path, iterationId, gate])
+      // 与真实 approveDecision 同语义：参数错 400 类，前置不满足 409 类。
+      if (!['scope', 'architecture', 'prototype', 'acceptance', 'release'].includes(gate)) {
+        return { ok: false, error: 'bad-gate' }
+      }
+      if (iterationId === '' || iterationId === 'bootstrap') return { ok: false, error: 'bad-iteration' }
+      if (gate === 'prototype') {
+        if (iterationId === 'v9.9') return { ok: false, error: 'prototype-missing' }
+        return {
+          ok: true,
+          approval: { iterationId, prototypeApprovedAt: '2026-01-01T00:00:00.000Z', prototype: 'prototype.html' },
+        }
+      }
+      if (iterationId === 'v-prd') return { ok: false, error: 'prd-missing' }
+      if (iterationId === 'v-arch') return { ok: false, error: 'architecture-gate-not-ready', missing: ['docs/api.md'] }
+      if (iterationId === 'v-accept') return { ok: false, error: 'acceptance-not-passing', missing: ['A1'] }
+      if (iterationId === 'v-release') return { ok: false, error: 'release-gate-not-ready', missing: ['.dsh/plugin-state/release.json', 'acceptance'] }
+      return { ok: true, gate, at: '2026-01-01T00:00:00.000Z', iteration_id: iterationId }
     },
     readShot: async (projectPath, file) => {
       calls.shot.push([projectPath, file])
@@ -333,6 +354,107 @@ test('POST /approve-prototype 用 GET 打过来给 405', async () => {
   const res = fakeRes()
   await createApproveHandler(deps)(fakeReq({ method: 'GET' }), res)
   assert.equal(res.status, 405)
+})
+
+// ---------- P1 决策门：POST /approve ----------
+
+test('POST /approve：成功返回 gate/at/iteration_id，授权路径交给 approveDecision', async () => {
+  const { deps, calls } = makeDeps()
+  const res = fakeRes()
+  await createDecisionHandler(deps)(fakeReq({ body: { path: PROJECT, iteration_id: 'v1.0', gate: 'scope' } }), res)
+  assert.equal(res.status, 200)
+  assert.deepEqual(JSON.parse(res.body), {
+    ok: true,
+    gate: 'scope',
+    at: '2026-01-01T00:00:00.000Z',
+    iteration_id: 'v1.0',
+  })
+  assert.deepEqual(calls.decision, [[PROJECT, 'v1.0', 'scope']])
+})
+
+test('POST /approve：bad-gate / bad-iteration 是 400（先区分"参数错"与"前置不满足"）', async () => {
+  const { deps, calls } = makeDeps()
+  const cases = [
+    [{ path: PROJECT, iteration_id: 'v1.0', gate: 'nope' }, 'bad-gate'],
+    [{ path: PROJECT, iteration_id: '', gate: 'scope' }, 'bad-iteration'],
+    [{ path: PROJECT, iteration_id: 'bootstrap', gate: 'scope' }, 'bad-iteration'],
+  ]
+  for (const [payload, expected] of cases) {
+    const res = fakeRes()
+    await createDecisionHandler(deps)(fakeReq({ body: payload }), res)
+    assert.equal(res.status, 400, `${expected} 应是 400`)
+    assert.deepEqual(JSON.parse(res.body), { ok: false, error: expected })
+  }
+  assert.equal(calls.decision.length, 3, '参数错也交给 approveDecision 判定（路由层不复制规则）')
+})
+
+test('POST /approve：前置不满足映射 409，并把 missing 带给面板', async () => {
+  const { deps } = makeDeps()
+  const cases = [
+    ['v-prd', 'scope', 'prd-missing', undefined],
+    ['v-arch', 'architecture', 'architecture-gate-not-ready', ['docs/api.md']],
+    ['v-accept', 'acceptance', 'acceptance-not-passing', ['A1']],
+    ['v-release', 'release', 'release-gate-not-ready', ['.dsh/plugin-state/release.json', 'acceptance']],
+  ]
+  for (const [iterationId, gate, expected, missing] of cases) {
+    const res = fakeRes()
+    await createDecisionHandler(deps)(fakeReq({ body: { path: PROJECT, iteration_id: iterationId, gate } }), res)
+    assert.equal(res.status, 409, `${expected} 应是 409`)
+    const body = JSON.parse(res.body)
+    assert.equal(body.ok, false)
+    assert.equal(body.error, expected)
+    if (missing) assert.deepEqual(body.missing, missing)
+  }
+})
+
+test('POST /approve：prototype 分支兼容旧形状（映射成统一成功字段）且 prototype-missing 409', async () => {
+  const { deps } = makeDeps()
+  const ok = fakeRes()
+  await createDecisionHandler(deps)(fakeReq({ body: { path: PROJECT, iteration_id: 'v1.0', gate: 'prototype' } }), ok)
+  assert.equal(ok.status, 200)
+  const body = JSON.parse(ok.body)
+  assert.deepEqual(body, {
+    ok: true,
+    gate: 'prototype',
+    at: '2026-01-01T00:00:00.000Z',
+    iteration_id: 'v1.0',
+  })
+  assert.equal(body.approval, undefined, '响应只给契约里的四个字段')
+
+  const missing = fakeRes()
+  await createDecisionHandler(deps)(fakeReq({ body: { path: PROJECT, iteration_id: 'v9.9', gate: 'prototype' } }), missing)
+  assert.equal(missing.status, 409)
+  assert.deepEqual(JSON.parse(missing.body), { ok: false, error: 'prototype-missing' })
+})
+
+test('POST /approve：未登记工作区 403 且不写签核；跨源 403；GET 405', async () => {
+  const { deps, calls } = makeDeps()
+  const denied = fakeRes()
+  await createDecisionHandler(deps)(fakeReq({ body: { path: OTHER, iteration_id: 'v1.0', gate: 'scope' } }), denied)
+  assert.equal(denied.status, 403)
+  assert.deepEqual(JSON.parse(denied.body), { ok: false, error: 'workspace-not-allowed' })
+  assert.equal(calls.decision.length, 0, '未授权时不写签核记录')
+
+  const cross = fakeRes()
+  await createDecisionHandler(deps)(
+    fakeReq({ body: { path: PROJECT, iteration_id: 'v1.0', gate: 'scope' }, origin: 'http://evil.example' }),
+    cross,
+  )
+  assert.equal(cross.status, 403)
+  assert.equal(JSON.parse(cross.body).error, 'origin-not-allowed')
+
+  const get = fakeRes()
+  await createDecisionHandler(deps)(fakeReq({ method: 'GET' }), get)
+  assert.equal(get.status, 405)
+})
+
+test('POST /approve-prototype 仍可用（向后兼容，不受新接口影响）', async () => {
+  const { deps, calls } = makeDeps()
+  const res = fakeRes()
+  await createApproveHandler(deps)(fakeReq({ body: { path: PROJECT, iteration_id: 'v1.0' } }), res)
+  assert.equal(res.status, 200)
+  assert.equal(JSON.parse(res.body).approval.prototype, 'prototype.html')
+  assert.deepEqual(calls.approve, [[PROJECT, 'v1.0']])
 })
 
 test('POST /acceptance-result：通过必须带证据，缺证据 400 且不落盘', async () => {

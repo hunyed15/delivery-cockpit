@@ -248,6 +248,27 @@ window.__ModuleLoader__.load({
       return explainError(message)
     }
 
+    // 决策门（P1）签核失败：告诉人"现在该去补什么"，而不是只丢一个错误码。
+    const DECISION_ERROR_TEXT = {
+      'prd-missing': '先写 PRD 再签核。',
+      'architecture-gate-not-ready': '架构契约文件还不齐，先补齐。',
+      'acceptance-not-passing': '验收还没全部通过（含证据）。',
+      'release-gate-not-ready': '发布清单还不完整。',
+      'bad-gate': '这个签核动作不认识，刷新重试。',
+      'bad-iteration': '还没定下这一轮，刷新重试。',
+      'prototype-missing': '先把原型 HTML 放到项目根目录 prototype.html，再点通过。',
+      'iteration-required': '还没定下这一轮，先让 AI 记录一次进展。',
+      'workspace-not-allowed': '这个工作区不在已登记列表里，无法写入签核记录。',
+    }
+
+    function explainDecisionError(raw) {
+      const message = String(raw == null ? '' : raw)
+      for (const [code, text] of Object.entries(DECISION_ERROR_TEXT)) {
+        if (message.indexOf(code) >= 0) return text
+      }
+      return explainError(message)
+    }
+
     const messageOf = (failure) =>
       String(failure && failure.message ? failure.message : failure || '未知错误')
 
@@ -2035,6 +2056,62 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       )
     }
 
+    // 哪些下一步动作对应一个决策门：kind 由 Host 状态机给出，按钮文案与 gate 名在这里收口。
+    // 原型通过保留单独组件（已有文案与回归测试），四个新签核共用这一个。
+    const DECISION_GATE_BY_KIND = {
+      'scope-approval': { gate: 'scope', label: '确认范围', doneText: '已确认范围，正在刷新…', approvedText: '确认范围' },
+      'architecture-approval': { gate: 'architecture', label: '架构签核', doneText: '已签核架构，正在刷新…', approvedText: '签核架构' },
+      'acceptance-approval': { gate: 'acceptance', label: '确认验收', doneText: '已确认验收，正在刷新…', approvedText: '确认验收' },
+      'release-approval': { gate: 'release', label: '批准发布', doneText: '已批准发布，正在刷新…', approvedText: '批准发布' },
+    }
+
+    // 决策门签核：Host 会按 gate 校验前置（PRD / 契约文件 / 验收全绿 / 发布清单），
+    // 客户端只发「我确认了」，失败按错误码说人话。
+    function DecisionGateButton(props) {
+      const [state, setState] = React.useState({ step: 'idle', error: '' })
+      const primaryClass = props.primary === false ? 'dc-btn' : 'dc-btn dc-btn-primary'
+      if (props.approved === true) {
+        return h(
+          'span',
+          { className: 'dc-hint dc-hint-ok', title: props.at ? new Date(props.at).toLocaleString() : '' },
+          `已于 ${props.at ? formatRelative(props.at) : '—'}${props.approvedText || '签核'}`,
+        )
+      }
+      if (state.step === 'done') {
+        return h('span', { className: 'dc-hint dc-hint-ok' }, props.doneText || '已签核，正在刷新…')
+      }
+      const approve = async () => {
+        setState({ step: 'saving', error: '' })
+        try {
+          const body = await postJson(`${API}/approve`, {
+            path: props.projectPath,
+            iteration_id: props.iterationId,
+            gate: props.gate,
+          })
+          if (!body || body.ok !== true) throw new Error('approval-failed')
+          setState({ step: 'done', error: '' })
+          if (props.onApproved) props.onApproved(body)
+        } catch (failure) {
+          setState({ step: 'idle', error: explainDecisionError(messageOf(failure)) })
+        }
+      }
+      return h(
+        'span',
+        { className: 'dc-approve' },
+        h(
+          'button',
+          {
+            type: 'button',
+            className: primaryClass,
+            onClick: approve,
+            disabled: props.disabled === true || state.step === 'saving',
+          },
+          state.step === 'saving' ? '提交中…' : props.label,
+        ),
+        state.error ? h('span', { className: 'dc-hint dc-hint-bad' }, state.error) : null,
+      )
+    }
+
     function NextActionSection(props) {
       const action = props.action || {}
       const iteration = props.iteration || {}
@@ -2065,6 +2142,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const instruction = typeof action.instruction === 'string' ? action.instruction.trim() : ''
       const wantsInit = buttons.indexOf('init') >= 0 || action.kind === 'init'
       const wantsApprove = action.kind === 'prototype'
+      // 决策门：Host 只在「该签还没签」时把 kind 指到这里，按钮成功后面板刷新自然进下一步。
+      const decisionSpec = DECISION_GATE_BY_KIND[action.kind] || null
       const wantsCopy = instruction !== '' && (buttons.length === 0 || buttons.indexOf('copy') >= 0)
       const missingBlocks = missing.length > 0
       const disabled = props.degraded === true || action.disabled === true || missingBlocks
@@ -2212,6 +2291,22 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                 iterationId,
                 approved: prototype.approved === true,
                 at: prototype.at || null,
+                disabled: props.degraded === true || action.disabled === true,
+                primary: !wantsCopy,
+                onApproved: props.onApproved,
+              })
+            : null,
+          decisionSpec
+            ? h(DecisionGateButton, {
+                // key 用 gate：签完一门后下一步是另一门时强制重挂，避免沿用上一门的「已签核」状态。
+                key: decisionSpec.gate,
+                projectPath: props.projectPath,
+                iterationId,
+                gate: decisionSpec.gate,
+                label: decisionSpec.label,
+                doneText: decisionSpec.doneText,
+                approvedText: decisionSpec.approvedText,
+                approved: false,
                 disabled: props.degraded === true || action.disabled === true,
                 primary: !wantsCopy,
                 onApproved: props.onApproved,

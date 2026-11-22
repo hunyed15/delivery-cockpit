@@ -107,19 +107,30 @@ playbook stage 条目字段：`goal`、`capabilities[]`（旧检测形状 `{kind
 
 playbook 条目若自带 `stageId` 字段则以它为准（给项目覆盖留的口子），旧 id 也会先归一。
 
-### 2.4 `.dsh/plugin-state/approvals.json`（原型批准，按迭代）
+### 2.4 `.dsh/plugin-state/approvals.json`（人工签核，按迭代）
 
 ```json
-{"v1.0":{"prototypeApprovedAt":"2026-11-20T22:10:00+08:00","prototype":"prototype.html"}}
+{"v1.0":{
+  "prototypeApprovedAt":"2026-11-20T22:10:00+08:00","prototype":"prototype.html",
+  "scopeApprovedAt":"2026-11-20T22:20:00+08:00",
+  "architectureApprovedAt":"2026-11-20T22:30:00+08:00",
+  "acceptanceApprovedAt":"2026-11-21T10:00:00+08:00",
+  "releaseApprovedAt":"2026-11-21T18:00:00+08:00"}}
 ```
 
 - 必须按 `iteration_id` 存；`bootstrap` 不算任何迭代的批准。
 - 文件缺失/坏 JSON ⇒ 视为"没有批准"（不是报错）；坏 JSON 记一条 warning 并降级。
-- 读写实现见 `lib/approvals.js`（Lead 提供，`evidence.js` 直接 import，不要另写一份解析）：
+- 每条迭代记录固定这 6 个字段：原型 `prototypeApprovedAt`/`prototype`（既有），加四个决策门时间
+  `scopeApprovedAt`/`architectureApprovedAt`/`acceptanceApprovedAt`/`releaseApprovedAt`（ISO 字符串或 `null`）。
+  旧文件缺新字段 ⇒ 读成 `null`（= 没签），不报错。
+- 一条记录只按迭代存一次；每次签核只更新自己那一门的时间字段，其它字段原样保留（原子写：临时文件 + rename）。
+- 读写实现见 `lib/approvals.js`（`evidence.js` 直接 import，不要另写一份解析）：
   - `readApprovals(projectPath)` → `{ map, badJson, missing }`
-  - `approvalFor(map, iterationId)` → `{ approved, at, file }`（`bootstrap` 恒 false）
+  - `approvalFor(map, iterationId)` → `{ approved, at, file }`（原型用；bootstrap 恒 false。**条目存在 ≠ 原型已批准**：P1 起先签范围/架构也会建条目，所以看 `prototypeApprovedAt`/`prototype` 本身）
+  - `decisionsFor(map, iterationId)` → `{ scope:{approved,at}, architecture:{...}, acceptance:{...}, release:{...} }`（bootstrap/空迭代/缺条目/某门没签 ⇒ 对应门 false）
   - `findPrototype(projectPath)` → `prototype.html` / `docs/prototype.html` 的相对路径或 `null`
   - `approvePrototype(projectPath, iterationId)` → `{ok:true,approval}` / `{ok:false,error:'iteration-required'|'prototype-missing'}`
+  - `approveDecision(projectPath, iterationId, gate)` → 见 §3.19；gate ∈ `scope|architecture|prototype|acceptance|release`
 
 ### 2.5 `.dsh/plugin-state/acceptance.json`（人话验收表）
 
@@ -287,7 +298,7 @@ export async function readEvidence(projectPath, options = {})
   detected: { id, label, packageManager, commands, evidence, notes },
   receipts: { receipts, badLines, missing, lastAt },
   iteration: { current, isBootstrap, approvals: { map, badJson, missing } },
-  approval: { approved, at, file },  // 当前迭代的原型批准（bootstrap 恒 false）
+  approval: { approved, at, file, decisions: { scope, architecture, acceptance, release } }, // 原型批准 + 四个决策门（每门 {approved, at}）
   acceptance: { items, empty, badJson, missing, total, withResult, passed, failed, blocked },
   tasks: { available, total, open, completed, items: [{id,title,status}] }, // items 最多 50
   review: { available, reason, rounds, blocking, fixed, lastRound, issues: [{severity,title,file,line}] },
@@ -317,6 +328,7 @@ export function deriveDecision(evidence) // 纯函数，无 I/O
 | 2 | `pendingDecision` 非空（不论 status） | `decide` | 该回执的 stage |
 | 3 | `!trellis.initialized` | `init` | `bootstrap` |
 | 4 | `!prd.found` | `brainstorm` | `requirements` |
+| 4.2 | `approval.decisions` 存在且 `scope.approved !== true` | `scope-approval` | `requirements` |
 | 5 | `!approval.approved` | `prototype` | `prototype` |
 | 6 | `tasks.open > 0` | `coding` | `implementation` |
 | 7 | `tasks.available && tasks.total === 0` | `coding`（拆任务） | `implementation` |
@@ -325,8 +337,12 @@ export function deriveDecision(evidence) // 纯函数，无 I/O
 | 10 | `review.available && review.rounds === 0` | `first-review` | `code-review` |
 | 11 | `acceptance.empty` | `acceptance-draft` | `acceptance` |
 | 12 | `!acceptanceAllPass(evidence)` | `verification` | `acceptance` |
+| 12.2 | `approval.decisions` 存在且 `acceptance.approved !== true` | `acceptance-approval` | `acceptance` |
 | 13 | `!released(evidence)` | `release` | `release` |
 | 14 | 其余 | `next-iteration` | `release` |
+
+技术门插入点（`gates` 字段存在才判定）：**4.5** 架构契约（在 4.2 之后、5 之前）、**6.5** 测试验证、**12.5** 发布清单（在 12.2 之后、13 之前）。
+决策门插入点（`approval.decisions` 字段存在才判定）：**4.2** 范围签核、**4.6** 架构签核（在 4.5 之后、5 之前）、**12.2** 验收签核、**12.8** 发布批准（在 12.5 之后、13 之前）。两个字段都缺（旧证据/手写夹具）⇒ 整段跳过，维持旧行为。
 
 补充规则（实现层澄清，design 未覆盖但必须给唯一答案）：
 
@@ -407,6 +423,8 @@ export function createRoutes(deps) // -> { handle(request): Promise<Response> }
   readDetail,                   // async (projectPath) -> detail
   planInit,                     // async (projectPath) -> plan
   applyInit,                    // async (projectPath) -> result
+  approvePrototype,             // async (projectPath, iterationId) -> {ok, approval|error}
+  approveDecision,              // async (projectPath, iterationId, gate) -> {ok, gate, at, iteration_id}|{ok:false,error,missing?}
 }
 ```
 
@@ -418,7 +436,8 @@ export function createRoutes(deps) // -> { handle(request): Promise<Response> }
 | GET | `/panel?path=` | 无 `path` ⇒ 400 `{ok:false,error:'missing-path'}`；未授权 ⇒ 403 `{ok:false,error:'workspace-not-allowed'}`；否则 `{ok:true, panel}` |
 | GET | `/init-plan?path=` | 同上授权；`{ok:true, plan}` |
 | POST | `/init` | body `{path, confirm:true}`；`confirm!==true` ⇒ 400 `confirm-required`；未授权 ⇒ 403；成功 `{ok:true, applied, created, skipped, gitignoreHint}` |
-| POST | `/approve-prototype` | body `{path, iteration_id}`；未授权 ⇒ 403；迭代为空/bootstrap ⇒ 400 `iteration-required`；找不到 `prototype.html` ⇒ 409 `prototype-missing`；成功 `{ok:true, approval:{iterationId, prototypeApprovedAt, prototype}}` |
+| POST | `/approve-prototype` | body `{path, iteration_id}`；未授权 ⇒ 403；迭代为空/bootstrap ⇒ 400 `iteration-required`；找不到 `prototype.html` ⇒ 409 `prototype-missing`；成功 `{ok:true, approval:{iterationId, prototypeApprovedAt, prototype}}`。**保留向后兼容**；新客户端走 `/approve` |
+| POST | `/approve` | body `{path, iteration_id, gate}`（gate ∈ `scope\|architecture\|prototype\|acceptance\|release`）；授权/同源/JSON 与其它写接口一致；400 `bad-gate`/`bad-iteration`；409 `prd-missing`/`architecture-gate-not-ready`/`acceptance-not-passing`/`release-gate-not-ready`/`prototype-missing`（前置不满足时带 `missing[]`）；成功 `{ok:true, gate, at, iteration_id}`（prototype 分支也投影成同一形状；旧 `/approve-prototype` 仍返回原 `approval`） |
 | POST | `/acceptance-result` | body `{path, item_id, result:'pass'\|'fail'\|'blocked'\|null, evidence?: string[]}`；400 `item-required`/`bad-result`/`bad-evidence`/`evidence-required`；404 `item-not-found`；409 `evidence-not-found`/`acceptance-broken`/`iteration-mismatch`/`iteration-required`；成功 `{ok:true, item}`（`null` = 撤销，清空 result/at/evidence） |
 | POST | `/acceptance-screenshot` | body `{path, item_id, url?}`（url 缺省用项目名片 `commands.previewUrl`）；只允许回环 http(s)；成功 `{ok:true, item, shot:{file,width,height,url,comparison,invalidated,receiptId,receiptWarning}, added}`；400 `item-required`/`no-url`/`invalid-url`/`url-not-loopback`；404 `item-not-found`；409 `browser-not-found`/`acceptance-broken`/`iteration-*`；504 `timeout`；499 `aborted`；502 `browser-failed`/`capture-failed`。**只挂证据、不改 result**；`shot.comparison` 是本次自动视觉回归结果，`shot.invalidated` 表示这次变化让该条已通过的验收失效，`shot.receiptId` 是失效留痕的回执 id |
 | GET | `/shot?path=&file=` | 证据图片字节（png/jpeg/webp/gif，≤10 MiB，`cache-control:no-store`）；415 `not-image`/413 `file-too-large`/404 `shot-not-found`/403 未授权 |
@@ -460,6 +479,7 @@ export function apply(ctx, config = {})
 - 结构：总览（工作区卡片列表）↔ 详情（一屏四区）。用 `localStorage` 记住上次项目（key `delivery-cockpit:last-project`），点卡片进入详情、返回按钮回总览。
 - 一屏四区（design §4）：① 项目名片 & 迭代头 ② 唯一下一步（title/reason/能力/指令 + 复制 + 初始化按钮 + `kind==='prototype'` 时的「通过原型」按钮）③ 迭代进度（冷启动 1 + 迭代环 8 的进度线）④ 人话账本（最近回执 + 待决策 + 坏行提示）。底部：主会话活跃（Phase 1 不接，显示 `—`）+ 引擎正常（`ok:true`）+ 上次回执相对时间 + 刷新。
 - 「通过原型」：`POST /delivery-cockpit/api/approve-prototype`（body `{path, iteration_id: panel.iteration.current}`）；成功后刷新。错误码映射人话：`prototype-missing` → 「先把原型 HTML 放到项目根目录 prototype.html，再点通过」；`iteration-required` → 「当前迭代还没确定」；其余显示原文。
+- 决策门按钮（P1）：hero 按 `nextAction.kind`（`scope-approval` / `architecture-approval` / `acceptance-approval` / `release-approval`）渲染「确认范围 / 架构签核 / 确认验收 / 批准发布」，点 `POST /delivery-cockpit/api/approve`（body `{path, iteration_id, gate}`）；成功刷新面板。错误码映射：`prd-missing`→先写 PRD、`architecture-gate-not-ready`→先补齐契约文件、`acceptance-not-passing`→验收还没全部通过（含证据）、`release-gate-not-ready`→发布清单还不完整、`bad-gate`/`bad-iteration`→刷新重试。
 - 降级：`degraded.flag` ⇒ 顶部横幅列原因 + 主按钮禁用；`ledger.badLines>0` ⇒ 顶部提示"账本存在损坏行（已降级显示）"；`missing.length>0` ⇒ 显示 missing 文案而不是指令。
 - 样式：只引用 host 主题 token `--dsw-alias-*`（别名见上游 `client.js` 顶部），每段 CSS 选择器以 `.dc-` 前缀；字号/间距对齐现有 host 页。
 - 组件内 ErrorBoundary：渲染异常不白屏；空态、加载态、错误态都要有。
@@ -647,6 +667,27 @@ features: {
   - 证据里**没有 `gates` 字段**（旧数据/手写夹具）⇒ 整段门禁判定跳过，维持旧行为。
 
 测试：`test/capabilities.test.js`（8）、`test/gates.test.js`（14）、`test/state.test.js`（+5 门禁用例）、`test/evidence.test.js`（gates 契约）、`test/tool-contract.test.js`（能力校验/拒绝/回退）、`test/integration.test.js`（真实三门推进）。当前 **393 个用例全绿**。
+
+### 3.19 Lead · 决策门（P1）：`lib/approvals.js` + `/approve` + 客户端按钮
+
+把 playbook 里声明的 decisionGate（范围/架构/原型/验收/发布）变成真按钮、真门禁；原型通过保留不变。
+
+- `lib/approvals.js`（不 import `evidence.js`，避免循环；只 import `gates.js` 与 `acceptance.js`）
+  - `decisionsFor(map, iterationId)`：固定形状 `{scope, architecture, acceptance, release}`，每门 `{approved, at}`；bootstrap/空迭代/缺条目/没签 ⇒ false。
+  - `approveDecision(projectPath, iterationId, gate)`：
+    - gate 不在 `scope|architecture|prototype|acceptance|release` ⇒ `{ok:false,error:'bad-gate'}`；迭代为空/bootstrap ⇒ `{ok:false,error:'bad-iteration'}`；
+    - `prototype` ⇒ 直接复用 `approvePrototype`（返回形状不变）；
+    - `scope` 前置：`prd.md` 或 `docs/prd.md` 存在，否则 `prd-missing`；
+    - `architecture` 前置：`readGateEvidence().architecture.ok === true`，否则 `architecture-gate-not-ready` + `missing`；
+    - `acceptance` 前置：`.dsh/plugin-state/acceptance.json` 非空、每条 `result==='pass'`、evidence 非空、`stale!==true`，否则 `acceptance-not-passing` + `missing`；
+    - `release` 前置：发布门 `ok===true` **且**验收同上通过，否则 `release-gate-not-ready` + `missing`；
+    - 成功：只写本门对应的时间字段（`scopeApprovedAt`/`architectureApprovedAt`/`acceptanceApprovedAt`/`releaseApprovedAt`），其余字段与原型记录原样保留（原子写），返回 `{ok:true, gate, at, iteration_id}`。
+  - `approvalFor` 的口径补一条：**条目存在 ≠ 原型已批准**（P1 起先签范围/架构也会建条目），按 `prototypeApprovedAt`/`prototype` 字段判定；旧文件只有 `prototype` 仍算批准。
+- `lib/state.js`：决策门 4.2 / 4.6 / 12.2 / 12.8，只在 `evidence.approval.decisions` **存在**时启用（旧证据跳过，向后兼容）。
+- `lib/route.js`：`createDecisionHandler(deps)` → `POST /approve`；授权/同源/JSON 与其它写接口同一道；错误码见 §3.9。`index.js` 注入 `deps.approveDecision` 并注册 exact 路由；`/approve-prototype` 保留。
+- `client.js`：`DecisionGateButton` + `DECISION_GATE_BY_KIND` 渲染 hero 按钮（确认范围 / 架构签核 / 确认验收 / 批准发布，原生 `type=button`、提交中禁用），POST `/approve`，`DECISION_ERROR_TEXT` 把五种前置失败翻成人话；原型通过仍用 `ApprovePrototype`。
+
+测试：`test/approvals.test.js`（决策门 + 前置 + 兼容/原子写）、`test/evidence.test.js`（decisions 透传）、`test/state.test.js`（4.2/4.6/12.2/12.8 + 顺序 + 向后兼容）、`test/model.test.js`（四个按钮 token）、`test/route.test.js`（/approve 200/400/409/403/405）、`test/integration.test.js`（范围→架构→原型→…→验收→发布四签核推进）、`test/client-smoke.test.js`（按钮/接口/错误映射/a11y）。当前 **438 个用例全绿**。
 
 
 1. `npm test`（= `node --test "test/*.test.js"`）全绿。

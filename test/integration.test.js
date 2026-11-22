@@ -11,7 +11,7 @@ import { mkdtemp, rm, writeFile, mkdir, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { approvePrototype } from '../lib/approvals.js'
+import { approveDecision, approvePrototype } from '../lib/approvals.js'
 import { addAcceptanceEvidence, setAcceptanceResult } from '../lib/acceptance.js'
 import { readEvidence } from '../lib/evidence.js'
 import { buildFeatureBoard, extractFeatures, readPrdText } from '../lib/features.js'
@@ -117,7 +117,7 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
     assert.equal(decision.kind, 'brainstorm')
     assert.equal(decision.stageId, 'requirements')
 
-    // 3) 迭代开始 + PRD 写出来 → 看原型
+    // 3) 迭代开始 + PRD 写出来 + 架构契约 → 先请人确认范围，再签架构，最后才看原型
     await appendReceipt(project, {
       iteration_id: 'v1.0',
       stage: 'requirements',
@@ -131,11 +131,24 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
     assert.equal(evidence.iteration.current, 'v1.0')
     assert.equal(evidence.prd.found, true)
     assert.equal(evidence.approval.approved, false)
+    assert.equal(evidence.approval.decisions.scope.approved, false, '新迭代的决策门默认全未签')
+    ;({ decision } = await decisionOf(project))
+    assert.equal(decision.kind, 'scope-approval')
+    assert.equal(decision.stageId, 'requirements')
+
+    // 4) 范围签核后停在架构签核（契约文件已齐才能签）
+    const scopeSigned = await approveDecision(project, 'v1.0', 'scope')
+    assert.equal(scopeSigned.ok, true)
+    ;({ decision } = await decisionOf(project))
+    assert.equal(decision.kind, 'architecture-approval')
+    assert.equal(decision.stageId, 'architecture')
+    const architectureSigned = await approveDecision(project, 'v1.0', 'architecture')
+    assert.equal(architectureSigned.ok, true)
+
+    // 5) 没有原型文件时批准要被拒绝；有了原型 → 人点通过 → 进写代码（还没有任务，先拆任务）
     ;({ decision } = await decisionOf(project))
     assert.equal(decision.kind, 'prototype')
     assert.equal(decision.stageId, 'prototype')
-
-    // 4) 没有原型文件时批准要被拒绝；有了原型 → 人点通过 → 进写代码（还没有任务，先拆任务）
     assert.deepEqual(await approvePrototype(project, 'v1.0'), { ok: false, error: 'prototype-missing' })
     await writeFile(join(project, 'prototype.html'), '<!doctype html><title>prototype</title>', 'utf8')
     const approved = await approvePrototype(project, 'v1.0')
@@ -144,7 +157,7 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
     assert.equal(decision.kind, 'coding')
     assert.equal(decision.stageId, 'implementation')
 
-    // 5) 建了任务 → 继续写代码
+    // 6) 建了任务 → 继续写代码
     await mkdir(join(project, '.trellis', 'tasks', 'T1'), { recursive: true })
     await writeFile(
       join(project, '.trellis', 'tasks', 'T1', 'task.json'),
@@ -155,7 +168,7 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
     assert.equal(decision.kind, 'coding')
     assert.equal(evidence.tasks.open, 1)
 
-    // 6) 任务做完、审核账本没有 → 不能假装"审核过了"，直接落到生成验收清单
+    // 7) 任务做完、审核账本没有 → 不能假装"审核过了"，直接落到生成验收清单
     await writeFile(
       join(project, '.trellis', 'tasks', 'T1', 'task.json'),
       JSON.stringify({ id: 'T1', title: '客户列表', status: 'completed' }),
@@ -167,7 +180,7 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
     assert.equal(evidence.review.reason, 'no-ledger')
     assert.equal(decision.kind, 'acceptance-draft')
 
-    // 7) 验收表为空不算通过；有条目但没结果 → 验效果
+    // 8) 验收表为空不算通过；有条目但没结果 → 验效果
     assert.equal(evidence.acceptance.empty, true)
     await writeFile(
       join(project, '.dsh', 'plugin-state', 'acceptance.json'),
@@ -178,7 +191,7 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
     assert.equal(decision.kind, 'verification')
     assert.equal(decision.stageId, 'acceptance')
 
-    // 8) pass 必须带证据；只有 result 不算
+    // 9) pass 必须带证据；只有 result 不算
     await writeFile(
       join(project, '.dsh', 'plugin-state', 'acceptance.json'),
       JSON.stringify({ schemaVersion: 1, iteration_id: 'v1.0', items: [{ id: 'A1', title: '能添加客户', result: 'pass', evidence: [] }] }),
@@ -187,17 +200,33 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
     ;({ decision } = await decisionOf(project))
     assert.equal(decision.kind, 'verification', '没有证据的 pass 不能算通过')
 
-    // 9) 有证据的 pass → 发出去
+    // 10) 有证据的 pass → 先请人签验收；发布清单还不齐时先提示补清单
     await writeFile(
       join(project, '.dsh', 'plugin-state', 'acceptance.json'),
       JSON.stringify({ schemaVersion: 1, iteration_id: 'v1.0', items: [{ id: 'A1', title: '能添加客户', result: 'pass', evidence: ['shots/add.png'] }] }),
       'utf8',
     )
-    await writeReleaseManifest(project)
+    ;({ decision } = await decisionOf(project))
+    assert.equal(decision.kind, 'acceptance-approval')
+    assert.equal(decision.stageId, 'acceptance')
+    const acceptanceSigned = await approveDecision(project, 'v1.0', 'acceptance')
+    assert.equal(acceptanceSigned.ok, true)
     ;({ decision } = await decisionOf(project))
     assert.equal(decision.kind, 'release')
+    assert.equal(decision.priority, 12.5, '清单没写时先补发布清单')
 
-    // 10) 发布回执落盘 → 开启下一轮
+    // 11) 清单齐全 → 请人批准发布；批准后才真正"发出去"
+    await writeReleaseManifest(project)
+    ;({ decision } = await decisionOf(project))
+    assert.equal(decision.kind, 'release-approval')
+    assert.equal(decision.stageId, 'release')
+    const releaseSigned = await approveDecision(project, 'v1.0', 'release')
+    assert.equal(releaseSigned.ok, true)
+    ;({ decision } = await decisionOf(project))
+    assert.equal(decision.kind, 'release')
+    assert.equal(decision.priority, 13)
+
+    // 12) 发布回执落盘 → 开启下一轮
     await appendReceipt(project, {
       iteration_id: 'v1.0',
       stage: 'release',
@@ -276,7 +305,17 @@ test('验收失效联动阶段门：通过 → 截图变化 → 回验效果 →
     await writeArchitecture(project)
     await writeFile(
       join(project, '.dsh', 'plugin-state', 'approvals.json'),
-      JSON.stringify({ 'v1.0': { prototypeApprovedAt: '2026-11-20T10:00:00.000Z', prototype: 'prototype.html' } }),
+      JSON.stringify({
+        'v1.0': {
+          prototypeApprovedAt: '2026-11-20T10:00:00.000Z',
+          prototype: 'prototype.html',
+          // 四个决策门先按"已签"准备：这条用例验的是验收失效联动，不是签核流程本身。
+          scopeApprovedAt: '2026-11-20T10:01:00.000Z',
+          architectureApprovedAt: '2026-11-20T10:02:00.000Z',
+          acceptanceApprovedAt: '2026-11-20T10:03:00.000Z',
+          releaseApprovedAt: '2026-11-20T10:04:00.000Z',
+        },
+      }),
       'utf8',
     )
     await mkdir(join(project, '.trellis', 'tasks', 'T1'), { recursive: true })

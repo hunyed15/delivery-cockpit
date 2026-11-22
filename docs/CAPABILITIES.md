@@ -40,7 +40,7 @@
 | skill | `trellis-brainstorm`（原，缺失）；替代：**`grill` + PRD 模板 + `writing-plans`** | ⚠ trellis 缺失（回退可用） |
 | tool | `cockpit_acceptance`（按 FR 起草验收条目） | ● 可用 |
 | mcp | — | — |
-| human | **范围签核**（功能范围与优先级） | 待实现 |
+| human | **范围签核**（功能范围与优先级） | ● 已实现 |
 
 ### S3 架构契约（强制技术门）
 
@@ -50,7 +50,7 @@
 | skill | 无专门架构 skill（**缺口**）；替代：`writing-plans` + 本仓库架构模板 | ⚠ 需补模板/skill |
 | mcp | `context7`（查框架/库文档）；替代：`web_search` / `dsh-doc` | ⚠ 缺失（回退可用） |
 | tool | 契约校验器（P0 新增） | 待实现 |
-| human | **架构签核** | 待实现 |
+| human | **架构签核** | ● 已实现 |
 
 ### S4 原型设计
 
@@ -111,7 +111,7 @@
 | skill | `finishing-a-development-branch` | ● 可用 |
 | mcp | 部署平台 MCP（Vercel / Cloudflare / Docker / 云厂商）；替代：本机命令 + 部署说明 | ⚠ 缺失（回退可用） |
 | tool | `release.json` 校验器（P0 新增） | 待实现 |
-| human | **发布批准** | 待实现 |
+| human | **发布批准** | ● 已实现 |
 
 ## 2.5 阶段交接物链（Handoff）
 

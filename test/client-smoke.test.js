@@ -61,7 +61,7 @@ test('侧栏图标与 API 契约', () => {
   assert.match(source, /function Icon\(props\)/, '必须导出 Icon({size, active})')
   assert.ok(source.includes('currentColor'), '颜色必须跟随 currentColor')
   assert.ok(source.includes("const API = '/delivery-cockpit/api'"), 'API 前缀必须逐字')
-  for (const endpoint of ['/workspaces', '/panel?path=', '/init-plan?path=', '/init', '/approve-prototype', '/acceptance-result', '/acceptance-screenshot']) {
+  for (const endpoint of ['/workspaces', '/panel?path=', '/init-plan?path=', '/init', '/approve', '/approve-prototype', '/acceptance-result', '/acceptance-screenshot']) {
     assert.ok(source.includes(`\${API}${endpoint}`), `缺少接口 ${endpoint}`)
   }
   assert.ok(source.includes('confirm: true'), 'POST /init 必须带 confirm: true')
@@ -342,6 +342,40 @@ test('原型批准与初始化', () => {
   assert.ok(source.includes('已于') && source.includes('prototype-missing'), '已通过只读态与错误码')
   assert.ok(source.includes('/init-plan?path=') && source.includes('确认写入并初始化'), '初始化先计划后执行')
   assert.ok(source.includes('onApplied'), '初始化成功要刷新')
+})
+
+test('决策门签核：四个 gate 的真按钮、POST /approve、错误码人话、a11y', () => {
+  // 按钮文案：与 playbook decisionGate 的四个声明一一对应。
+  for (const label of ['确认范围', '架构签核', '确认验收', '批准发布']) {
+    assert.ok(source.includes(label), `缺少决策门按钮文案：${label}`)
+  }
+  assert.ok(source.includes('function DecisionGateButton'), '决策门按钮必须是一个可复用组件')
+  assert.ok(source.includes('DECISION_GATE_BY_KIND'), 'kind → gate 的映射必须在客户端收口')
+  for (const gate of ["gate: 'scope'", "gate: 'architecture'", "gate: 'acceptance'", "gate: 'release'"]) {
+    assert.ok(source.includes(gate), `缺少 gate 映射：${gate}`)
+  }
+  // 接口：POST /approve，body 必须带 path / iteration_id / gate。
+  assert.ok(source.includes('${API}/approve'), '必须 POST 到 /approve')
+  assert.ok(source.includes('iteration_id: props.iterationId') && source.includes('gate: props.gate'), '签核请求必须带迭代与 gate')
+  assert.ok(source.includes('onApproved(body)') || source.includes('props.onApproved'), '成功后面板要刷新')
+  // 错误码翻译：四种前置失败都要告诉人下一步做什么。
+  for (const [code, text] of [
+    ['prd-missing', '先写 PRD 再签核。'],
+    ['architecture-gate-not-ready', '架构契约文件还不齐，先补齐。'],
+    ['acceptance-not-passing', '验收还没全部通过（含证据）。'],
+    ['release-gate-not-ready', '发布清单还不完整。'],
+    ['bad-gate', '这个签核动作不认识，刷新重试。'],
+    ['bad-iteration', '还没定下这一轮，刷新重试。'],
+  ]) {
+    assert.ok(source.includes(`'${code}': '${text}'`), `缺少错误码人话：${code}`)
+  }
+  // a11y / 防重复提交：原生 button + 保存中禁用。
+  assert.equal(
+    [...source.matchAll(/type: 'button'[\s\S]{0,200}?disabled: props\.disabled === true \|\| state\.step === 'saving'/g)].length >= 2,
+    true,
+    '原型与决策门按钮都要 type=button 且提交中禁用',
+  )
+  assert.ok(source.includes("state.step === 'saving' ? '提交中…' : props.label"), '提交中要有明确文案')
 })
 
 test('两栏布局：容器查询 / sticky / 断点', () => {

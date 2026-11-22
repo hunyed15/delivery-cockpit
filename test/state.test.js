@@ -83,6 +83,16 @@ const receipt = (overrides = {}) => ({
   ...overrides,
 })
 
+/** 四个决策门默认都签过；用例只改需要卡住的那一门。 */
+const decisions = (overrides = {}) => ({
+  scope: { approved: true, at: '2026-11-22T00:00:00.000Z' },
+  architecture: { approved: true, at: '2026-11-22T00:00:00.000Z' },
+  acceptance: { approved: true, at: '2026-11-22T00:00:00.000Z' },
+  release: { approved: true, at: '2026-11-22T00:00:00.000Z' },
+  ...overrides,
+})
+const unsigned = () => ({ approved: false, at: null })
+
 function assertHumanLine(decision) {
   assert.deepEqual(Object.keys(decision).sort(), DECISION_KEYS, '返回形状必须逐字符合契约')
   assert.equal(typeof decision.title, 'string')
@@ -478,6 +488,99 @@ test('旧证据没有 gates 字段 ⇒ 跳过门禁判定（向后兼容，不�
   const decision = deriveDecision(evidence)
   assert.equal(decision.kind, 'release', '没有 gates 时维持旧行为：验收全绿 → 发出去')
   assert.equal(decision.priority, 13)
+})
+
+// ---------- P1 决策门（人工签核） ----------
+
+test('决策门 4.2：PRD 有了但范围没签 ⇒ 先确认这一轮范围（在架构门之前）', () => {
+  const decision = decide({ approval: { decisions: decisions({ scope: unsigned() }) } })
+  assert.equal(decision.priority, 4.2)
+  assert.equal(decision.kind, 'scope-approval')
+  assert.equal(decision.stageId, 'requirements')
+  assert.equal(decision.title, '确认这一轮范围')
+  assert.match(decision.reason, /范围/)
+})
+
+test('决策门 4.2 排在架构契约门 4.5 之前：两个都没满足时先让人签范围', () => {
+  const evidence = baseEvidence()
+  evidence.approval = { ...evidence.approval, decisions: decisions({ scope: unsigned() }) }
+  evidence.gates.architecture = { available: false, ok: false, missing: ['docs/architecture.md'], gate: 'architecture', reason: 'missing' }
+  const decision = deriveDecision(evidence)
+  assert.equal(decision.priority, 4.2)
+  assert.equal(decision.kind, 'scope-approval')
+})
+
+test('决策门 4.6：范围签了、契约门也过了，但架构没签 ⇒ 架构签核（在原型之前）', () => {
+  const decision = decide({ approval: { decisions: decisions({ architecture: unsigned() }) } })
+  assert.equal(decision.priority, 4.6)
+  assert.equal(decision.kind, 'architecture-approval')
+  assert.equal(decision.stageId, 'architecture')
+  assert.equal(decision.title, '架构签核')
+  assert.match(decision.reason, /契约/)
+})
+
+test('决策门 4.6 排在契约门 4.5 之后：契约文件不齐时先补文件，不给人签空白', () => {
+  const evidence = baseEvidence()
+  evidence.approval = { ...evidence.approval, decisions: decisions({ architecture: unsigned() }) }
+  evidence.gates.architecture = { available: false, ok: false, missing: ['docs/api.md'], gate: 'architecture', reason: 'missing' }
+  const decision = deriveDecision(evidence)
+  assert.equal(decision.priority, 4.5)
+  assert.equal(decision.kind, 'architecture')
+})
+
+test('决策门 12.2：验收全绿但没签 ⇒ 验收签核（在发布清单门 12.5 之前）', () => {
+  const evidence = baseEvidence()
+  evidence.approval = { ...evidence.approval, decisions: decisions({ acceptance: unsigned() }) }
+  evidence.gates.release = { available: false, ok: false, missing: ['.dsh/plugin-state/release.json'], gate: 'release', reason: 'missing' }
+  const decision = deriveDecision(evidence)
+  assert.equal(decision.priority, 12.2)
+  assert.equal(decision.kind, 'acceptance-approval')
+  assert.equal(decision.stageId, 'acceptance')
+  assert.equal(decision.title, '验收签核')
+  assert.match(decision.reason, /验收/)
+})
+
+test('决策门 12.8：清单齐、验收签了但没批准 ⇒ 发布批准（在发出去 13 之前）', () => {
+  const decision = decide({ approval: { decisions: decisions({ release: unsigned() }) } })
+  assert.equal(decision.priority, 12.8)
+  assert.equal(decision.kind, 'release-approval')
+  assert.equal(decision.stageId, 'release')
+  assert.equal(decision.title, '发布批准')
+  assert.match(decision.reason, /批准|清单/)
+})
+
+test('决策门 12.8 排在发布清单门 12.5 之后：清单不齐时先补清单，不让人批空白', () => {
+  const evidence = baseEvidence()
+  evidence.approval = { ...evidence.approval, decisions: decisions({ release: unsigned() }) }
+  evidence.gates.release = { available: false, ok: false, missing: ['.dsh/plugin-state/release.json'], gate: 'release', reason: 'missing' }
+  const decision = deriveDecision(evidence)
+  assert.equal(decision.priority, 12.5)
+  assert.equal(decision.kind, 'release')
+})
+
+test('决策门向后兼容：证据里没有 approval.decisions ⇒ 四个门全部跳过（旧证据/手工夹具）', () => {
+  const evidence = baseEvidence()
+  // baseEvidence 的 approval 本来就没有 decisions；验收全绿、发布回执已有 ⇒ 直接到 14。
+  evidence.receipts = { receipts: [receipt({ stage: 'release', status: 'completed' })] }
+  const decision = deriveDecision(evidence)
+  assert.equal(decision.priority, 14)
+  assert.equal(decision.kind, 'next-iteration')
+  for (const kind of ['scope-approval', 'architecture-approval', 'acceptance-approval', 'release-approval']) {
+    assert.notEqual(decision.kind, kind)
+  }
+})
+
+test('决策门签核后状态机继续推进：四门全签 ⇒ 回到原有 13/14 判定', () => {
+  const notReleased = decide({ approval: { decisions: decisions() } })
+  assert.equal(notReleased.priority, 13)
+  assert.equal(notReleased.kind, 'release')
+
+  const released = decide({
+    approval: { decisions: decisions() },
+    receipts: { receipts: [receipt({ stage: 'release', status: 'completed' })] },
+  })
+  assert.equal(released.priority, 14)
+  assert.equal(released.kind, 'next-iteration')
 })
 test('每条优先级的人话文案都满足长度与无代码约束（汇总核对）', () => {
   const fixtures = [

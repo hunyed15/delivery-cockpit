@@ -634,6 +634,42 @@ test('buttons：复制 / 初始化 / 原型批准 / 降级时只留复制（先�
   assert.equal(degraded.nextAction.disabledReason, '名片坏了')
 })
 
+test('buttons：决策门四个 kind 各给对应动作 token（复制永远在最后）', () => {
+  const unsigned = { approved: false, at: null }
+  // 四门都签过（除了被测的那一门）：这样状态机才会停在对应的决策门。
+  const decisions = (overrides = {}) => ({
+    scope: { approved: true, at: '2026-11-22T00:00:00.000Z' },
+    architecture: { approved: true, at: '2026-11-22T00:00:00.000Z' },
+    acceptance: { approved: true, at: '2026-11-22T00:00:00.000Z' },
+    release: { approved: true, at: '2026-11-22T00:00:00.000Z' },
+    ...overrides,
+  })
+
+  const scope = build(evidence({ approval: { decisions: decisions({ scope: unsigned }) } }))
+  assert.equal(scope.nextAction.kind, 'scope-approval')
+  assert.deepEqual(scope.nextAction.buttons, ['approve-scope', 'copy'])
+
+  const architecture = build(evidence({ approval: { decisions: decisions({ architecture: unsigned }) } }))
+  assert.equal(architecture.nextAction.kind, 'architecture-approval')
+  assert.deepEqual(architecture.nextAction.buttons, ['approve-architecture', 'copy'])
+
+  const acceptance = build(evidence({ approval: { decisions: decisions({ acceptance: unsigned }) } }))
+  assert.equal(acceptance.nextAction.kind, 'acceptance-approval')
+  assert.deepEqual(acceptance.nextAction.buttons, ['approve-acceptance', 'copy'])
+
+  const release = build(evidence({ approval: { decisions: decisions({ release: unsigned }) } }))
+  assert.equal(release.nextAction.kind, 'release-approval')
+  assert.deepEqual(release.nextAction.buttons, ['approve-release', 'copy'])
+
+  // 缺能力/降级时写类按钮一律收掉：决策门按钮也不能绕过这条。
+  const missingMessage = '该阶段需要的技能未安装：skill-requirements。'
+  const stageCapabilities = makeStageCapabilities({ requirements: [resolved('skill-requirements', { present: 'no', missingMessage })] })
+  const blocked = build(evidence({ approval: { decisions: decisions({ scope: unsigned }) } }), { stageCapabilities })
+  assert.equal(blocked.nextAction.kind, 'scope-approval')
+  assert.deepEqual(blocked.nextAction.buttons, ['copy'])
+  assert.equal(blocked.nextAction.disabled, true)
+})
+
 test('nextAction 能力来自 stageCapabilities，指令由 playbook 模板渲染', () => {
   const stageCapabilities = makeStageCapabilities({
     release: [resolved('trellis-finish-work'), resolved('context7', { kind: 'mcp', present: 'unknown', missingMessage: null })],
