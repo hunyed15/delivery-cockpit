@@ -318,7 +318,7 @@ DSH 的 skill 作用域 = **全局（`DSH_HOME/skills` + `~/.agents/skills`）+ 
 
 | 位置 | 数量 | 代表 skill |
 |---|---|---|
-| `D:\Users\Admin\.dsh\skills`（DSH_HOME，全局） | 17 | claude-code-review、ponytail、test-driven-development、systematic-debugging、verification-before-completion、writing-plans、writing-skills、ui-ux-pro-max、impeccable、frontend-design、finishing-a-development-branch、executing-plans、subagent-driven-development、dispatching-parallel-agents、requesting/receiving-code-review、using-git-worktrees |
+| `D:\Users\Admin\.dsh\skills`（DSH_HOME，全局） | 7 | claude-code-review、ponytail、frontend-design、impeccable、ui-ux-pro-max、**tdd-loop**、**verify-claims**（superpowers 12 个已移除，备份在 `D:\Temp\superpowers-skills-backup-20261122-2031`） |
 | `D:\Users\Admin\.agents\skills`（全局 agents 生态） | 11 | clawhub 包、comet*、ponytail、impeccable、anthropic-frontend-design |
 | `D:\Coding\XinHuo\.dsh\skills`（项目级示例） | 14 | **grill-me / grilling**、comet*、trellis-start / continue / finish-work、unslop、code-review-and-quality |
 | 旧插件包（claude-code-review 仓库的 `.claude/.agents/.cursor/.dsh/skills`） | 11 + 7 | trellis-start / brainstorm / spec-bootstrap / before-dev / check / finish-work / break-loop / channel / meta / session-insight / update-spec；ui-ux-pro-max 的 design / brand / design-system / slides / ui-styling / banner-design |
@@ -328,7 +328,7 @@ DSH 的 skill 作用域 = **全局（`DSH_HOME/skills` + `~/.agents/skills`）+ 
 
 ### 4.2 当前能力状态
 
-- **全局可用 Skills**：上表 DSH_HOME 的 17 个（本会话 skill catalog 可见）。
+- **全局可用 Skills**：上表 DSH_HOME 的 **7 个**（本会话 skill catalog 可见）。
 - **项目级 grill**：存在于 XinHuo 项目（`grill-me` 触发 → `grilling`：设计树式追问，每轮给推荐答案，直到 frontier 为空）；当前项目未安装 → 本会话不可调用。
 - **旧插件 trellis 系列**：存在于插件包，未进 DSH 加载路径 → 视为"可选 + 回退"。
 - **MCP**：`playwright` 缺失、`context7` 缺失、无部署平台 MCP → 全部走回退，并给安装指引。
