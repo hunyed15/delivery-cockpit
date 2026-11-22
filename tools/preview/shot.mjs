@@ -172,6 +172,15 @@ const measureExpression = `(() => {
       scrollers.push({ cls: (el.getAttribute('class') || '').slice(0, 48), scrollWidth: el.scrollWidth })
     }
   }
+  // 滚一段，验证 sticky header/摘要条/右栏的叠层与对齐。
+  if (root) root.scrollTop = Math.min(400, Math.max(0, root.scrollHeight - root.clientHeight))
+  const rectOf = (selector) => {
+    const el = document.querySelector(selector)
+    if (!el) return null
+    const box = el.getBoundingClientRect()
+    const style = getComputedStyle(el)
+    return { top: Math.round(box.top), height: Math.round(box.height), z: style.zIndex, position: style.position }
+  }
   return JSON.stringify({
     title: document.title,
     viewport: vw,
@@ -179,6 +188,7 @@ const measureExpression = `(() => {
     rootScrollWidth: root ? root.scrollWidth : null,
     rootClientHeight: root ? root.clientHeight : null,
     rootScrollHeight: root ? root.scrollHeight : null,
+    sticky: { header: rectOf('.dc-head'), summary: rectOf('.dc-summary-bar'), rail: rectOf('.dc-rail') },
     xScrollers: scrollers.slice(0, 5),
     offenders: offenders.slice(0, 12),
   }, null, 2)
