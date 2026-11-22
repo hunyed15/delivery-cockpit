@@ -489,21 +489,8 @@ h1.dc-title { margin:0; font-size:15px; line-height:1.35; font-weight:600; lette
 
 /* ---------- 页面骨架 ---------- */
 .dc-body { max-width:1180px; margin:0 auto; padding:24px 20px 48px; display:flex; flex-direction:column; }
-.dc-card {
-  min-width:0; margin:0; padding:28px 0 20px;
-  border:0; border-top:1px solid var(--dsw-alias-border-l1); border-radius:0; background:transparent;
-}
-.dc-body > .dc-card:first-of-type { padding-top:0; border-top:0; }
-.dc-card:last-of-type { padding-bottom:8px; border-bottom:0; }
-.dc-card-title { margin:0 0 12px; font-size:13px; font-weight:600; color:var(--dsw-alias-label-primary); }
 .dc-section-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:0 0 12px; }
 /* ② 是整页唯一的焦点面（surface）：浅色一层底 + 1px 边 + 12 圆角。 */
-.dc-hero {
-  margin-top:28px !important; padding:20px !important;
-  border:1px solid var(--dsw-alias-border-l1) !important; border-radius:12px;
-  background:var(--dsw-alias-bg-layer-1);
-}
-.dc-hero .dc-section-head { margin-bottom:10px; }
 .dc-section-title { margin:0; font-size:13px; font-weight:600; color:var(--dsw-alias-label-primary); letter-spacing:-.005em; }
 .dc-section-meta { font-size:11.5px; color:var(--dsw-alias-label-secondary); font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; }
 
@@ -577,7 +564,7 @@ h1.dc-title { margin:0; font-size:15px; line-height:1.35; font-weight:600; lette
 
 /* ---------- ① 项目名片 & 迭代头 ---------- */
 .dc-name-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:650; letter-spacing:-.015em; overflow-wrap:anywhere; }
+h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:600; letter-spacing:-.015em; overflow-wrap:anywhere; }
 .dc-one-liner { margin:6px 0 0; font-size:13px; color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere; }
 .dc-one-liner-empty { color:var(--dsw-alias-state-warn-primary); }
 .dc-meta-line { margin-top:10px; display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; font-size:12px; color:var(--dsw-alias-label-secondary); }
@@ -590,7 +577,7 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:650; letter-
 
 /* ---------- ② 唯一下一步（全页唯一 hero） ---------- */
 .dc-action-eyebrow { font-size:11px; font-weight:600; letter-spacing:.06em; color:var(--dsw-alias-label-secondary); }
-.dc-action-title { margin:4px 0 0; font-size:20px; font-weight:650; line-height:1.35; letter-spacing:-.015em; overflow-wrap:anywhere; max-width:44em; }
+.dc-action-title { margin:4px 0 0; font-size:20px; font-weight:600; line-height:1.35; letter-spacing:-.015em; overflow-wrap:anywhere; max-width:44em; }
 .dc-action-reason { margin:6px 0 0; font-size:13px; color:var(--dsw-alias-label-secondary); max-width:44em; overflow-wrap:anywhere; }
 .dc-caps { margin-top:12px; display:flex; flex-direction:column; gap:6px; }
 .dc-caps-label { font-size:11px; font-weight:600; letter-spacing:.04em; color:var(--dsw-alias-label-secondary); }
@@ -631,7 +618,7 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:650; letter-
 /* ---------- ③ 迭代进度 ---------- */
 .dc-progress-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 16px; font-size:12px; color:var(--dsw-alias-label-secondary); }
 .dc-progress-label { font-size:11px; font-weight:600; letter-spacing:.04em; }
-.dc-progress-value { font-size:15px; font-weight:650; color:var(--dsw-alias-label-primary); font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; }
+.dc-progress-value { font-size:15px; font-weight:600; color:var(--dsw-alias-label-primary); font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; }
 .dc-progress-bar { flex:1 1 160px; max-width:280px; height:4px; border-radius:999px; background:var(--dsw-alias-bg-layer-2); overflow:hidden; }
 .dc-progress-fill { display:block; height:100%; border-radius:999px; background:var(--dsw-alias-brand-primary); transition:width .16s ease-out; }
 .dc-track-label { margin:16px 0 8px; font-size:11px; font-weight:600; letter-spacing:.04em; color:var(--dsw-alias-label-secondary); }
@@ -642,7 +629,7 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:650; letter-
 .dc-stage-dot { position:relative; z-index:1; width:18px; height:18px; border-radius:50%;
   display:inline-flex; align-items:center; justify-content:center; flex:none;
   border:1px solid var(--dsw-alias-border-l2); background:var(--dsw-alias-bg-base);
-  font-size:10px; line-height:1; font-weight:700; color:transparent; }
+  font-size:10px; line-height:1; font-weight:600; color:transparent; }
 .dc-stage-name { margin-top:4px; font-size:12px; font-weight:500; color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere; }
 .dc-stage-state { font-size:11px; color:var(--dsw-alias-label-secondary); font-variant-numeric:tabular-nums; }
 .dc-stage-done .dc-stage-dot { border-color:var(--dsw-alias-state-success-primary); background:var(--dsw-alias-state-success-primary); color:var(--dsw-alias-bg-base); }
@@ -730,7 +717,6 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:650; letter-
 
 /* ---------- 密度切换 ---------- */
 .dc-root.dc-compact { font-size:13px; }
-.dc-compact .dc-card { padding-top:20px; padding-bottom:14px; }
 .dc-compact .dc-feature-row { min-height:40px; padding:6px 8px; }
 .dc-compact .dc-acc-item { padding:6px 0; }
 .dc-compact .dc-thumb { width:24px; height:24px; }
@@ -909,8 +895,6 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:650; letter-
 
 .dc-layout { display:grid; grid-template-columns:minmax(0,1fr); gap:20px; align-items:start; }
 .dc-main { min-width:0; display:flex; flex-direction:column; container-type:inline-size; }
-.dc-main > .dc-card:first-of-type { padding-top:0; border-top:0; }
-.dc-main .dc-hero { margin-top:0 !important; }
 
 .dc-rail {
   min-width:0; padding:16px; border:1px solid var(--dsw-alias-border-l1); border-radius:12px;
@@ -962,9 +946,89 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:650; letter-
 .dc-cold-label { font-size:11px; font-weight:600; letter-spacing:.04em; }
 .dc-cold-item { display:inline-flex; align-items:center; gap:4px; color:var(--dsw-alias-state-success-primary); font-weight:500; }
 
-/* header 高 71（小屏换行时会更高）；摘要条常驻在 header 下，右栏再让开摘要高度。 */
+/* ===== 模块化工作台：画布 layer-1 / 模块卡 layer-2 / 模块头 layer-1 ===== */
+.dc-root { background:var(--dsw-alias-bg-layer-1); font-size:13.5px; line-height:1.65; font-weight:400; }
+.dc-head { background:var(--dsw-alias-bg-layer-1); }
+.dc-body { gap:16px; }
+.dc-layout { gap:20px; }
+.dc-main { gap:16px; }
+.dc-module {
+  min-width:0; overflow:hidden;
+  background:var(--dsw-alias-bg-layer-2);
+  border:1px solid var(--dsw-alias-border-l1);
+  border-radius:12px;
+}
+.dc-module-head {
+  height:42px; padding:0 16px; box-sizing:border-box;
+  display:flex; align-items:center; gap:10px;
+  background:var(--dsw-alias-bg-layer-1);
+  border-bottom:1px solid var(--dsw-alias-border-l1);
+}
+.dc-module-icon { display:inline-flex; align-items:center; justify-content:center; flex:none; color:var(--dsw-alias-label-secondary); }
+.dc-module-title { margin:0; font-size:13px; font-weight:600; letter-spacing:0; color:var(--dsw-alias-label-primary); }
+.dc-module-meta { margin-left:auto; font-size:11.5px; font-weight:500; letter-spacing:0; color:var(--dsw-alias-label-secondary); white-space:nowrap; }
+.dc-module-meta-ok { color:var(--dsw-alias-state-success-primary); }
+.dc-module-meta-warn { color:var(--dsw-alias-state-warn-primary); }
+.dc-module-meta-unknown { color:var(--dsw-alias-label-secondary); }
+.dc-module-body { padding:16px; min-width:0; }
+.dc-module-hero {
+  background:color-mix(in srgb, var(--dsw-alias-brand-primary) 6%, var(--dsw-alias-bg-layer-2));
+  border-color:color-mix(in srgb, var(--dsw-alias-brand-primary) 28%, var(--dsw-alias-border-l1));
+}
+.dc-module-hero .dc-module-body { padding:18px 20px; }
+.dc-module-warn {
+  border-color:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 45%, var(--dsw-alias-border-l1));
+  background:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 7%, var(--dsw-alias-bg-layer-2));
+}
+.dc-summary-module .dc-module-body { padding:10px 16px; }
+.dc-summary-module .dc-summary-bar { border:0; margin:0; padding:0; }
+.dc-summary-stat + .dc-summary-stat { border-left:1px solid var(--dsw-alias-border-l1); padding-left:16px; }
+.dc-summary-label { font-size:11.5px; font-weight:500; letter-spacing:0; }
+.dc-summary-value { font-size:14px; font-weight:700; }
+.dc-summary-progress { height:4px; }
+
+/* 右栏：4 个独立模块，不再是连通面板 */
+.dc-rail { display:flex; flex-direction:column; gap:12px; min-width:0; padding:0; border:0; border-radius:0; background:transparent; }
+.dc-rail-group, .dc-rail-details { border:0; margin:0; padding:0; }
+.dc-rail-note { font-size:12px; font-weight:400; color:var(--dsw-alias-label-secondary); margin:0; }
+
+/* 展开细节 / 代码 / 空态：比模块卡更浅一层 */
+.dc-feature-detail, .dc-more-body, .dc-instruction, .dc-code-block, .dc-plan {
+  background:var(--dsw-alias-bg-layer-1);
+  border:1px solid var(--dsw-alias-border-l1);
+  border-radius:8px;
+}
+.dc-feature-detail { padding:12px; }
+.dc-more-body { padding:12px; }
+.dc-instruction { padding:12px 14px; }
+.dc-code-block { padding:10px 12px; }
+.dc-empty-state { background:var(--dsw-alias-bg-layer-1); border:1px dashed var(--dsw-alias-border-l2); border-radius:8px; }
+.dc-empty-head { display:flex; align-items:center; gap:8px; }
+.dc-empty-icon { display:inline-flex; color:var(--dsw-alias-label-secondary); }
+.dc-empty-title { font-size:13.5px; font-weight:600; }
+.dc-empty-reason { font-size:12px; font-weight:400; }
+
+/* 字重阶梯：22/700 只给 hero，行名/模块标题 600，正文 400，meta 500 */
+.dc-action-title { font-size:22px; font-weight:700; line-height:1.3; letter-spacing:-.02em; }
+.dc-action-reason { font-size:13.5px; font-weight:400; }
+.dc-action-eyebrow { font-size:11.5px; font-weight:600; letter-spacing:0; color:var(--dsw-alias-label-secondary); }
+.dc-feature-name, .dc-acc-title { font-size:13.5px; font-weight:600; }
+.dc-feature-recent, .dc-acc-sub, .dc-progress-summary { font-weight:400; }
+.dc-chip { font-size:11.5px; font-weight:600; letter-spacing:0; }
+.dc-ws-card { background:var(--dsw-alias-bg-layer-2); border-radius:12px; }
+.dc-ws-title { font-size:14px; font-weight:600; }
+
+/* 紧凑：模块头 36 / body 12 / 间距 10 / 行 40 / 正文 13 */
+.dc-compact .dc-module-head { height:36px; padding:0 14px; }
+.dc-compact .dc-module-body { padding:12px; }
+.dc-compact .dc-main { gap:10px; }
+.dc-compact .dc-rail { gap:10px; }
+.dc-compact .dc-feature-row { min-height:40px; }
+.dc-compact .dc-acc-item { padding:6px 0; }
+
+/* header 高 71；摘要条模块常驻在 header 下，右栏再让开摘要高度。 */
 @container (min-width:641px) {
-  .dc-summary-bar { position:sticky; top:71px; z-index:4; background:var(--dsw-alias-bg-base); }
+  .dc-summary-module { position:sticky; top:71px; z-index:4; }
 }
 
 /* 容器查询：面板实际宽度 ≥1170 时才分两栏（右栏 280px）。 */
@@ -1012,8 +1076,6 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
 @container (max-width:640px) {
   .dc-head-inner { padding:12px 14px; }
   .dc-body { padding:20px 14px 40px; }
-  .dc-card { padding-top:24px; padding-bottom:16px; }
-  .dc-hero { margin-top:24px !important; padding:16px !important; }
   h1.dc-title { font-size:15px; }
   h2.dc-name, .dc-action-title { font-size:20px; }
   .dc-cards { grid-template-columns:1fr; }
@@ -1026,6 +1088,9 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
 
 /* 主列自己的容器：两栏时主列可能只有 560px，表格要按主列宽度而不是窗口宽度降级。 */
 @container (max-width:700px) {
+  .dc-module-body { padding:12px; }
+  .dc-module-head { height:38px; padding:0 12px; }
+  .dc-main, .dc-rail { gap:12px; }
   .dc-feature-row, .dc-acc-row { grid-template-columns:minmax(0,1fr); }
   .dc-feature-side { justify-content:flex-start; flex-wrap:wrap; }
   .dc-acc-actions { justify-content:flex-start; flex-wrap:wrap; }
@@ -1122,7 +1187,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       return h('span', { className: `dc-chip dc-chip-${tone}`, title: props.title || undefined }, props.children)
     }
 
-    // 区标题：左侧 13/600 主色，右侧 11.5 次要色元信息。四区共用同一规格。
+    // 区标题：保留给空态/说明使用；模块本身走 Module 组件。
     function SectionHead(props) {
       return h(
         'div',
@@ -1132,12 +1197,101 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       )
     }
 
+    // 16×16 线性图标（authored inline SVG）：只放模块头与空态。
+    function ModuleIcon(props) {
+      const name = props.name || 'info'
+      const base = {
+        width: 16,
+        height: 16,
+        viewBox: '0 0 16 16',
+        fill: 'none',
+        'aria-hidden': 'true',
+        focusable: 'false',
+        stroke: 'currentColor',
+        strokeWidth: 1.6,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+      }
+      const shapes = {
+        next: [
+          h('path', { key: 'a', d: 'M3 8h8.5' }),
+          h('path', { key: 'b', d: 'M8.3 4.6 11.7 8l-3.4 3.4' }),
+        ],
+        progress: [
+          h('path', { key: 'a', d: 'M4.2 8h1.6M9 8h1.6' }),
+          h('circle', { key: 'b', cx: 3, cy: 8, r: 1.3 }),
+          h('circle', { key: 'c', cx: 8, cy: 8, r: 1.3 }),
+          h('circle', { key: 'd', cx: 13, cy: 8, r: 1.3 }),
+        ],
+        feature: [
+          h('path', { key: 'a', d: 'M8 2.4 13.6 5.5 8 8.6 2.4 5.5z' }),
+          h('path', { key: 'b', d: 'M2.4 8.2 8 11.3l5.6-3.1' }),
+          h('path', { key: 'c', d: 'M2.4 10.7 8 13.8l5.6-3.1' }),
+        ],
+        acceptance: [
+          h('rect', { key: 'a', x: 2.5, y: 2.5, width: 11, height: 11, rx: 2 }),
+          h('path', { key: 'b', d: 'm5.2 8.1 1.9 1.9 3.7-3.9' }),
+        ],
+        defects: [
+          h('path', { key: 'a', d: 'M8 2.4 13.9 13H2.1z' }),
+          h('path', { key: 'b', d: 'M8 6.1v3' }),
+          h('circle', { key: 'c', cx: 8, cy: 11.2, r: 0.7, fill: 'currentColor', stroke: 'none' }),
+        ],
+        review: [
+          h('path', { key: 'a', d: 'M8 2.2 13 4v3.5c0 3-2.1 5.4-5 6.3-2.9-.9-5-3.3-5-6.3V4z' }),
+          h('path', { key: 'b', d: 'm5.7 8.1 1.7 1.7 3.1-3.2' }),
+        ],
+        receipts: [
+          h('circle', { key: 'a', cx: 8, cy: 8, r: 5.5 }),
+          h('path', { key: 'b', d: 'M8 4.8V8l2.2 1.3' }),
+        ],
+        info: [
+          h('circle', { key: 'a', cx: 8, cy: 8, r: 5.5 }),
+          h('path', { key: 'b', d: 'M8 7.2v3.3' }),
+          h('circle', { key: 'c', cx: 8, cy: 5.2, r: 0.7, fill: 'currentColor', stroke: 'none' }),
+        ],
+      }
+      return h('svg', base, shapes[name] || shapes.info)
+    }
+
+    // 统一模块卡：模块头（图标+标题+meta）+ 模块体。
+    function Module(props) {
+      // 透传未知属性（role/aria-* 等）：模块只是容器，不能吞掉调用方的无障碍语义。
+      const { className, title, icon, meta, metaTone, level, children, ...rest } = props
+      const Heading = level === 3 ? 'h3' : 'h2'
+      return h(
+        'section',
+        { className: `dc-module${className ? ` ${className}` : ''}`, ...rest },
+        title
+          ? h(
+              'div',
+              { className: 'dc-module-head' },
+              h('span', { className: 'dc-module-icon' }, h(ModuleIcon, { name: icon || 'info' })),
+              h(Heading, { className: 'dc-module-title' }, title),
+              meta
+                ? h(
+                    'span',
+                    { className: `dc-module-meta${metaTone ? ` dc-module-meta-${metaTone}` : ''}` },
+                    meta,
+                  )
+                : null,
+            )
+          : null,
+        h('div', { className: 'dc-module-body' }, children),
+      )
+    }
+
     // 空态统一形状：一句为什么 + 一个真能用的动作（默认带用户去 hero 复制）。
     function EmptyState(props) {
       return h(
         'div',
         { className: props.inline ? 'dc-empty-state dc-empty-state-inline' : 'dc-empty-state' },
-        h('div', { className: 'dc-empty-title' }, props.title),
+        h(
+          'div',
+          { className: 'dc-empty-head' },
+          h('span', { className: 'dc-empty-icon' }, h(ModuleIcon, { name: props.icon || 'info' })),
+          h('div', { className: 'dc-empty-title' }, props.title),
+        ),
         props.reason ? h('p', { className: 'dc-empty-reason' }, props.reason) : null,
         props.children || null,
         props.actionLabel
@@ -1656,6 +1810,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           { className: 'dc-action-row' },
           h(EmptyState, {
             inline: true,
+            icon: 'progress',
             primary: props.primary !== false,
             disabled: props.disabled === true,
             title: '项目还没初始化',
@@ -1874,9 +2029,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       }
 
       return h(
-        'section',
-        { className: 'dc-card dc-hero' },
-        h(SectionHead, { title: '现在要做的下一件事' }),
+        Module,
+        { className: 'dc-module-hero', title: '现在要做的下一件事', icon: 'next' },
         h('div', { className: 'dc-action-eyebrow' }, stepText),
         h('h3', { className: 'dc-action-title' }, action.title || '暂无建议'),
         h(
@@ -2028,9 +2182,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         : `先完成冷启动：${coldPending.map((node) => node.name || STAGE_TEXT[node.stageId]).join('、') || '初始化'}`
 
       return h(
-        'section',
-        { className: 'dc-card' },
-        h(SectionHead, { title: '项目进度' }),
+        Module,
+        { title: '项目进度', icon: 'progress' },
         h('p', { className: 'dc-progress-summary' }, summaryText),
         coldAllDone
           ? h(
@@ -2881,6 +3034,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       if (items.length === 0) {
         const drafting = props.actionKind === 'acceptance-draft'
         content = h(EmptyState, {
+          icon: 'acceptance',
           title: '还没有验收条目',
           reason: drafting
             ? '下一步就是按 PRD 起草第一版，生成后回来逐条看结果。'
@@ -2911,7 +3065,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         actionable.length > 0
           ? `需要处理 ${actionable.length} 条${staleCount > 0 ? ` · ${staleCount} 条需要重新确认` : ''}`
           : '全部处理完了'
-      return h('section', { className: 'dc-card' }, h(SectionHead, { title: '验收', meta }), content)
+      return h(Module, { title: '验收', icon: 'acceptance', meta }, content)
     }
 
     function FeatureBoardSection(props) {
@@ -2945,6 +3099,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         board = h(
           EmptyState,
           {
+            icon: 'feature',
             title: '还没有 PRD，所以列不出功能',
             reason: '「想清楚」阶段会产出它，先看上面的下一步。',
             actionLabel: '复制下一步指令',
@@ -2955,6 +3110,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         board = h(
           EmptyState,
           {
+            icon: 'feature',
             title: 'PRD 里没有「### FR-N」结构',
             reason: '面板不解析自由文本，只认这种写法。',
             actionLabel: '复制下一步指令',
@@ -2963,6 +3119,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         )
       } else if (items.length === 0) {
         board = h(EmptyState, {
+          icon: 'feature',
           title: 'PRD 里还没有功能条目',
           reason: '功能需求那一节还是空的，补上后刷新即可。',
         }, technical(null))
@@ -2984,7 +3141,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         )
       }
 
-      return h('section', { className: 'dc-card' }, h(SectionHead, { title: '功能' }), board)
+      return h(Module, { title: '功能', icon: 'feature' }, board)
     }
 
     function DefectsSection(props) {
@@ -2993,9 +3150,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const blocking = Number(unattributed.blocking) || 0
       if (blocking <= 0) return null
       return h(
-        'section',
-        { className: 'dc-card' },
-        h(SectionHead, { title: '没归到功能的待修问题', meta: `${blocking} 条` }),
+        Module,
+        { title: '没归到功能的待修问题', icon: 'defects', meta: `${blocking} 条` },
         h('p', { className: 'dc-hint' }, '按路径没匹配到任何功能，可能是共享代码或全项目问题。'),
         h(BugList, { issues: unattributed.issues }),
       )
@@ -3032,24 +3188,28 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         { key: 'decision', label: '需要你决定', value: hasDecision ? '1' : '0', tone: hasDecision ? 'warn' : null },
       ]
       return h(
-        'div',
-        { className: 'dc-summary-bar' },
-        stats.map((stat) =>
-          h(
-            'span',
-            { key: stat.key, className: 'dc-summary-stat', title: stat.title || undefined },
-            h('span', { className: 'dc-summary-label' }, stat.label),
+        Module,
+        { className: 'dc-summary-module' },
+        h(
+          'div',
+          { className: 'dc-summary-bar' },
+          stats.map((stat) =>
             h(
               'span',
-              { className: `dc-summary-value${stat.tone ? ` dc-summary-${stat.tone}` : ''}` },
-              stat.value,
+              { key: stat.key, className: 'dc-summary-stat', title: stat.title || undefined },
+              h('span', { className: 'dc-summary-label' }, stat.label),
+              h(
+                'span',
+                { className: `dc-summary-value${stat.tone ? ` dc-summary-${stat.tone}` : ''}` },
+                stat.value,
+              ),
             ),
           ),
-        ),
-        h(
-          'span',
-          { className: 'dc-summary-progress', 'aria-hidden': 'true' },
-          h('span', { className: 'dc-summary-fill', style: { width: `${percent}%` } }),
+          h(
+            'span',
+            { className: 'dc-summary-progress', 'aria-hidden': 'true' },
+            h('span', { className: 'dc-summary-fill', style: { width: `${percent}%` } }),
+          ),
         ),
       )
     }
@@ -3076,9 +3236,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const features = props.features || {}
       if (review.available === false) {
         return h(
-          'section',
-          { className: 'dc-rail-group' },
-          h('div', { className: 'dc-rail-head' }, h('h3', { className: 'dc-rail-title' }, '代码检查')),
+          Module,
+          { title: '代码检查', icon: 'review' },
           h(
             'p',
             { className: 'dc-rail-note' },
@@ -3090,16 +3249,9 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const rounds = Number(review.rounds) || 0
       const severe = mostSevereIssue(review, features)
       const gateText = blocking > 0 ? '有要修的' : rounds > 0 ? '最近检查通过' : '还没检查'
-      const gateTone = blocking > 0 ? 'bad' : rounds > 0 ? 'ok' : 'unknown'
       return h(
-        'section',
-        { className: 'dc-rail-group' },
-        h(
-          'div',
-          { className: 'dc-rail-head' },
-          h('h3', { className: 'dc-rail-title' }, '代码检查'),
-          h(Chip, { tone: gateTone }, gateText),
-        ),
+        Module,
+        { title: '代码检查', icon: 'review', level: 3, meta: gateText, metaTone: blocking > 0 ? 'warn' : rounds > 0 ? 'ok' : 'unknown' },
         blocking > 0
           ? h(
               React.Fragment,
@@ -3135,17 +3287,12 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const receipts = asArray(ledger.receipts)
       const lastAt = ledger.lastAt || (receipts[0] && receipts[0].at) || null
       return h(
-        'section',
-        { className: 'dc-rail-group' },
-        h(
-          'div',
-          { className: 'dc-rail-head' },
-          h('h3', { className: 'dc-rail-title' }, '项目动态'),
-          h('span', { className: 'dc-rail-meta' }, lastAt ? `上次 ${formatRelative(lastAt)}` : '还没有动态'),
-        ),
+        Module,
+        { title: '项目动态', icon: 'receipts', meta: lastAt ? `上次 ${formatRelative(lastAt)}` : '还没有动态' },
         receipts.length === 0
           ? h(EmptyState, {
               inline: true,
+              icon: 'receipts',
               title: '项目还没有动态',
               reason: 'AI 每完成一步会记一条，你不需要手写。',
             })
@@ -3218,9 +3365,9 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         { className: 'dc-rail', 'aria-label': '补充信息' },
         decision
           ? h(
-              'section',
-              { className: 'dc-rail-group dc-decision', role: 'status' },
-              h('div', { className: 'dc-decision-title' }, `需要你决定：${decision.title || '这件事需要你拍板'}`),
+              Module,
+              { className: 'dc-module-warn', title: '需要你决定', icon: 'defects', level: 3, role: 'status' },
+              h('div', { className: 'dc-decision-title' }, decision.title || '这件事需要你拍板'),
               asArray(decision.options).length > 0
                 ? h(
                     'ul',
@@ -3237,20 +3384,24 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         h(ReceiptsTimeline, { ledger }),
         gapCount > 0
           ? h(
-              'details',
-              { className: 'dc-rail-details' },
-              h('summary', null, '数据说明'),
+              Module,
+              { title: '数据说明', icon: 'info', level: 3 },
               h(
-                'ul',
-                null,
-                warnings.map((item, index) =>
-                  h('li', { key: `warning${index}` }, `有东西没读到：${(item && item.message) || item}`),
-                ),
-                dataGaps.map((item, index) =>
-                  h('li', { key: `gap${index}` }, `这里缺数据：${(item && item.message) || item}`),
-                ),
-                featureNotes.map((item, index) =>
-                  h('li', { key: `note${index}` }, `${(item && item.message) || item}`),
+                'details',
+                { className: 'dc-more' },
+                h('summary', null, `展开 ${gapCount} 条说明`),
+                h(
+                  'ul',
+                  { className: 'dc-rail-details-list' },
+                  warnings.map((item, index) =>
+                    h('li', { key: `warning${index}` }, `有东西没读到：${(item && item.message) || item}`),
+                  ),
+                  dataGaps.map((item, index) =>
+                    h('li', { key: `gap${index}` }, `这里缺数据：${(item && item.message) || item}`),
+                  ),
+                  featureNotes.map((item, index) =>
+                    h('li', { key: `note${index}` }, `${(item && item.message) || item}`),
+                  ),
                 ),
               ),
             )
@@ -3612,6 +3763,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
     }
   },
 })
+
+
 
 
 

@@ -141,8 +141,11 @@ test('Hero：Answer-first 动作 + 步骤上下文 + 唯一主按钮', () => {
   assert.ok(source.includes('第 ${cycleIndex + 1} 步 / 共 ${cycleNodes.length || 6} 步'), 'hero 必须有「第 N 步 / 共 6 步」上下文')
   assert.ok(source.includes('stepText') && source.includes('dc-action-eyebrow'), '步骤上下文必须渲染')
   assert.ok(source.includes("'复制给 AI'"), '主按钮必须是「复制给 AI」')
-  assert.ok(source.includes("className: 'dc-card dc-hero'"), 'hero 是唯一 surface')
-  assert.ok(css.includes('.dc-hero') && css.includes('font-size:20px'), 'hero 标题用 20px')
+  assert.ok(source.includes("className: 'dc-module-hero'"), 'hero 是唯一 surface')
+  assert.ok(css.includes('.dc-module-hero') && css.includes('font-size:22px'), 'hero 标题用 22px/700，全页唯一大字号')
+  assert.ok(source.includes('...rest'), 'Module 必须透传未知属性（role/aria 语义不能被容器吞掉）')
+  assert.ok(source.includes('level === 3'), '右栏模块标题要降级为 h3，标题层级不能压平')
+  assert.ok(css.includes('.dc-module-meta-warn'), '代码检查 meta 要保留红绿状态信号')
 })
 
 test('功能：人话列表、行可展开、细节才给技术信息', () => {
@@ -317,7 +320,7 @@ test('两栏布局：容器查询 / sticky / 断点', () => {
   assert.ok(!/@container \(min-width:1040px\)/.test(css), '不得残留旧 1040 断点')
   assert.ok(css.includes('grid-template-columns:minmax(0,1fr) 280px'), '主区 + 280px 右栏')
   assert.ok(css.includes('.dc-rail { position:sticky; top:118px; z-index:2; }'), '右栏 sticky 与 header+摘要对齐')
-  assert.ok(css.includes('.dc-summary-bar { position:sticky; top:71px; z-index:4;'), '摘要条随 header 常驻')
+  assert.ok(css.includes('.dc-summary-module { position:sticky; top:71px; z-index:4; }'), '摘要条随 header 常驻')
   assert.ok(css.includes('@container (max-width:700px)'), '主区 ≤700 时行改为堆叠')
   assert.ok(css.includes('.dc-feature-row, .dc-acc-row { grid-template-columns:minmax(0,1fr); }'), '窄主区行必须堆叠')
   assert.ok(source.includes('共 ${projects.length} 个项目'), '总览标题行显示项目数')
@@ -383,7 +386,7 @@ test('密度切换：紧凑/舒适 + localStorage', () => {
   assert.ok(source.includes('dc-compact') && source.includes("'aria-pressed': props.density === 'compact'"), '切换按钮要有 aria-pressed')
   assert.ok(source.includes("props.density === 'compact' ? '紧凑' : '舒适'"), '按钮文案要紧凑/舒适')
   assert.ok(css.includes('.dc-root.dc-compact') && css.includes('.dc-compact .dc-feature-row'), '紧凑态有独立样式')
-  assert.ok(css.includes('.dc-compact .dc-card') && css.includes('.dc-compact .dc-thumb'), '区间距与缩略图也要随密度变')
+  assert.ok(css.includes('.dc-compact .dc-module-body') && css.includes('.dc-compact .dc-thumb'), '模块间距与缩略图也要随密度变')
 })
 
 test('键盘：j/k、Enter、Esc、? + 输入框不劫持', () => {
@@ -399,4 +402,59 @@ test('键盘：j/k、Enter、Esc、? + 输入框不劫持', () => {
   assert.ok(source.includes("className: 'dc-shortcuts'") && source.includes("h('kbd', null, 'j')"), 'header 要有快捷键 details 列表')
   assert.ok(css.includes('.dc-shortcuts-summary') && css.includes('.dc-shortcuts-body'), '快捷键说明有可展开样式')
 })
+
+test('模块化工作台：容器 / 头 / 体 / 层色 / 间距', () => {
+  assert.ok(source.includes('function Module(props)'), '必须有统一 Module 组件')
+  assert.ok(source.includes("className: 'dc-module'") || source.includes('dc-module${'), '模块容器必须存在')
+  assert.ok(source.includes("className: 'dc-module-head'") && source.includes("className: 'dc-module-body'"), '模块必须有头/体')
+  assert.ok(css.includes('.dc-module {') && css.includes('background:var(--dsw-alias-bg-layer-2)'), '模块卡底必须是 layer-2（浮在画布上）')
+  assert.ok(css.includes('.dc-root { background:var(--dsw-alias-bg-layer-1);'), '画布必须是 layer-1')
+  assert.ok(css.includes('.dc-module-head {') && /\.dc-module-head \{[\s\S]{0,120}background:var\(--dsw-alias-bg-layer-1\)/.test(css), '模块头必须与卡体形成 layer-1/layer-2 条纹')
+  assert.ok(/\.dc-module-head \{[\s\S]{0,80}height:42px/.test(css), '模块头 42px')
+  assert.ok(/\.dc-module-body \{ padding:16px/.test(css), '模块体 padding 16px')
+  assert.ok(css.includes('.dc-main { gap:16px; }') && css.includes('.dc-rail { display:flex; flex-direction:column; gap:12px;'), '主区模块间距 16、右栏 12')
+  assert.ok(css.includes('.dc-rail-group'), '旧连通面板样式可保留但不再使用')
+  assert.ok(!source.includes("className: 'dc-rail-group'"), '右栏必须是 4 个独立模块，不是连通面板')
+  assert.ok((source.match(/h\(\s*Module,/g) || []).length >= 7, '模块数量应覆盖主区与右栏')
+  assert.ok(source.includes("title: '需要你决定'") && source.includes("title: '代码检查'") && source.includes("title: '项目动态'") && source.includes("title: '数据说明'"), '右栏四个模块齐备')
+  assert.ok(css.includes('.dc-module-warn'), '需要你决定是 warn 模块')
+  assert.ok(css.includes('color-mix(in srgb, var(--dsw-alias-brand-primary) 6%, var(--dsw-alias-bg-layer-2))'), 'hero 必须 brand 6% 混合底')
+  assert.ok(css.includes('border-color:color-mix(in srgb, var(--dsw-alias-brand-primary) 28%, var(--dsw-alias-border-l1))'), 'hero 边框 brand 28%')
+  assert.ok(css.includes('.dc-summary-stat + .dc-summary-stat') && css.includes('border-left:1px solid var(--dsw-alias-border-l1)'), '摘要组间必须有竖分隔线')
+  assert.ok(css.includes('.dc-feature-detail, .dc-more-body') && css.includes('background:var(--dsw-alias-bg-layer-1)'), '展开细节/代码块用 layer-1 圆角块')
+  assert.ok(css.includes('.dc-empty-state { background:var(--dsw-alias-bg-layer-1); border:1px dashed'), '空态是虚线框')
+})
+
+test('图标：inline SVG 模块图标 ≥6 种', () => {
+  assert.ok(source.includes('function ModuleIcon(props)'), '必须有 inline SVG 图标组件')
+  for (const name of ['next', 'progress', 'feature', 'acceptance', 'defects', 'review', 'receipts', 'info']) {
+    assert.ok(source.includes(`        ${name}: [`), `缺少图标 ${name}`)
+  }
+  assert.ok(source.includes("fill: 'none'") && source.includes("stroke: 'currentColor'") && source.includes('strokeWidth: 1.6'), '图标必须 stroke 1.6 + currentColor')
+  assert.ok(source.includes("strokeLinecap: 'round'") && source.includes("strokeLinejoin: 'round'"), '图标线头/线角圆角')
+  assert.ok(source.includes("icon: 'next'") || source.includes("icon: 'progress'"), '模块头必须传图标')
+})
+
+test('字重阶梯：22/700 仅 hero；正文 400；无 650', () => {
+  assert.ok(!css.includes('font-weight:650'), '不得再有 650')
+  assert.ok(css.includes('.dc-action-title { font-size:22px; font-weight:700'), 'hero 标题 22/700')
+  assert.ok(css.includes('.dc-module-title {') && css.includes('font-size:13px; font-weight:600'), '模块标题 13/600')
+  assert.ok(css.includes('.dc-feature-name, .dc-acc-title { font-size:13.5px; font-weight:600'), '行名 13.5/600')
+  assert.ok(css.includes('font-size:13.5px; line-height:1.65; font-weight:400'), '正文 13.5/400/1.65')
+  assert.ok(css.includes('.dc-module-meta { margin-left:auto; font-size:11.5px; font-weight:500'), 'meta 11.5/500')
+  assert.ok(css.includes('.dc-chip { font-size:11.5px; font-weight:600'), '状态 pill 11.5/600')
+})
+
+test('模块尺寸：360 与紧凑', () => {
+  assert.ok(/@container \(max-width:700px\) \{[\s\S]{0,200}\.dc-module-body \{ padding:12px; \}/.test(css), '360 模块体 padding 12')
+  assert.ok(/@container \(max-width:700px\) \{[\s\S]{0,300}\.dc-main, \.dc-rail \{ gap:12px; \}/.test(css), '360 模块间距 12')
+  assert.ok(css.includes('.dc-compact .dc-module-head { height:36px'), '紧凑模块头 36')
+  assert.ok(css.includes('.dc-compact .dc-module-body { padding:12px; }'), '紧凑模块体 12')
+  assert.ok(css.includes('.dc-compact .dc-main { gap:10px; }') && css.includes('.dc-compact .dc-rail { gap:10px; }'), '紧凑间距 10')
+  assert.ok(css.includes('.dc-compact .dc-feature-row { min-height:40px; }'), '紧凑行高 40')
+  assert.ok(css.includes('.dc-root { background:var(--dsw-alias-bg-layer-1); font-size:13.5px'), '画布 layer-1 且正文 13.5')
+})
+
+
+
 

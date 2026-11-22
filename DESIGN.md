@@ -11,37 +11,36 @@ Operate 表面（DSH 内的交付驾驶舱面板）。视觉目标：**安静的
 - 全页只有**两个 surface**：主区的「唯一下一步」hero，以及右侧状态栏（审核账本 + 执行回执）。其它区域保持 flat（hairline + 留白），不许再套卡片。
 
 
-## 2. 布局（两栏看板）
+## 2. 布局（模块化工作台）
 
 信息架构参考成熟 SaaS 看板（GitHub 仓库页：主区 2/3 + 右栏 1/3；Linear：常驻属性栏；Vercel/Sentry：顶部指标条 + 主区）。**不是一条长单栏流水账。**
 
 ```
-[sticky header：← 全部项目 | 项目名 | 健康 chip | 迭代 chip | 更新于 | 刷新]
-[sticky 摘要条：功能 1/5 · 验收 1/6 · 缺陷 3 · 失效 1 · 待决策 0 + 细进度条]
+[sticky header：← 全部项目 | 项目名 | 健康摘要 | 迭代 | 密度/快捷键/服务/刷新]
+[摘要条：一个模块，5 组指标 + 竖分隔线 + 4px 进度条]
 ┌ 主区 minmax(0,1fr) ──────────────────┐ ┌ 右栏 280px（sticky）──────────┐
-│ 下一步（唯一 hero surface）           │ │ 待决策（有才显示）            │
-│ 迭代进度（stepper + 冷启动压一行）     │ │ 审核账本（计数 + 最严重一行）  │
-│ 功能账 & 缺陷账（表格）                │ │ 执行回执（时间线，max-h 420）  │
-│ 验收清单（未决优先，已通过折叠）       │ │ 数据提示/警告（折叠）          │
-│ 未归属缺陷（有才显示）                 │ └──────────────────────────────┘
+│ 下一步（hero 模块，brand tint）        │ │ 需要你决定（有才显示）        │
+│ 项目进度（模块）                       │ │ 代码检查（模块）              │
+│ 功能（模块，行可展开）                 │ │ 项目动态（模块，时间线分组）  │
+│ 验收（模块，默认极简）                 │ │ 数据说明（模块，折叠）        │
+│ 没归到功能的待修问题（有才显示）       │ └──────────────────────────────┘
 └──────────────────────────────────────┘
 ```
 
+- **模块系统**（解决"白底+粗字"）：每个区块 = `.dc-module`（画布上的卡片）。
+  - 画布 `bg-layer-1`；模块卡 `bg-layer-2` + 1px `border-l1` + radius 12；
+  - 模块头 `.dc-module-head` 高 42px（紧凑 36）：`bg-layer-1` 条纹 + 底部 1px 边 + 16px inline SVG 图标 + 标题 13/600 + 右侧 meta 11.5/500；
+  - 模块体 padding 16px（紧凑 12）；主区模块间距 16px、右栏模块间距 12px；**不再用区级分隔线**，层次由卡片表面表达。
+- hero 是唯一强调模块：`brand 6%` 混合底 + `brand 28%` 边框，标题 22/700（全页唯一 22px）。
 - 断点用**容器查询**（`.dc-root { container-type: inline-size; }`），不用 media query（面板宽度 = 窗口 − DSH 侧栏）：
-  - `≥1170px`：两栏（主区 ≥830 + 右栏 280 + gap 20）——主区必须放得下验收表的最小宽 820，否则会内部横滚；
-  - `741–1169px`：单栏，表格保持表格；
-  - `≤740px`（主区 ≤700）：单栏，功能账/验收清单**堆叠为块**（`data-label`），页面零横向溢出。
-- **不允许混合态**：两栏与堆叠的边界必须错开（两栏时主区 ≥830 > 700，不可能触发堆叠）；出现"两栏 + 堆叠表格"说明断点没对齐。
-
-- sticky 叠层：header `top:0 z:5`；摘要条 `top:59px z:4`（仅 ≥641 常驻）；右栏 `top:106px z:2`。三层不互相遮挡。
-- 摘要条五项：`功能 x/y`、`验收 x/y`、`缺陷 N`（未处置审核 blocking，含未归属，title 说明）、`失效 N`、`待决策 0/1` + 3px 功能进度条；数字 tabular、状态色只在非 0 时用。
-- 右栏「审核账本」在计数之外给**最严重一条**（critical > important > minor，`[严重] 标题 · file:line`，单行 ellipsis + title）；只有计数没明细时如实写"明细未提供"。
-
-- 主区 `.dc-body` `max-width: 1180px`；页脚移除（header 已含更新与刷新，上次回执并进右栏标题行）。
-- 右栏是**一个面板**（layer-1 + 1px border + radius 12 + 16px padding），内部分组用 1px 分隔线，不套多张卡。
-- 降噪：冷启动两项都完成时压成一行；进度区不再放 2×2 元信息（归入摘要条/右栏）；已通过的验收折叠成一行「已通过 N 条（展开）」；重复的小字说明能删则删。
-
-
+  - `≥1170px`：两栏（主区 ≥830 + 右栏 280 + gap 20）——主区必须放得下验收表的最小宽 820；
+  - `741–1169px`：单栏，模块全宽；
+  - `≤740px`：单栏，模块间距 12、模块体 padding 12、行堆叠为块，页面零横向溢出。
+- sticky 叠层：header `top:0 z:5`；摘要模块 `top:71px z:4`（仅 ≥641 常驻）；右栏 `top:118px z:2`。三层不互相遮挡。
+- 摘要条：一个模块，5 组指标（已完成功能 / 验收通过 / 待修问题 / 需要重新确认 / 需要你决定）用 1px 竖分隔线隔开，label 11.5/500 次要色、value 14/700，4px 进度条在最右。
+- 右栏「代码检查」在计数之外给**最严重一条**（critical > important > minor，`[严重] 标题 · file:line`，单行 ellipsis + title）；只有计数没明细时如实写"明细未提供"。
+- 项目动态按**今天 / 本周 / 更早**分组（本地日历日、周一为周首；空组不渲染），每组 `role="group"` + `aria-label`。
+- 主区 `.dc-body` `max-width: 1180px`；页脚移除；已通过的验收折叠成「已经通过 N 条（展开）」；重复小字说明能删则删。
 ## 2.5 信息架构：Answer-first（给人读状态）
 
 界面的第一职责是让人 10 秒内回答「现在怎么样、我该做什么」，不是把数据摆全。
@@ -114,7 +113,7 @@ Operate 表面（DSH 内的交付驾驶舱面板）。视觉目标：**安静的
 
 只使用 token；client CSS 内**不允许出现 hex/rgb/hsl 字面值**。
 
-- 底：`bg-base`（页面）/ `bg-layer-1`（hero surface、行 hover、代码块）/ `bg-layer-2`（弱底）。
+- 分层（模块化工作台）：**画布** `bg-layer-1` → **模块卡** `bg-layer-2` → **模块头** `bg-layer-1` 条纹；代码块/展开细节/空态虚线框 `bg-layer-1` + 1px 边；hero 例外：`brand 6%` 混合底 + `brand 28%` 边框。
 - 线：`border-l1`（常规 hairline）/ `border-l2`（强调分隔、输入聚焦底）。
 - 字：`label-primary` / `label-secondary`；禁用 `opacity: .5`。
 - 主色 `brand-primary` 只用于：主按钮、当前步骤、focus ring、链接、选中态。
@@ -124,6 +123,9 @@ Operate 表面（DSH 内的交付驾驶舱面板）。视觉目标：**安静的
 - 深色：同一份 client CSS，预览 harness 用 `html[data-theme="dark"]` 覆盖同一批 token（`?theme=dark`）。深色下 hero surface、warn 框、状态 pill 必须逐一验证可读。
 
 ## 6. 组件
+
+- **Module**（所有区块的统一容器）：`.dc-module`（卡片，layer-2 + 1px 边 + 12 圆角）→ `.dc-module-head`（42px，layer-1 条纹，16px inline SVG 图标 + 标题 13/600 + 右侧 meta 11.5/500，meta 支持 ok/warn/unknown 状态色）→ `.dc-module-body`（padding 16）。Module 透传未知属性（role/aria-* 不被容器吞掉）；右栏模块标题用 h3。
+- **图标**：8 个 authored inline SVG（next / progress / feature / acceptance / defects / review / receipts / info），16×16、stroke 1.6、currentColor、aria-hidden，只出现在模块头与空态。
 
 - **按钮三档**，统一高 30px、radius 8px、padding 0 12px、13px/600：
   - `primary`：brand 填充，hover 深一档，active 下沉 1px；每屏只允许一个（hero 里的「复制指令」）。
@@ -169,7 +171,7 @@ Operate 表面（DSH 内的交付驾驶舱面板）。视觉目标：**安静的
 
 ## 11. 验证基线
 
-- 预览 harness（`tools/preview`）截图：`human-1200.png`（两栏）、`human-1000.png`（单栏）、`human-360.png`（堆叠）、`human-dark.png`（深色）、`human-details.png`（展开细节）、`human-overview.png`；可用性轮补充：`goal-empty-prd.png`、`goal-empty-acceptance.png`、`goal-empty-receipts.png`、`goal-feature-link.png`、`goal-timeline-groups.png`、`goal-compact.png`、`goal-keyboard.png`、`goal-360.png`、`goal-dark.png`。
+- 预览 harness（`tools/preview`）截图：`style-1200.png`（模块化两栏）、`style-dark.png`（深色三层）、`style-360.png`、`style-compact.png`、`style-details.png`、`style-empty.png`、`style-overview.png`；可用性轮补充：`goal-empty-prd.png`、`goal-empty-acceptance.png`、`goal-empty-receipts.png`、`goal-feature-link.png`、`goal-timeline-groups.png`、`goal-compact.png`、`goal-keyboard.png`、`goal-360.png`、`goal-dark.png`。
 - 360 宽：`docScrollWidth = 360`、`offenders = []`；行自动堆叠。
 - 断点：容器 ≥1170 两栏、741–1169 单栏、≤740 主区 ≤700 堆叠；无混合态。
 - sticky：滚动后 header 0 / 摘要条贴 header / 右栏不遮挡。
