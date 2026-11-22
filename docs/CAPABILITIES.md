@@ -129,8 +129,25 @@
      → S9 部署发布：release.json（版本 / 产物 / 回滚 / 变更记录；甲方批准）
 ## 3. 当前 profile 探测结果（2026-11-22）
 
-- **已装 Skills**：`claude-code-review`、`frontend-design`、`impeccable`、`ponytail`、`test-driven-development`、`systematic-debugging`、`verification-before-completion`、`finishing-a-development-branch`、`writing-plans`、`executing-plans`、`requesting-code-review`、`receiving-code-review`、`ui-ux-pro-max`、`using-git-worktrees`、`subagent-driven-development`、`dispatching-parallel-agents`、`writing-skills`。
-- **缺失 Skills**（playbook 引用但未装）：`trellis-start`、`trellis-brainstorm`、`trellis-spec-bootstrap`、`trellis-before-dev`、`trellis-check`、`trellis-finish-work` → 全部改为**可选 + 回退**，不作为硬依赖。
+### 4.1 Skill 分布（实扫，2026-11-22）
+
+DSH 的 skill 作用域 = **全局（`DSH_HOME/skills` + `~/.agents/skills`）+ 当前项目（`<cwd>/.dsh/skills` + `<cwd>/.agents/skills`）**。项目级 skill **只在那个项目里可见**——这就是"本机有 grill、但当前项目看不到"的原因。
+
+| 位置 | 数量 | 代表 skill |
+|---|---|---|
+| `D:\Users\Admin\.dsh\skills`（DSH_HOME，全局） | 17 | claude-code-review、ponytail、test-driven-development、systematic-debugging、verification-before-completion、writing-plans、writing-skills、ui-ux-pro-max、impeccable、frontend-design、finishing-a-development-branch、executing-plans、subagent-driven-development、dispatching-parallel-agents、requesting/receiving-code-review、using-git-worktrees |
+| `D:\Users\Admin\.agents\skills`（全局 agents 生态） | 11 | clawhub 包、comet*、ponytail、impeccable、anthropic-frontend-design |
+| `D:\Coding\XinHuo\.dsh\skills`（项目级示例） | 14 | **grill-me / grilling**、comet*、trellis-start / continue / finish-work、unslop、code-review-and-quality |
+| 旧插件包（claude-code-review 仓库的 `.claude/.agents/.cursor/.dsh/skills`） | 11 + 7 | trellis-start / brainstorm / spec-bootstrap / before-dev / check / finish-work / break-loop / channel / meta / session-insight / update-spec；ui-ux-pro-max 的 design / brand / design-system / slides / ui-styling / banner-design |
+| Claude Code 插件市场缓存 | — | `mattpocock-skills`（grilling 的来源），**未装入 DSH** |
+
+> 注意：旧插件包里的 trellis 系列是给 Claude Code / Cursor 用的约定目录，**DSH 不会自动加载**；要用于 DSH，需要复制/软链到全局或项目 `.dsh/skills`。
+
+### 4.2 当前能力状态
+
+- **全局可用 Skills**：上表 DSH_HOME 的 17 个（本会话 skill catalog 可见）。
+- **项目级 grill**：存在于 XinHuo 项目（`grill-me` 触发 → `grilling`：设计树式追问，每轮给推荐答案，直到 frontier 为空）；当前项目未安装 → 本会话不可调用。
+- **旧插件 trellis 系列**：存在于插件包，未进 DSH 加载路径 → 视为"可选 + 回退"。
 - **MCP**：`playwright` 缺失、`context7` 缺失、无部署平台 MCP → 全部走回退，并给安装指引。
 - **Tools**：`cockpit_*`（本插件）、`claude_review*`（旧插件）可用。
 
@@ -165,6 +182,6 @@
 
 1. **必需 vs 可选**：只有 S3（架构契约）、S6（测试验证）、S9（部署发布）的**技术门**是硬的；skills/MCP 绝大多数是"可选 + 回退"，避免因缺插件卡死全流程。
 2. **硬依赖只有一个**：S7 的复核工具（`claude_review`）。缺失时 S7 技术门无法通过，面板必须明确阻塞并给安装/启用指引。
-3. **缺口优先级**：⓪ **grill skill（S1/S2 的想法澄清）——本机没有，建议用 `writing-skills` 自建一个精简版**（固定追问清单 + `brief.md` 模板，比装第三方更可控）；① 架构模板（S3，可先做提示词模板，不必新 skill）；② 部署 MCP 推荐与指引（S9）；③ Playwright 安装指引（S4/S6/S8，已有 CDP 回退）；④ 回执/任务板（S5）。
+3. **缺口优先级**：⓪ **grill skill（S1/S2 的想法澄清）——本机存在于 XinHuo 项目级（`grill-me` / `grilling`，mattpocock 系），只需复制/软链到全局或当前项目即可用，不必自建**；① 架构模板（S3，可先做提示词模板，不必新 skill）；② 部署 MCP 推荐与指引（S9）；③ Playwright 安装指引（S4/S6/S8，已有 CDP 回退）；④ 回执/任务板（S5）。
 4. **人工门共 5 个**：范围签核、架构签核、原型通过、验收签核、发布批准。
 5. **探测即规划**：矩阵写进 playbook 后，面板直接显示每阶段的"必需能力 / 可选能力 / 缺失 / 回退方案"，不需要人记。
