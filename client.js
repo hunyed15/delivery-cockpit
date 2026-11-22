@@ -61,9 +61,9 @@ window.__ModuleLoader__.load({
     // 功能状态是 Host 三路证据推导的结果：界面只把 status/statusLabel 如实画出来，不自己推断。
     const FEATURE_STATUS_TEXT = {
       done: '已完成',
-      blocked: '有阻塞',
+      blocked: '有卡点',
       'in-progress': '进行中',
-      'pending-acceptance': '待验收',
+      'pending-acceptance': '等验收',
       'not-started': '未开始',
       unknown: '—',
     }
@@ -79,11 +79,11 @@ window.__ModuleLoader__.load({
     const STRATEGY_TEXT = { 'fr-section': '功能需求节', 'fr-global': '全文扫描', none: '未识别' }
 
     // 验收结果：面板内可直接点（写动作走 POST /acceptance-result）。
-    const ACCEPTANCE_RESULT_TEXT = { pass: '通过', fail: '失败', blocked: '阻塞' }
+    const ACCEPTANCE_RESULT_TEXT = { pass: '通过', fail: '没通过', blocked: '卡住了' }
     const ACCEPTANCE_RESULT_TONE = { pass: 'ok', fail: 'bad', blocked: 'warn' }
     const ACCEPTANCE_ERROR_TEXT = {
       'item-required': '缺少验收项 ID，刷新面板再试。',
-      'bad-result': '结果只能是 通过 / 失败 / 阻塞 / 撤销。',
+      'bad-result': '结果只能是「通过 / 没通过 / 卡住了 / 撤销」。',
       'evidence-required': '通过必须附证据。',
       'evidence-not-found': '证据文件不存在：先确认路径。',
       'acceptance-broken': '验收表不是合法 JSON，先修好。',
@@ -129,14 +129,14 @@ window.__ModuleLoader__.load({
       return explainAcceptanceError(message)
     }
 
-    // 视觉回归：Host 每次截图都会与「该验收项的上一张截图」做像素对比。
+    // 视觉回归：Host 每次截图都会与「该验收项的上一张截图」做逐像素比。
     // 界面只如实呈现 verdict / ratio / reason，绝不把 different-size 说成「没变化」。
     const DIFF_VERDICT_TEXT = {
-      new: '新增基线',
-      same: '与上一版一致',
-      changed: '有变化',
-      'different-size': '尺寸变了',
-      uncomparable: '无法对比',
+      new: '第一次记录',
+      same: '和上一版一样',
+      changed: '和上一版有变化',
+      'different-size': '页面尺寸变了',
+      uncomparable: '没法比较',
     }
     const DIFF_VERDICT_TONE = {
       new: 'unknown',
@@ -147,11 +147,11 @@ window.__ModuleLoader__.load({
     }
     const DIFF_REASON_TEXT = {
       'baseline-missing': '上一张截图文件已不在',
-      'baseline-url': '上一版是 URL 证据，不能像素对比',
-      'baseline-outside-project': '上一版截图在项目外，不能像素对比',
-      'baseline-not-png': '上一版不是 PNG 截图（只支持 PNG 像素对比）',
+      'baseline-url': '上一版是 URL 证据，不能逐像素比',
+      'baseline-outside-project': '上一版截图在项目外，不能逐像素比',
+      'baseline-not-png': '上一版不是 PNG 截图（只支持 PNG 逐像素比）',
       'baseline-bad-png': '上一版截图文件损坏或格式不支持',
-      'baseline-too-large': '上一版截图超过 10 MiB，不做像素对比',
+      'baseline-too-large': '上一版截图超过 10 MiB，不做逐像素比',
       'baseline-unreadable': '上一版截图读不出来',
     }
 
@@ -172,12 +172,12 @@ window.__ModuleLoader__.load({
 
     function diffVerdictText(diff) {
       const verdict = diff && diff.verdict
-      if (verdict === 'changed') return `有变化 ${diffPercent(diff.ratio)}`
+      if (verdict === 'changed') return `和上一版有变化 ${diffPercent(diff.ratio)}`
       if (verdict === 'different-size') {
         const size = diff.width && diff.height ? `（${diff.width}×${diff.height}）` : ''
-        return `尺寸变了${size}`
+        return `页面尺寸变了${size}`
       }
-      return DIFF_VERDICT_TEXT[verdict] || '无法对比'
+      return DIFF_VERDICT_TEXT[verdict] || '没法比较'
     }
 
     function diffTitle(diff) {
@@ -195,11 +195,11 @@ window.__ModuleLoader__.load({
     function comparisonMessage(comparison) {
       if (!comparison || !comparison.verdict) return '已截图并附到证据'
       const verdict = comparison.verdict
-      if (verdict === 'changed') return `已截图 · 与上一版有变化 ${diffPercent(comparison.ratio)}`
-      if (verdict === 'same') return '已截图 · 与上一版一致'
-      if (verdict === 'new') return '已截图 · 已建立基线'
-      if (verdict === 'different-size') return '已截图 · 尺寸变了'
-      return `已截图 · 无法对比（${explainDiffReason(comparison.reason)}）`
+      if (verdict === 'changed') return '已截图并附到证据 · 和上一版有变化'
+      if (verdict === 'same') return '已截图并附到证据 · 和上一版一样'
+      if (verdict === 'new') return '已截图并附到证据 · 第一次记录'
+      if (verdict === 'different-size') return '已截图并附到证据 · 页面尺寸变了'
+      return `已截图并附到证据 · 没法比较（${explainDiffReason(comparison.reason)}）`
     }
 
     // 后端错误码对用户没有意义；翻成人话，原文留在 title 里供排查。
@@ -225,7 +225,7 @@ window.__ModuleLoader__.load({
     // 原型批准失败码也要翻成人话：用户要知道「我现在该做什么」，而不是看到 error code。
     const APPROVE_ERROR_TEXT = {
       'prototype-missing': '先把原型 HTML 放到项目根目录 prototype.html，再点通过。',
-      'iteration-required': '当前迭代还没确定，先让 Agent 上报一次回执。',
+      'iteration-required': '还没定下这一轮，先让 AI 记录一次进展。',
       'workspace-not-allowed': '这个工作区不在已登记列表里，无法写入批准标记。',
     }
 
@@ -369,7 +369,7 @@ window.__ModuleLoader__.load({
   height:100%; overflow:auto;
   color:var(--dsw-alias-label-primary); background:var(--dsw-alias-bg-base);
   font-family:ui-sans-serif,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
-  font-size:13px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  font-size:13.5px; line-height:1.65; -webkit-font-smoothing:antialiased;
   scrollbar-width:thin; scrollbar-color:var(--dsw-alias-border-l2) transparent;
   container-type:inline-size;
 }
@@ -396,6 +396,16 @@ h1.dc-title { margin:0; font-size:15px; line-height:1.35; font-weight:600; lette
 .dc-sub { color:var(--dsw-alias-label-secondary); font-size:12px; min-width:0; overflow-wrap:anywhere; }
 .dc-time { font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; }
 .dc-spacer { flex:1 1 auto; }
+
+/* header：项目名 + 一句人话健康摘要；服务状态弱化成一个点 */
+.dc-head-main { min-width:0; display:flex; flex-direction:column; gap:2px; }
+.dc-head-summary {
+  font-size:12px; color:var(--dsw-alias-label-secondary);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:460px;
+}
+.dc-service { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--dsw-alias-label-secondary); white-space:nowrap; }
+.dc-service-dot { width:6px; height:6px; border-radius:50%; background:var(--dsw-alias-state-success-primary); flex:none; }
+.dc-service-dot-warn { background:var(--dsw-alias-state-warn-primary); }
 
 /* ---------- 页面骨架 ---------- */
 .dc-body { max-width:1180px; margin:0 auto; padding:24px 20px 48px; display:flex; flex-direction:column; }
@@ -442,12 +452,12 @@ h1.dc-title { margin:0; font-size:15px; line-height:1.35; font-weight:600; lette
 }
 .dc-diff-link:focus-visible, .dc-btn-link:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; border-radius:3px; }
 
-/* ---------- 状态 chip / 优先级 / 失效标记 ---------- */
+/* ---------- 状态 chip / 优先级 / 需要重新确认标记 ---------- */
 .dc-chip {
   display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 8px;
   border:1px solid var(--dsw-alias-border-l1); border-radius:6px;
   background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-secondary);
-  font-size:11.5px; font-weight:600; white-space:nowrap; max-width:100%;
+  font-size:12px; font-weight:600; white-space:nowrap; max-width:100%;
 }
 .dc-chip::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; flex:none; }
 .dc-chip-ok { color:var(--dsw-alias-state-success-primary); border-color:color-mix(in srgb, var(--dsw-alias-state-success-primary) 32%, transparent); background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 8%, transparent); }
@@ -562,15 +572,63 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:650; letter-
 .dc-stage-current .dc-stage-state { color:var(--dsw-alias-brand-primary); font-weight:600; }
 .dc-stage-pending { opacity:.72; }
 
-/* ---------- ④ 功能账 & 缺陷账 ---------- */
+/* ---------- ④ 功能 & 待修问题账 ---------- */
 .dc-decision { margin:0 0 12px; padding:12px 14px; border-radius:8px;
   border:1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary) 38%, transparent);
   background:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 8%, transparent); }
 .dc-decision-title { font-weight:600; color:var(--dsw-alias-state-warn-primary); overflow-wrap:anywhere; }
 .dc-decision-options { margin:6px 0 0; padding-left:18px; font-size:12.5px; display:flex; flex-direction:column; gap:3px; overflow-wrap:anywhere; }
 .dc-decision-reco { margin-top:6px; font-size:12px; color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere; }
-.dc-board-meta { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:12px; font-size:11.5px; color:var(--dsw-alias-label-secondary); }
+.dc-board-meta { display:none; }
 .dc-board-counts { color:var(--dsw-alias-label-primary); font-weight:600; font-variant-numeric:tabular-nums; }
+
+/* ---------- 功能：人话列表（行可展开，展开才是技术细节） ---------- */
+.dc-feature-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; }
+.dc-feature-item { min-width:0; border-bottom:1px solid var(--dsw-alias-border-l1); }
+.dc-feature-item:last-child { border-bottom:0; }
+.dc-feature-row {
+  appearance:none; width:100%; background:transparent; border:0; color:inherit; font:inherit;
+  display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:12px;
+  min-height:52px; padding:10px 8px; text-align:left; cursor:pointer;
+  transition:background-color .15s ease-out;
+}
+.dc-feature-row:hover { background:var(--dsw-alias-bg-layer-1); }
+.dc-feature-row:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:-2px; }
+.dc-feature-main { min-width:0; display:flex; flex-direction:column; gap:2px; }
+.dc-feature-name { font-size:14px; font-weight:600; color:var(--dsw-alias-label-primary); overflow-wrap:anywhere; }
+.dc-feature-recent {
+  font-size:12px; color:var(--dsw-alias-label-secondary);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.dc-feature-side { display:flex; align-items:center; gap:8px; flex:none; }
+.dc-feature-acceptance { font-size:11.5px; color:var(--dsw-alias-label-secondary); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.dc-feature-toggle { font-size:11.5px; color:var(--dsw-alias-label-secondary); }
+.dc-feature-detail { padding:4px 8px 14px 8px; display:flex; flex-direction:column; gap:8px; }
+.dc-detail-line { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; font-size:12.5px; min-width:0; }
+.dc-detail-label { flex:0 0 64px; font-size:11.5px; color:var(--dsw-alias-label-secondary); }
+.dc-detail-hint { color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere; }
+.dc-detail-block { display:flex; flex-direction:column; gap:4px; font-size:12.5px; }
+.dc-detail-block .dc-detail-label { flex:none; }
+.dc-more { margin-top:6px; }
+.dc-more > summary { cursor:pointer; font-size:12px; color:var(--dsw-alias-label-secondary); padding:4px 0; }
+.dc-more > summary:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; border-radius:3px; }
+.dc-more-body { display:flex; flex-direction:column; gap:8px; padding:8px 0 2px; }
+.dc-progress-summary { margin:0 0 14px; font-size:12.5px; color:var(--dsw-alias-label-secondary); }
+
+/* ---------- 验收：默认极简，细节折叠 ---------- */
+.dc-acc-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; }
+.dc-acc-item { min-width:0; border-bottom:1px solid var(--dsw-alias-border-l1); padding:10px 0; }
+.dc-acc-item:last-child { border-bottom:0; }
+.dc-acc-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px 16px; }
+.dc-acc-main { min-width:0; display:flex; flex-direction:column; gap:4px; }
+.dc-acc-title { font-size:14px; font-weight:600; color:var(--dsw-alias-label-primary); overflow-wrap:anywhere; }
+.dc-acc-sub { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.dc-acc-warn { font-size:12px; color:var(--dsw-alias-state-warn-primary); }
+.dc-acc-actions { display:flex; gap:4px; flex-wrap:nowrap; align-items:center; justify-content:flex-end; }
+.dc-acc-actions .dc-btn { flex:none; }
+.dc-acc-more { margin-top:2px; }
+.dc-acc-saved { margin-top:4px; font-size:11.5px; color:var(--dsw-alias-state-success-primary); }
+.dc-diff-block { display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
 .dc-table-wrap { max-width:100%; overflow-x:auto; scrollbar-width:thin; scrollbar-color:var(--dsw-alias-border-l2) transparent; }
 .dc-table-wrap::-webkit-scrollbar { height:8px; }
 .dc-table-wrap::-webkit-scrollbar-thumb { background:var(--dsw-alias-border-l2); border-radius:999px; border:2px solid transparent; background-clip:content-box; }
@@ -678,7 +736,7 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:650; letter-
 .dc-diff-history-verdict { color:var(--dsw-alias-label-primary); font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
 .dc-scroll-hint { display:none; font-size:11px; color:var(--dsw-alias-label-secondary); margin-top:4px; }
 
-/* ---------- 回执 ---------- */
+/* ---------- 动态 ---------- */
 .dc-receipts { margin-top:20px; padding-top:16px; border-top:1px solid var(--dsw-alias-border-l1); }
 .dc-receipts > summary { cursor:pointer; font-size:13px; font-weight:600; color:var(--dsw-alias-label-primary); padding:0 0 8px; }
 .dc-receipts > summary:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; border-radius:3px; }
@@ -744,7 +802,7 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:650; letter-
 .dc-rail .dc-decision-title { color:var(--dsw-alias-state-warn-primary); }
 .dc-rail .dc-decision-options { margin-top:6px; }
 
-/* 回执时间线 */
+/* 动态时间线 */
 .dc-receipts-timeline { list-style:none; margin:0; padding:0; max-height:420px; overflow-y:auto; scrollbar-width:thin; }
 .dc-timeline-item { display:grid; grid-template-columns:64px minmax(0,1fr); gap:10px; padding:8px 0; border-bottom:1px solid var(--dsw-alias-border-l1); }
 .dc-timeline-item:last-child { border-bottom:0; }
@@ -768,15 +826,15 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:650; letter-
 .dc-cold-label { font-size:11px; font-weight:600; letter-spacing:.04em; }
 .dc-cold-item { display:inline-flex; align-items:center; gap:4px; color:var(--dsw-alias-state-success-primary); font-weight:500; }
 
-/* header 高 59（单行）；摘要条常驻在 header 下，右栏再让开摘要高度。 */
+/* header 高 71（小屏换行时会更高）；摘要条常驻在 header 下，右栏再让开摘要高度。 */
 @container (min-width:641px) {
-  .dc-summary-bar { position:sticky; top:59px; z-index:4; background:var(--dsw-alias-bg-base); }
+  .dc-summary-bar { position:sticky; top:71px; z-index:4; background:var(--dsw-alias-bg-base); }
 }
 
-/* 容器查询：面板实际宽度 ≥1040 时才分两栏（右栏 280px），避免与主区堆叠阈值混搭。 */
+/* 容器查询：面板实际宽度 ≥1170 时才分两栏（右栏 280px）。 */
 @container (min-width:1170px) {
   .dc-layout { grid-template-columns:minmax(0,1fr) 280px; }
-  .dc-rail { position:sticky; top:106px; z-index:2; }
+  .dc-rail { position:sticky; top:118px; z-index:2; }
 }
 
 /* ---------- 总览 ---------- */
@@ -832,6 +890,10 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
 
 /* 主列自己的容器：两栏时主列可能只有 560px，表格要按主列宽度而不是窗口宽度降级。 */
 @container (max-width:700px) {
+  .dc-feature-row, .dc-acc-row { grid-template-columns:minmax(0,1fr); }
+  .dc-feature-side { justify-content:flex-start; flex-wrap:wrap; }
+  .dc-acc-actions { justify-content:flex-start; flex-wrap:wrap; }
+  .dc-feature-row { min-height:0; }
   .dc-scroll-hint { display:none; }
   /* 表格在主列过窄时改为堆叠块：不靠横滚，避免整行右侧被切掉 + 大片空白。 */
   .dc-table { display:block; min-width:0; width:100%; }
@@ -958,7 +1020,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
             'div',
             { className: 'dc-head-inner' },
             h('h1', { className: 'dc-title' }, '交付驾驶舱'),
-            h('span', { className: 'dc-sub' }, '只读面板 · 数据来自本机项目目录'),
+            h('span', { className: 'dc-sub' }, '看一眼项目走到哪了'),
             h('span', { className: 'dc-spacer' }),
             props.onBack
               ? h('button', { type: 'button', className: 'dc-btn dc-btn-ghost', onClick: props.onBack }, '← 全部项目')
@@ -1097,7 +1159,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         }
       }, [selectedPath, loadPanel])
 
-      // 总览页也轮询：多项目时首页状态会变（比如 Agent 刚写完一条回执）。
+      // 总览页也轮询：多项目时首页状态会变（比如 Agent 刚写完一条动态）。
       React.useEffect(() => {
         if (view !== 'overview') return undefined
         const timer = setInterval(() => {
@@ -1162,6 +1224,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         {
           type: 'button',
           className: 'dc-ws-card',
+          title: item.path || '',
           onClick: () => props.onOpen(item.path),
           'aria-label': `打开项目 ${title}`,
         },
@@ -1170,18 +1233,17 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           { className: 'dc-ws-top' },
           h('span', { className: 'dc-ws-title' }, title),
           degraded
-            ? h(Chip, { tone: 'unknown', title: '读取有异常，数字可能偏低' }, '数据待确认')
+            ? h(Chip, { tone: 'unknown', title: '有些数据没读到' }, '数据不全')
             : null,
-          hasDecision ? h(Chip, { tone: 'warn' }, '待决策') : null,
-          initialized ? null : h(Chip, { tone: 'warn' }, '未初始化'),
+          hasDecision ? h(Chip, { tone: 'warn' }, '需要你决定') : null,
+          initialized ? null : h(Chip, { tone: 'warn' }, '还没初始化'),
         ),
         h(
           'div',
           { className: 'dc-ws-meta' },
-          stageName ? `当前阶段：${stageName}` : '当前阶段：—',
+          stageName ? `现在：${stageName}` : '还没开始',
         ),
         h('div', { className: 'dc-ws-next' }, nextTitle ? `下一步：${nextTitle}` : '下一步：—'),
-        h('div', { className: 'dc-ws-path', title: item.path || '' }, item.path || ''),
         h(
           'div',
           { className: 'dc-ws-foot' },
@@ -1206,7 +1268,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           'div',
           { className: 'dc-head-inner' },
           h('h1', { className: 'dc-title' }, '交付驾驶舱'),
-          h('span', { className: 'dc-sub' }, '只读面板 · 按项目看真实进度'),
+          h('span', { className: 'dc-sub' }, '看看每个项目走到哪了'),
           h('span', { className: 'dc-spacer' }),
           h('span', { className: 'dc-section-meta' }, `共 ${projects.length} 个项目`),
           overviewAt ? h('span', { className: 'dc-sub dc-time' }, `更新于 ${formatTime(overviewAt)}`) : null,
@@ -1254,7 +1316,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           h(
             'p',
             { className: 'dc-state-body' },
-            '在任意目录里打开一个会话后，这里会自动出现该项目；空目录也算项目，会显示「未初始化」。',
+            '在任意目录里打开一个会话后，这里会自动出现该项目；空目录也算项目，会显示「还没初始化」。',
           ),
           h('button', { type: 'button', className: 'dc-btn', onClick: refresh }, '重新检测'),
         )
@@ -1300,81 +1362,9 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       )
     }
 
-    // ---------- 详情 · ① 项目名片 & 迭代头 ----------
-
-    function ProjectSection(props) {
-      const project = props.project || {}
-      const trellis = props.trellis || {}
-      const iteration = props.iteration || {}
-      const ledger = props.ledger || {}
-      const action = props.action || {}
-      const stack = project.stack || {}
-      const commands = project.commands || {}
-      const oneLiner = String(project.oneLiner || '').trim()
-      const stackLabel = stack.label || (stack.id === 'unknown' ? '未检测到技术栈' : '') || '未检测到技术栈'
-      const dev = commands.dev || ''
-
-      let health = { text: '账本健康', tone: 'ok' }
-      if (props.degraded) health = { text: '数据待确认', tone: 'unknown' }
-      else if (action.kind === 'decide') health = { text: '待决策', tone: 'warn' }
-      else if (Number(ledger.badLines) > 0) health = { text: '账本有坏行', tone: 'warn' }
-
-      return h(
-        'section',
-        { className: 'dc-card' },
-        h(SectionHead, {
-          title: '项目名片 & 迭代头',
-          meta: `${stackLabel} · ${iteration.current || 'bootstrap'}`,
-        }),
-        h(
-          'div',
-          { className: 'dc-name-row' },
-          h('h3', { className: 'dc-name' }, project.name || baseName(project.path) || '未命名项目'),
-          h(Chip, { tone: health.tone }, health.text),
-          trellis.initialized === false ? h(Chip, { tone: 'warn' }, 'Trellis 未初始化') : null,
-          trellis.initialized === true && trellis.partial === true
-            ? h(Chip, { tone: 'warn' }, 'Trellis 不完整')
-            : null,
-          project.cardStatus === 'needs-human' ? h(Chip, { tone: 'warn' }, '名片待补') : null,
-          project.cardStatus === 'missing' ? h(Chip, { tone: 'warn' }, '名片缺失') : null,
-          project.cardStatus === 'broken' ? h(Chip, { tone: 'bad' }, '名片损坏') : null,
-        ),
-        h(
-          'p',
-          { className: oneLiner ? 'dc-one-liner' : 'dc-one-liner dc-one-liner-empty' },
-          oneLiner || '还没有一句话定位：补上它，驾驶舱才能说人话。',
-        ),
-        h(
-          'div',
-          { className: 'dc-meta-line' },
-          h('span', null, '技术栈'),
-          h('span', { className: 'dc-meta-value' }, stackLabel),
-          h('span', { className: 'dc-sub' }, '·'),
-          h('span', null, '本地预览命令'),
-          dev
-            ? h('code', { className: 'dc-code' }, dev)
-            : h('span', { className: 'dc-meta-value' }, '未检测到'),
-          commands.previewUrl
-            ? h('a', { className: 'dc-btn', href: commands.previewUrl, target: '_blank', rel: 'noreferrer' }, '打开预览')
-            : null,
-        ),
-        h(
-          'div',
-          { className: 'dc-iter-row' },
-          h('span', null, '当前迭代'),
-          h('span', { className: 'dc-iter-value' }, iteration.current || 'bootstrap'),
-          h('span', null, iteration.isBootstrap ? '冷启动' : '功能迭代环'),
-          h('span', { className: 'dc-sub' }, '·'),
-          h('span', { className: 'dc-sub dc-ws-path', title: project.path || '' }, project.path || ''),
-        ),
-      )
-    }
-
-    // ---------- 详情 · ② 唯一下一步 ----------
-
     function InitPanel(props) {
       const [state, setState] = React.useState({ step: 'idle', plan: null, result: null, error: '' })
-      // hero 里同一屏只允许一个实心 accent 按钮：有「复制指令」时初始化/确认降为描边次按钮。
+      // hero 里同一屏只允许一个实心 accent 按钮：有「复制给 AI」时初始化/确认降为描边次按钮。
       const primaryClass = props.primary === false ? 'dc-btn' : 'dc-btn dc-btn-primary'
       const mounted = React.useRef(true)
       React.useEffect(
@@ -1534,7 +1524,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       )
     }
 
-    // 原型批准：design §5.3 的门禁落点。批准标记由 Host 按 iteration_id 写盘，
+    // 原型批准：design §5.3 的检查落点。批准标记由 Host 按 iteration_id 写盘，
     // 客户端只发「我确认过了」；成功后面板刷新，按钮自然变成只读状态。
     function ApprovePrototype(props) {
       const [state, setState] = React.useState({ step: 'idle', error: '' })
@@ -1587,6 +1577,12 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const iterationId = iteration.current || ''
       const stageText =
         action.stageName || STAGE_TEXT[action.stageId] || (action.kind === 'init' ? '初始化' : '下一步')
+      const cycleNodes = asArray(props.progression && props.progression.cycle)
+      const cycleIndex = cycleNodes.findIndex((node) => node && node.stageId === action.stageId)
+      const stepText =
+        cycleIndex >= 0
+          ? `第 ${cycleIndex + 1} 步 / 共 ${cycleNodes.length || 6} 步 · ${stageText}`
+          : stageText
       const missing = asArray(action.missing)
       const caps = asArray(action.capabilities)
       const notes = asArray(action.notes)
@@ -1632,8 +1628,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       return h(
         'section',
         { className: 'dc-card dc-hero' },
-        h(SectionHead, { title: '唯一下一步', meta: stageText }),
-        h('div', { className: 'dc-action-eyebrow' }, `👉【${stageText}】`),
+        h(SectionHead, { title: '现在要做的下一件事' }),
+        h('div', { className: 'dc-action-eyebrow' }, stepText),
         h('h3', { className: 'dc-action-title' }, action.title || '暂无建议'),
         h(
           'p',
@@ -1701,9 +1697,9 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                   className: 'dc-btn dc-btn-primary',
                   onClick: copyInstruction,
                   disabled: disabled,
-                  title: disabled ? disabledReason : '复制指令',
+                  title: disabled ? disabledReason : '复制给 AI',
                 },
-                copyState === 'done' ? '已复制' : copyState === 'fail' ? '复制失败，请手动选择' : '复制指令',
+                copyState === 'done' ? '已复制' : copyState === 'fail' ? '复制失败，请手动选择' : '复制给 AI',
               )
             : null,
           wantsInit
@@ -1752,7 +1748,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         {
           className: `dc-stage dc-stage-${highlighted ? 'current' : state === 'current' ? 'pending' : state}`,
           'aria-current': highlighted ? 'step' : undefined,
-          // 阶段卡片只保留一行；回执摘要放在 title 里，避免一屏四区被进度条挤满。
+          // 阶段卡片只保留一行；动态摘要放在 title 里，避免一屏四区被进度条挤满。
           title: summary ? `${stateText}：${summary}` : `${(node.name || node.stageId || '')}：${stateText}`,
         },
         h(
@@ -1776,11 +1772,17 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       // 契约保证只有一个 current；万一模型给多了，只强高亮决策指向的那个，避免「两个当前」。
       const firstCurrent = cold.concat(cycle).find((node) => node && node.state === 'current')
       const highlightId = action.stageId || (firstCurrent && firstCurrent.stageId) || ''
+      const stageName = action.stageName || STAGE_TEXT[action.stageId] || '下一步'
+      const coldPending = cold.filter((node) => node && node.state !== 'done')
+      const summaryText = coldAllDone
+        ? `冷启动已完成，现在在「${stageName}」`
+        : `先完成冷启动：${coldPending.map((node) => node.name || STAGE_TEXT[node.stageId]).join('、') || '初始化'}`
 
       return h(
         'section',
         { className: 'dc-card' },
-        h(SectionHead, { title: '迭代进度', meta: iteration.current || 'bootstrap' }),
+        h(SectionHead, { title: '项目进度' }),
+        h('p', { className: 'dc-progress-summary' }, summaryText),
         coldAllDone
           ? h(
               'div',
@@ -1798,7 +1800,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           : h(
               React.Fragment,
               null,
-              h('div', { className: 'dc-track-label' }, '冷启动（每项目一次）'),
+              h('div', { className: 'dc-track-label' }, '冷启动'),
               h(
                 'ol',
                 { className: 'dc-track' },
@@ -1811,7 +1813,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                 ),
               ),
             ),
-        h('div', { className: 'dc-track-label' }, `迭代环 · ${iteration.current || 'bootstrap'}`),
+        h('div', { className: 'dc-track-label' }, '现在这一轮'),
         h(
           'ol',
           { className: 'dc-track' },
@@ -1826,15 +1828,13 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       )
     }
 
-    // ---------- 详情 · ④ 功能账 & 缺陷账 ----------
+    // ---------- 详情 · ④ 功能 & 待修问题账 ----------
     //
-    // 功能状态由 Host 用三路证据（验收 / 归属 bug / 回执）推导后下发，这里只如实呈现：
-    // 不根据标题猜、不把「读不到」显示成 0。缺陷账分「功能内」与「未归属」两处。
+    // 功能状态由 Host 用三路证据（验收 / 归属 bug / 动态）推导后下发，这里只如实呈现：
+    // 不根据标题猜、不把「读不到」显示成 0。待修问题账分「功能内」与「未归属」两处。
 
-    function FeatureStatusChip(props) {
-      const status = props.status || 'unknown'
-      const text = props.label || FEATURE_STATUS_TEXT[status] || '—'
-      return h(Chip, { tone: FEATURE_STATUS_TONE[status] || 'unknown' }, text)
+    function FeatureStatusPill(props) {
+      return h(Chip, { tone: props.tone || 'unknown' }, props.text)
     }
 
     function BugList(props) {
@@ -1853,7 +1853,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
               SEVERITY_TEXT[issue && issue.severity] || (issue && issue.severity) || '问题',
             ),
             h('span', { className: 'dc-bug-title' }, (issue && issue.title) || '（没有标题）'),
-            issue && issue.file
+            issue && issue.file && props.showFile === true
               ? h(
                   'span',
                   { className: 'dc-bug-file' },
@@ -1865,144 +1865,142 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       )
     }
 
+    // 状态人话由 Host 的 status 决定（与 statusLabel 同源）；未知状态才直接显示 Host 的 label，不自己推断。
+    function featureStatusLabel(item) {
+      const bugs = (item && item.bugs) || {}
+      const known = bugs.known !== false
+      const blocking = Number(bugs.blocking) || 0
+      // 卡点数只在 Host 明确（known）时给，读不到就说「卡住了」，不编数字。
+      if (item && item.status === 'blocked' && known && blocking > 0) return `有 ${blocking} 个卡点`
+      const mapped = FEATURE_STATUS_TEXT[(item && item.status) || 'unknown']
+      if (mapped && mapped !== '—') return mapped
+      const hostLabel = item && typeof item.statusLabel === 'string' ? item.statusLabel.trim() : ''
+      return hostLabel !== '' ? hostLabel : '—'
+    }
+
+    function featureAcceptanceText(item) {
+      const acceptance = (item && item.acceptance) || {}
+      const total = Number(acceptance.total) || 0
+      const passed = Number(acceptance.passed) || 0
+      return total > 0 ? `验收通过 ${passed}/${total}` : '还没验收'
+    }
+
     function FeatureRow(props) {
       const item = props.item || {}
-      const acceptance = item.acceptance || {}
       const bugs = item.bugs || {}
-      // known === false 是「路径/回执关联不足，没法判断」——必须显示 —，绝不能显示 0。
       const known = bugs.known !== false
-      const blockingRaw = Number(bugs.blocking)
-      const blocking = Number.isFinite(blockingRaw) ? blockingRaw : 0
       const issues = asArray(bugs.issues)
-      // 严重数优先用 Host 算好的全量值；Host 没给时才退回数下发的前 3 条（老数据兼容）。
-      const severeRaw = Number(bugs.severe)
-      const severeCount = Number.isFinite(severeRaw)
-        ? severeRaw
-        : issues.filter((issue) => issue && issue.severity === 'critical').length
-      let bugText = '—'
-      if (known) {
-        if (blocking > 0) bugText = severeCount > 0 ? `${blocking}（严重 ${severeCount}）` : String(blocking)
-        else bugText = '0'
-      }
-      const acceptanceTotal = Number(acceptance.total) || 0
-      const acceptanceText = acceptanceTotal > 0
-        ? `${Number(acceptance.passed) || 0}/${acceptanceTotal}`
-        : '—'
       const paths = asArray(item.paths)
       const receipts = Number(item.receipts) || 0
       const inferred = Number(item.inferredReceipts) || 0
       const anchors = item.anchors && typeof item.anchors === 'object' ? item.anchors : {}
-      const anchorText = [
-        Number(anchors.receipts) > 0 ? `回执自报 ${Number(anchors.receipts)} 条` : null,
-        Number(anchors.tasks) > 0 ? `任务标题 ${Number(anchors.tasks)} 个` : null,
-      ]
-        .filter(Boolean)
-        .join('、')
-      const expandable = issues.length > 0 || paths.length > 0 || receipts > 0
-      const expanded = props.expanded === true
+      const acceptance = item.acceptance || {}
       const when = item.lastAt ? formatRelative(item.lastAt) : ''
       const summary = String(item.lastSummary || '').trim()
-      const lastText = when || summary ? [when, summary].filter(Boolean).join(' · ') : '—'
+      const recent = [when, summary].filter(Boolean).join(' · ') || '暂时没有动态'
+      const expandable = issues.length > 0 || paths.length > 0 || receipts > 0 || inferred > 0
+      const expanded = props.expanded === true
+      const accepted = Number(acceptance.total) || 0
+      const passed = Number(acceptance.passed) || 0
+      const failed = Number(acceptance.failed) || 0
+      const blocked = Number(acceptance.blocked) || 0
+      const acceptanceDetail =
+        accepted > 0
+          ? `验收通过 ${passed}/${accepted}${failed > 0 ? ` · 没通过 ${failed}` : ''}${blocked > 0 ? ` · 卡住 ${blocked}` : ''}`
+          : '还没验收'
+      const anchorText = [
+        Number(anchors.receipts) > 0 ? `由 ${Number(anchors.receipts)} 条动态自动归入` : null,
+        Number(anchors.tasks) > 0 ? `按任务标题归入 ${Number(anchors.tasks)} 次` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
 
       return h(
-        React.Fragment,
-        null,
+        'li',
+        { className: 'dc-feature-item' },
         h(
-          'tr',
-          null,
+          expandable ? 'button' : 'div',
+          expandable
+            ? {
+                type: 'button',
+                className: 'dc-feature-row',
+                'aria-expanded': expanded ? 'true' : 'false',
+                onClick: props.onToggle,
+              }
+            : { className: 'dc-feature-row' },
           h(
-            'td',
-            null,
-            h(
-              'div',
-              { className: 'dc-feature-cell' },
-              expandable
-                ? h(
-                    'button',
-                    {
-                      type: 'button',
-                      className: 'dc-row-toggle',
-                      'aria-expanded': expanded ? 'true' : 'false',
-                      onClick: props.onToggle,
-                      title: expanded ? '收起明细' : '展开 bug 明细与关联路径',
-                    },
-                    h('span', { className: 'dc-caret', 'aria-hidden': 'true' }, expanded ? '▾' : '▸'),
-                    h('span', { className: 'dc-feature-id' }, item.id || '—'),
-                    item.priority
-                      ? h(
-                          'span',
-                          { className: `dc-pri dc-pri-${String(item.priority).toLowerCase()}` },
-                          item.priority,
-                        )
-                      : null,
-                    h('span', { className: 'dc-feature-title' }, item.title || '（没有标题）'),
-                  )
-                : h(
-                    React.Fragment,
-                    null,
-                    h('span', { className: 'dc-caret', 'aria-hidden': 'true' }, '·'),
-                    h('span', { className: 'dc-feature-id' }, item.id || '—'),
-                    item.priority
-                      ? h(
-                          'span',
-                          { className: `dc-pri dc-pri-${String(item.priority).toLowerCase()}` },
-                          item.priority,
-                        )
-                      : null,
-                    h('span', { className: 'dc-feature-title' }, item.title || '（没有标题）'),
-                  ),
-            ),
+            'span',
+            { className: 'dc-feature-main' },
+            h('span', { className: 'dc-feature-name' }, item.title || '（没有标题）'),
+            h('span', { className: 'dc-feature-recent' }, recent),
           ),
-          h('td', { 'data-label': '状态' }, h(FeatureStatusChip, { status: item.status, label: item.statusLabel })),
           h(
-            'td',
-            {
-              className: blocking > 0 ? 'dc-cell-bad dc-cell-mono dc-num' : 'dc-cell-mono dc-num',
-              'data-label': '待修',
-            },
-            bugText,
+            'span',
+            { className: 'dc-feature-side' },
+            h(FeatureStatusPill, {
+              tone: FEATURE_STATUS_TONE[(item && item.status) || 'unknown'] || 'unknown',
+              text: featureStatusLabel(item),
+            }),
+            h('span', { className: 'dc-feature-acceptance' }, featureAcceptanceText(item)),
+            expandable ? h('span', { className: 'dc-feature-toggle', 'aria-hidden': 'true' }, expanded ? '收起' : '细节') : null,
           ),
-          h('td', { className: 'dc-cell-mono dc-num', 'data-label': '验收' }, acceptanceText),
-          h('td', { className: 'dc-last-cell', 'data-label': '最近进展' }, lastText),
         ),
         expanded && expandable
           ? h(
-              'tr',
-              { className: 'dc-feature-detail-row' },
+              'div',
+              { className: 'dc-feature-detail' },
               h(
-                'td',
-                { colSpan: 5 },
-                h(
-                  'div',
-                  { className: 'dc-feature-detail' },
-                  issues.length > 0
-                    ? h(
-                        'div',
-                        null,
-                        h('div', { className: 'dc-caps-label' }, '该功能上的未处置阻塞'),
-                        h(BugList, { issues }),
-                      )
-                    : h('div', { className: 'dc-hint' }, known ? '该功能没有未处置阻塞。' : '关联证据不足，待修数未知（—）。'),
-                  paths.length > 0
-                    ? h(
-                        'div',
-                        { className: 'dc-path-row' },
-                        '关联路径：',
-                        h('code', { className: 'dc-code' }, paths.join('、')),
-                      )
-                    : null,
-                  receipts > 0
-                    ? h(
-                        'div',
-                        { className: 'dc-hint' },
-                        `关联回执 ${receipts} 条${inferred > 0 ? `（其中 ${inferred} 条按任务 relatedFiles / 路径自动归属）` : ''}`,
-                      )
-                    : null,
-                  anchorText
-                    ? h('div', { className: 'dc-hint' }, `路径锚点：${anchorText}（写了 feature_ids 的回执优先）`)
-                    : null,
-                ),
+                'div',
+                { className: 'dc-detail-line' },
+                h('span', { className: 'dc-detail-label' }, '编号'),
+                h('code', { className: 'dc-code' }, item.id || '—'),
               ),
+              item.priority
+                ? h(
+                    'div',
+                    { className: 'dc-detail-line' },
+                    h('span', { className: 'dc-detail-label' }, '优先级'),
+                    h(
+                      'span',
+                      { className: `dc-pri dc-pri-${String(item.priority).toLowerCase()}` },
+                      String(item.priority),
+                    ),
+                  )
+                : null,
+              paths.length > 0
+                ? h(
+                    'div',
+                    { className: 'dc-detail-line' },
+                    h('span', { className: 'dc-detail-label' }, '相关文件'),
+                    h('code', { className: 'dc-code' }, paths.join('、')),
+                  )
+                : null,
+              h(
+                'div',
+                { className: 'dc-detail-block' },
+                h('div', { className: 'dc-detail-label' }, '待修问题'),
+                issues.length > 0
+                  ? h(BugList, { issues, showFile: true })
+                  : h('span', { className: 'dc-detail-hint' }, known ? '没有问题需要修。' : '还看不出有没有问题。'),
+              ),
+              h(
+                'div',
+                { className: 'dc-detail-line' },
+                h('span', { className: 'dc-detail-label' }, '验收'),
+                h('span', { className: 'dc-detail-hint' }, acceptanceDetail),
+              ),
+              receipts > 0 || inferred > 0
+                ? h(
+                    'div',
+                    { className: 'dc-detail-line' },
+                    h('span', { className: 'dc-detail-label' }, '动态'),
+                    h(
+                      'span',
+                      { className: 'dc-detail-hint' },
+                      `${receipts} 条${inferred > 0 ? `（其中 ${inferred} 条是自动归入的）` : ''}${anchorText ? ` · ${anchorText}` : ''}`,
+                    ),
+                  )
+                : null,
             )
           : null,
       )
@@ -2013,7 +2011,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       return h(
         Chip,
         { tone: ACCEPTANCE_RESULT_TONE[result] || 'unknown' },
-        ACCEPTANCE_RESULT_TEXT[result] || '未验',
+        ACCEPTANCE_RESULT_TEXT[result] || '还没验',
       )
     }
 
@@ -2079,7 +2077,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       )
     }
 
-    // 视觉回归徽章：changed 可点开 diff 图；其余只读（reason 放 title 里悬停看）。
+    // 视觉回归徽章：changed 可点开 变化图；其余只读（reason 放 title 里悬停看）。
     function ShotDiffBadge(props) {
       const diff = props.diff
       if (!diff) return null
@@ -2092,34 +2090,36 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           {
             type: 'button',
             className: 'dc-diff-btn',
-            title: `${diffTitle(diff)}\n点击查看 diff 图`,
-            'aria-label': `查看 diff 图：${text}`,
+            title: `${diffTitle(diff)}\n点击看变化图`,
+            'aria-label': `看变化图：${text}`,
             onClick: () => openEvidenceShot(diff.diffFile, props.projectPath),
           },
           h(Chip, { tone }, text),
-          h('span', { className: 'dc-diff-link' }, '查看 diff'),
+          h('span', { className: 'dc-diff-link' }, '看变化'),
         )
       }
       return h(Chip, { tone, title: diffTitle(diff) || undefined }, text)
     }
 
-    // 验收清单：面板内可直接记录结果（通过/失败/阻塞/撤销）。
+    // 验收清单：面板内可直接记录结果（通过/失败/卡点/撤销）。
     // 写动作只发「项目路径 + 验收项 + 结果 + 证据路径」，文件校验与迭代归属由 Host 负责；
     // 成功后重新拉面板，让 Host 返回的 result/at/evidence 成为唯一事实源。
     function AcceptancePanel(props) {
       const acceptance = props.acceptance || {}
       const items = asArray(acceptance.items)
       const truncated = acceptance.truncated === true
-      // 验收清单降噪：默认只展开需要动作的条目；干净的通过项收进折叠行。
-      const actionable = items.filter((item) => item && (item.result !== 'pass' || item.stale === true))
-      const cleanPassed = items.filter((item) => item && item.result === 'pass' && item.stale !== true)
       // 通过数用 Host 的全局真值：items 最多 100 条，截断时本地 filter 只覆盖可见项。
       const passedRaw = Number(acceptance.passed)
-      const passedCount = Number.isFinite(passedRaw) ? passedRaw : cleanPassed.length
+      const passedCount = Number.isFinite(passedRaw)
+        ? passedRaw
+        : items.filter((item) => item && item.result === 'pass').length
       const staleRaw = Number(acceptance.stale)
       const staleCount = Number.isFinite(staleRaw)
         ? staleRaw
         : items.filter((item) => item && item.stale === true).length
+      // 默认只展开需要动作的条目；干净的通过项收进折叠行。
+      const actionable = items.filter((item) => item && (item.result !== 'pass' || item.stale === true))
+      const cleanPassed = items.filter((item) => item && item.result === 'pass' && item.stale !== true)
       const [editing, setEditing] = React.useState({})
       const [drafts, setDrafts] = React.useState({})
       const [rowState, setRowState] = React.useState({})
@@ -2141,14 +2141,11 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         if (Object.prototype.hasOwnProperty.call(drafts, id)) return drafts[id]
         return asArray(item.evidence).join(', ')
       }
-      // 证据支持多张：逗号/中文逗号/分号/换行分隔。
       const parseEvidence = (text) =>
         String(text == null ? '' : text)
           .split(/[\n,，;；]+/)
           .map((part) => part.trim())
           .filter(Boolean)
-
-      // 截图用行的预览地址：默认取项目名片里的 previewUrl，用户可改，失败时保留。
       const shotUrlFor = (id) =>
         Object.prototype.hasOwnProperty.call(shotUrls, id)
           ? shotUrls[id]
@@ -2159,24 +2156,18 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         const id = item.id
         if (!id) return
         const url = String(shotUrlFor(id) || '').trim()
-        setRow(id, { capturing: true, shotOpen: true, shotError: '', shotSaved: false })
+        setRow(id, { capturing: true, shotError: '', shotSaved: false })
         try {
           const payload = { path: props.projectPath, item_id: id }
           if (url) payload.url = url
-          // 真实截图 2–10 秒，给 90s 兜底；不要用默认 10s 超时把它打断。
-          // 注意：必须大于 Host 的 screenshotTimeoutMs（默认 30s，可在 cordis.patch.yml 调大），
-          // 否则客户端先超时、服务端其实还在截——虽然服务端会因断开中止，但体验上等于白等。
           const SHOT_REQUEST_TIMEOUT_MS = 90000
           const body = await postJson(`${API}/acceptance-screenshot`, payload, SHOT_REQUEST_TIMEOUT_MS)
           if (!body || body.ok !== true) throw new Error('shot-failed')
           if (!mounted.current) return
-          // Host 在同一响应里带回与上一版的像素对比：立刻显示，不用等面板刷新。
           const comparison = body.shot && body.shot.comparison ? body.shot.comparison : null
-          // 本轮截图让该条验收失效时，必须强提示「重新点通过」——失效 ≠ 改结果。
           const invalidated = Boolean(body.shot && body.shot.invalidated === true)
-          // 审计留痕：Host 若返回回执 id，直接显示，方便追溯这次失效。
           const receiptId = (body.shot && body.shot.receiptId) || null
-          // 失效留痕写失败要如实说（不能只显示"已截图"就完事）。
+          // 留痕写失败要如实说：不能让用户以为"已截图"就完事、细节可追溯。
           const receiptWarning =
             body.shot && typeof body.shot.receiptWarning === 'string' ? body.shot.receiptWarning.trim() : ''
           setRow(id, {
@@ -2187,7 +2178,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
             shotReceiptId: receiptId,
             shotReceiptWarning: receiptWarning,
             shotMessage: invalidated
-              ? `已截图 · 有变化：该条验收已失效，请重新点「通过」${receiptWarning && !receiptId ? '（回执写入失败）' : ''}`
+              ? `已截图并附到证据 · 截图有变化，需要你重新确认${receiptWarning && !receiptId ? '（留痕写入失败）' : ''}`
               : comparisonMessage(comparison),
             shotDiffFile:
               comparison && comparison.verdict === 'changed' && comparison.diffFile
@@ -2200,7 +2191,6 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           }, 6000)
         } catch (failure) {
           if (!mounted.current) return
-          // 失败保留已填 URL（shotUrls 不动），方便直接重试。
           setRow(id, {
             capturing: false,
             shotSaved: false,
@@ -2213,9 +2203,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         const id = item.id
         if (!id) return
         const evidence = parseEvidence(draftFor(item))
-        // 通过必须有证据：前端先拦一次（Host 也会再校验 evidence-required）。
         if (result === 'pass' && evidence.length === 0) {
-          setRow(id, { saving: false, saved: false, error: '通过必须附证据' })
+          setRow(id, { saving: false, saved: false, error: '通过必须附证据。' })
           return
         }
         setRow(id, { saving: true, saved: false, error: '' })
@@ -2236,7 +2225,6 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           }, 2500)
         } catch (failure) {
           if (!mounted.current) return
-          // 失败保留输入，只显示行内错误：用户不用重新填一遍证据。
           setRow(id, {
             saving: false,
             saved: false,
@@ -2245,415 +2233,379 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         }
       }
 
-      const renderTable = (rows) =>
-        h(
-          'div',
-          { className: 'dc-table-wrap' },
+      const resultLabel = (item) => {
+        if (item.stale === true && item.result === 'pass') return { text: '需要重新确认', tone: 'warn' }
+        if (item.result === 'pass') return { text: '通过', tone: 'ok' }
+        if (item.result === 'fail') return { text: '没通过', tone: 'bad' }
+        if (item.result === 'blocked') return { text: '卡住了', tone: 'warn' }
+        return { text: '还没验', tone: 'unknown' }
+      }
+
+      const renderDetails = (item) => {
+        const id = item.id
+        const state = rowState[id] || {}
+        const evidence = asArray(item.evidence)
+        const shotDiffs = asArray(item.shotDiffs)
+        const latestDiff = shotDiffs.length > 0 ? shotDiffs[shotDiffs.length - 1] : null
+        const diffOpen = state.diffOpen === true
+        const editingRow = editing[id] === true
+        return h(
+          'details',
+          { className: 'dc-more dc-acc-more' },
+          h('summary', null, '细节'),
           h(
-            'table',
-            { className: 'dc-table dc-acc-table' },
-            h('caption', { className: 'dc-sr' }, '验收清单：逐条记录通过、失败或阻塞'),
+            'div',
+            { className: 'dc-more-body' },
+            item.stale === true && item.result === 'pass'
+              ? h(
+                  'div',
+                  { className: 'dc-stale-note', role: 'status' },
+                  '之前那次通过需要重新确认',
+                  item.staleAt ? `（${formatRelative(item.staleAt)}）` : '',
+                  item.staleReceiptId || item.receiptId
+                    ? h(
+                        'span',
+                        { className: 'dc-hint' },
+                        ` · 这条变化已记录在项目动态里 ${item.staleReceiptId || item.receiptId}`,
+                      )
+                    : null,
+                )
+              : null,
             h(
-              'thead',
-              null,
+              'div',
+              { className: 'dc-detail-line' },
+              h('span', { className: 'dc-detail-label' }, '功能'),
+              h('span', { className: 'dc-detail-hint' }, item.featureRef || '还没归到功能'),
+            ),
+            editingRow
+              ? h(
+                  React.Fragment,
+                  null,
+                  h('input', {
+                    className: 'dc-evidence-input',
+                    value: draftFor(item),
+                    placeholder: '截图路径或网址，如 shots/a1.png',
+                    autoFocus: true,
+                    'aria-label': `验收项 ${item.title || id} 的证据`,
+                    onChange: (event) => setDraft(id, event.target.value),
+                  }),
+                  h('div', { className: 'dc-hint' }, '多张用逗号或换行分开。'),
+                )
+              : h(
+                  React.Fragment,
+                  null,
+                  h(
+                    'div',
+                    { className: 'dc-evidence-summary', title: evidence.join('\n') || '' },
+                    evidence.length === 0
+                      ? '还没有证据'
+                      : evidence.some((value) => isImageEvidence(value))
+                        ? `${evidence.length} 个证据 · ${evidenceLabel(evidence[0])}`
+                        : evidence.join('、'),
+                  ),
+                  h(EvidenceThumbs, { values: evidence, projectPath: props.projectPath }),
+                ),
+            h(
+              'div',
+              { className: 'dc-evidence-actions' },
+              editingRow
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dc-btn dc-btn-sm',
+                      onClick: () => setEditingFor(id, false),
+                    },
+                    '收起编辑',
+                  )
+                : h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dc-btn dc-btn-sm dc-evidence-edit',
+                      onClick: () => setEditingFor(id, true),
+                    },
+                    '编辑证据',
+                  ),
               h(
-                'tr',
-                null,
-                h('th', { scope: 'col' }, '验收点'),
-                h('th', { scope: 'col' }, '功能'),
-                h('th', { scope: 'col' }, '结果'),
-                h('th', { scope: 'col' }, '证据'),
-                h('th', { scope: 'col' }, '操作'),
+                'button',
+                {
+                  type: 'button',
+                  className: 'dc-btn dc-btn-sm',
+                  'aria-expanded': state.shotOpen === true ? 'true' : 'false',
+                  onClick: () => setRow(id, { shotOpen: state.shotOpen !== true }),
+                },
+                state.shotOpen === true ? '收起截图' : '补一张截图',
+              ),
+            ),
+            state.shotOpen === true
+              ? h(
+                  'div',
+                  { className: 'dc-shot-box' },
+                  h('input', {
+                    className: 'dc-evidence-input dc-shot-url',
+                    value: shotUrlFor(id),
+                    placeholder: '预览地址，如 http://127.0.0.1:5173',
+                    'aria-label': `验收项 ${item.title || id} 的预览地址`,
+                    onChange: (event) => setShotUrl(id, event.target.value),
+                  }),
+                  h(
+                    'div',
+                    { className: 'dc-shot-row' },
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        className: 'dc-btn dc-btn-sm dc-btn-primary',
+                        disabled: state.capturing === true,
+                        onClick: () => capture(item),
+                      },
+                      state.capturing === true ? '截图中…' : '截图并附到证据',
+                    ),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        className: 'dc-btn dc-btn-sm',
+                        disabled: state.capturing === true,
+                        onClick: () => setRow(id, { shotOpen: false }),
+                      },
+                      '取消',
+                    ),
+                  ),
+                  h('div', { className: 'dc-hint' }, '只允许截本机地址；截图只当证据，不会自动判定通过。'),
+                  state.shotError ? h('div', { className: 'dc-acc-error', role: 'alert' }, state.shotError) : null,
+                  state.shotSaved
+                    ? h(
+                        'div',
+                        {
+                          className: state.shotInvalidated === true ? 'dc-stale-note' : 'dc-acc-saved',
+                          role: 'status',
+                        },
+                        state.shotMessage || '已截图并附到证据',
+                        state.shotDiffFile
+                          ? h(
+                              React.Fragment,
+                              null,
+                              ' · ',
+                              h(
+                                'button',
+                                {
+                                  type: 'button',
+                                  className: 'dc-diff-link',
+                                  onClick: () => openEvidenceShot(state.shotDiffFile, props.projectPath),
+                                },
+                                '看变化',
+                              ),
+                            )
+                          : null,
+                        state.shotReceiptId
+                          ? h(
+                              'span',
+                              { className: 'dc-hint' },
+                              ` · 已记录在项目动态里 ${state.shotReceiptId}`,
+                            )
+                          : state.shotReceiptWarning
+                            ? h(
+                                'span',
+                                { className: 'dc-acc-error' },
+                                ` · 留痕写入失败：${state.shotReceiptWarning}`,
+                              )
+                            : null,
+                      )
+                    : null,
+                )
+              : null,
+            shotDiffs.length > 0
+              ? h(
+                  'div',
+                  { className: 'dc-diff-block' },
+                  h(
+                    'div',
+                    { className: 'dc-detail-line' },
+                    h('span', { className: 'dc-detail-label' }, '和上一版比'),
+                    h(ShotDiffBadge, { diff: latestDiff, projectPath: props.projectPath }),
+                    latestDiff && latestDiff.verdict === 'changed' && latestDiff.diffFile
+                      ? h(
+                          'button',
+                          {
+                            type: 'button',
+                            className: 'dc-thumb dc-diff-thumb',
+                            title: '看变化图',
+                            'aria-label': '看变化图',
+                            onClick: () => openEvidenceShot(latestDiff.diffFile, props.projectPath),
+                          },
+                          h('img', {
+                            src: evidenceSrc(latestDiff.diffFile, props.projectPath),
+                            alt: '',
+                            loading: 'lazy',
+                          }),
+                        )
+                      : null,
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dc-btn dc-btn-sm',
+                      'aria-expanded': diffOpen ? 'true' : 'false',
+                      onClick: () => setRow(id, { diffOpen: !diffOpen }),
+                    },
+                    diffOpen ? '收起历史' : '看历史记录',
+                  ),
+                  diffOpen
+                    ? h(
+                        React.Fragment,
+                        null,
+                        h('div', { className: 'dc-hint' }, '最近 5 次版本变化（最新在前）'),
+                        h(
+                          'ol',
+                          { className: 'dc-diff-history' },
+                          shotDiffs
+                            .slice()
+                            .reverse()
+                            .map((diff, diffIndex) =>
+                              h(
+                                'li',
+                                { key: `${id}-diff-${diffIndex}` },
+                                h(
+                                  'span',
+                                  {
+                                    className: 'dc-diff-history-at',
+                                    title: diff.at ? new Date(diff.at).toLocaleString() : '',
+                                  },
+                                  diff.at ? formatRelative(diff.at) : '—',
+                                ),
+                                h(
+                                  'span',
+                                  {
+                                    className: 'dc-diff-history-verdict',
+                                    title: diffTitle(diff) || undefined,
+                                  },
+                                  diffVerdictText(diff),
+                                ),
+                                diff.verdict === 'changed' && diff.diffFile
+                                  ? h(
+                                      'button',
+                                      {
+                                        type: 'button',
+                                        className: 'dc-diff-link',
+                                        onClick: () => openEvidenceShot(diff.diffFile, props.projectPath),
+                                      },
+                                      '看变化',
+                                    )
+                                  : null,
+                              ),
+                            ),
+                        ),
+                      )
+                    : null,
+                )
+              : null,
+          ),
+        )
+      }
+
+      const renderRow = (item) => {
+        const id = item.id
+        const state = rowState[id] || {}
+        const result = resultLabel(item)
+        return h(
+          'li',
+          { key: id, className: 'dc-acc-item', 'data-acceptance-id': id },
+          h(
+            'div',
+            { className: 'dc-acc-row' },
+            h(
+              'span',
+              { className: 'dc-acc-main' },
+              h('span', { className: 'dc-acc-title' }, item.title || '（没有标题）'),
+              h(
+                'span',
+                { className: 'dc-acc-sub' },
+                h(Chip, { tone: result.tone }, result.text),
+                item.stale === true && item.result === 'pass'
+                  ? h('span', { className: 'dc-acc-warn' }, '截图有变化，需要你重新确认')
+                  : null,
               ),
             ),
             h(
-              'tbody',
-              null,
-              rows.map((item) => {
-                if (!item || !item.id) return null
-                const id = item.id
-                const state = rowState[id] || {}
-                const evidence = asArray(item.evidence)
-                // Host 已按时间正序截断到最近 5 条；最后一条是最新一次对比。
-                const shotDiffs = asArray(item.shotDiffs)
-                const latestDiff = shotDiffs.length > 0 ? shotDiffs[shotDiffs.length - 1] : null
-                const diffOpen = state.diffOpen === true
-                const editingRow = editing[id] === true
-                const stepsTitle = [
-                  item.steps ? `步骤：${item.steps}` : '',
-                  item.expect ? `期望：${item.expect}` : '',
-                ]
-                  .filter(Boolean)
-                  .join('\n')
-                return h(
-                  'tr',
-                  { key: id, 'data-acceptance-id': id },
-                  h(
-                    'td',
-                    null,
-                    h('span', { className: 'dc-acc-id' }, id),
-                    h(
-                      'span',
-                      { className: 'dc-acc-title', title: stepsTitle || undefined },
-                      item.title || '（没有标题）',
-                    ),
-                    stepsTitle
-                      ? h('div', { className: 'dc-acc-steps', title: stepsTitle }, stepsTitle.replace(/\n/g, ' · '))
-                      : null,
-                  ),
-                  h('td', { className: 'dc-cell-mono', 'data-label': '功能' }, item.featureRef || '—'),
-                  h(
-                    'td',
-                    { 'data-label': '结果' },
-                    h(AcceptanceResultChip, { result: item.result }),
-                    item.stale === true && item.result === 'pass'
-                      ? h(
-                          'span',
-                          { className: 'dc-stale-tag', title: '截图有变化，需重新确认' },
-                          '已失效',
-                        )
-                      : null,
-                  ),
-                  h(
-                    'td',
-                    { 'data-label': '证据' },
-                    item.stale === true && item.result === 'pass'
-                      ? h(
-                          'div',
-                          { className: 'dc-stale-note', role: 'status' },
-                          '截图有变化，之前那次通过已失效，请重新点「通过」确认',
-                          item.staleAt ? `（${formatRelative(item.staleAt)}）` : '',
-                          item.staleReceiptId || item.receiptId
-                            ? h(
-                                'span',
-                                { className: 'dc-hint' },
-                                ` · 已写入回执 ${item.staleReceiptId || item.receiptId}`,
-                              )
-                            : null,
-                        )
-                      : null,
-                    shotDiffs.length > 0
-                      ? h(
-                          React.Fragment,
-                          null,
-                          h(
-                            'div',
-                            { className: 'dc-diff-row' },
-                            h(ShotDiffBadge, { diff: latestDiff, projectPath: props.projectPath }),
-                            latestDiff && latestDiff.verdict === 'changed' && latestDiff.diffFile
-                              ? h(
-                                  'button',
-                                  {
-                                    type: 'button',
-                                    className: 'dc-thumb dc-diff-thumb',
-                                    title: '查看 diff 图（变化像素标红）',
-                                    'aria-label': '查看 diff 图',
-                                    onClick: () => openEvidenceShot(latestDiff.diffFile, props.projectPath),
-                                  },
-                                  h('img', {
-                                    src: evidenceSrc(latestDiff.diffFile, props.projectPath),
-                                    alt: 'diff',
-                                    loading: 'lazy',
-                                  }),
-                                )
-                              : null,
-                            h(
-                              'button',
-                              {
-                                type: 'button',
-                                className: 'dc-btn dc-btn-sm',
-                                'aria-expanded': diffOpen ? 'true' : 'false',
-                                onClick: () => setRow(id, { diffOpen: !diffOpen }),
-                              },
-                              diffOpen ? '收起历史' : '历史',
-                            ),
-                          ),
-                          diffOpen
-                            ? h(
-                                React.Fragment,
-                                null,
-                                h('div', { className: 'dc-hint' }, '最近 5 次对比（最新在前）'),
-                                h(
-                                  'ol',
-                                  { className: 'dc-diff-history' },
-                                  shotDiffs
-                                    .slice()
-                                    .reverse()
-                                    .map((diff, diffIndex) =>
-                                      h(
-                                        'li',
-                                        { key: `${id}-diff-${diffIndex}` },
-                                        h(
-                                          'span',
-                                          {
-                                            className: 'dc-diff-history-at',
-                                            title: diff.at ? new Date(diff.at).toLocaleString() : '',
-                                          },
-                                          diff.at ? formatRelative(diff.at) : '—',
-                                        ),
-                                        h(
-                                          'span',
-                                          {
-                                            className: 'dc-diff-history-verdict',
-                                            title: diffTitle(diff) || undefined,
-                                          },
-                                          diffVerdictText(diff),
-                                        ),
-                                        diff.verdict === 'uncomparable' && diff.reason
-                                          ? h('span', { className: 'dc-hint' }, explainDiffReason(diff.reason))
-                                          : null,
-                                        diff.verdict === 'changed' && diff.diffFile
-                                          ? h(
-                                              'button',
-                                              {
-                                                type: 'button',
-                                                className: 'dc-diff-link',
-                                                onClick: () =>
-                                                  openEvidenceShot(diff.diffFile, props.projectPath),
-                                              },
-                                              'diff',
-                                            )
-                                          : null,
-                                      ),
-                                    ),
-                                ),
-                              )
-                            : null,
-                        )
-                      : null,
-                    editingRow
-                      ? h(
-                          React.Fragment,
-                          null,
-                          h('input', {
-                            className: 'dc-evidence-input',
-                            value: draftFor(item),
-                            placeholder: '截图路径或 URL，如 shots/a1.png',
-                            autoFocus: true,
-                            'aria-label': `验收项 ${id} 的证据`,
-                            onChange: (event) => setDraft(id, event.target.value),
-                          }),
-                          h('div', { className: 'dc-hint' }, '逗号或换行分隔，支持多张；项目内相对路径或 http(s) URL。'),
-                        )
-                      : h(
-                          React.Fragment,
-                          null,
-                          h(
-                            'div',
-                            { className: 'dc-evidence-summary', title: evidence.join('\n') || '' },
-                            evidence.length === 0
-                              ? '—'
-                              : evidence.some((value) => isImageEvidence(value))
-                                ? `证据 ${evidence.length} 个 · ${evidenceLabel(evidence[0])}`
-                                : evidence.join('、'),
-                          ),
-                          h(EvidenceThumbs, { values: evidence, projectPath: props.projectPath }),
-                        ),
-                    h(
-                      'div',
-                      { className: 'dc-evidence-actions' },
-                      editingRow
-                        ? h(
-                            'button',
-                            {
-                              type: 'button',
-                              className: 'dc-btn dc-btn-sm',
-                              onClick: () => setEditingFor(id, false),
-                            },
-                            '收起编辑',
-                          )
-                        : h(
-                            'button',
-                            {
-                              type: 'button',
-                              className: 'dc-btn dc-btn-sm dc-evidence-edit',
-                              onClick: () => setEditingFor(id, true),
-                            },
-                            '编辑',
-                          ),
-                      h(
-                        'button',
-                        {
-                          type: 'button',
-                          className: 'dc-btn dc-btn-sm',
-                          'aria-expanded': state.shotOpen === true ? 'true' : 'false',
-                          onClick: () =>
-                            setRow(id, {
-                              shotOpen: state.shotOpen !== true,
-                              shotError: state.shotOpen === true ? '' : state.shotError,
-                            }),
-                        },
-                        state.shotOpen === true ? '收起截图' : '截图',
-                      ),
-                    ),
-                    state.shotOpen === true
-                      ? h(
-                          'div',
-                          { className: 'dc-shot-box' },
-                          h('input', {
-                            className: 'dc-evidence-input dc-shot-url',
-                            value: shotUrlFor(id),
-                            placeholder: '预览地址，如 http://127.0.0.1:5173',
-                            'aria-label': `验收项 ${id} 的预览地址`,
-                            onChange: (event) => setShotUrl(id, event.target.value),
-                          }),
-                          h(
-                            'div',
-                            { className: 'dc-shot-row' },
-                            h(
-                              'button',
-                              {
-                                type: 'button',
-                                className: 'dc-btn dc-btn-sm dc-btn-primary',
-                                disabled: state.capturing === true,
-                                onClick: () => capture(item),
-                              },
-                              state.capturing === true ? '截图中…' : '截图并附到证据',
-                            ),
-                            h(
-                              'button',
-                              {
-                                type: 'button',
-                                className: 'dc-btn dc-btn-sm',
-                                disabled: state.capturing === true,
-                                onClick: () => setRow(id, { shotOpen: false }),
-                              },
-                              '取消',
-                            ),
-                          ),
-                          h(
-                            'div',
-                            { className: 'dc-hint' },
-                            '只允许本机地址（127.0.0.1 / localhost）；截图只挂到证据，不会自动改成「通过」。',
-                          ),
-                          state.shotError
-                            ? h('div', { className: 'dc-acc-error', role: 'alert' }, state.shotError)
-                            : null,
-                          state.shotSaved
-                            ? h(
-                                'div',
-                                {
-                                  className: state.shotInvalidated === true ? 'dc-stale-note' : 'dc-acc-saved',
-                                  role: 'status',
-                                },
-                                state.shotMessage || '已截图并附到证据',
-                                state.shotDiffFile
-                                  ? h(
-                                      React.Fragment,
-                                      null,
-                                      ' · ',
-                                      h(
-                                        'button',
-                                        {
-                                          type: 'button',
-                                          className: 'dc-diff-link',
-                                          onClick: () =>
-                                            openEvidenceShot(state.shotDiffFile, props.projectPath),
-                                        },
-                                        '查看 diff',
-                                      ),
-                                    )
-                                  : null,
-                                state.shotReceiptId
-                                  ? h('span', { className: 'dc-hint' }, ` · 已写入回执 ${state.shotReceiptId}`)
-                                  : state.shotReceiptWarning
-                                    ? h(
-                                        'span',
-                                        { className: 'dc-acc-error' },
-                                        ` · 回执写入失败：${state.shotReceiptWarning}`,
-                                      )
-                                    : null,
-                              )
-                            : null,
-                        )
-                      : null,
-                  ),
-                  h(
-                    'td',
-                    { 'data-label': '操作' },
-                    h(
-                      'div',
-                      { className: 'dc-acc-actions' },
-                      h(
-                        'button',
-                        {
-                          type: 'button',
-                          className: 'dc-btn dc-btn-sm',
-                          disabled: state.saving === true,
-                          onClick: () => submit(item, 'pass'),
-                        },
-                        '通过',
-                      ),
-                      h(
-                        'button',
-                        {
-                          type: 'button',
-                          className: 'dc-btn dc-btn-sm',
-                          disabled: state.saving === true,
-                          onClick: () => submit(item, 'fail'),
-                        },
-                        '失败',
-                      ),
-                      h(
-                        'button',
-                        {
-                          type: 'button',
-                          className: 'dc-btn dc-btn-sm',
-                          disabled: state.saving === true,
-                          onClick: () => submit(item, 'blocked'),
-                        },
-                        '阻塞',
-                      ),
-                      h(
-                        'button',
-                        {
-                          type: 'button',
-                          className: 'dc-btn dc-btn-sm dc-btn-danger',
-                          disabled: state.saving === true,
-                          onClick: () => submit(item, null),
-                        },
-                        '撤销',
-                      ),
-                    ),
-                    state.saving ? h('div', { className: 'dc-hint' }, '保存中…') : null,
-                    state.error ? h('div', { className: 'dc-acc-error', role: 'alert' }, state.error) : null,
-                    state.saved
-                      ? h('div', { className: 'dc-acc-saved', role: 'status' }, '已保存，面板已刷新')
-                      : null,
-                  ),
-                )
-              }),
+              'span',
+              { className: 'dc-acc-actions' },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dc-btn dc-btn-sm',
+                  disabled: state.saving === true,
+                  onClick: () => submit(item, 'pass'),
+                },
+                '通过',
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dc-btn dc-btn-sm',
+                  disabled: state.saving === true,
+                  onClick: () => submit(item, 'fail'),
+                },
+                '没通过',
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dc-btn dc-btn-sm',
+                  disabled: state.saving === true,
+                  onClick: () => submit(item, 'blocked'),
+                },
+                '卡住了',
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dc-btn dc-btn-sm dc-btn-danger',
+                  disabled: state.saving === true,
+                  onClick: () => submit(item, null),
+                },
+                '撤销',
+              ),
             ),
           ),
+          state.saving ? h('div', { className: 'dc-hint' }, '保存中…') : null,
+          state.error ? h('div', { className: 'dc-acc-error', role: 'alert' }, state.error) : null,
+          state.saved ? h('div', { className: 'dc-acc-saved', role: 'status' }, '已保存') : null,
+          renderDetails(item),
         )
+      }
 
       let content = null
       if (items.length === 0) {
         content = h(
           'div',
           { className: 'dc-empty-box' },
-          h('div', { className: 'dc-banner-title' }, '还没有验收清单：让 Agent 用 cockpit_acceptance 起草'),
+          h('div', { className: 'dc-banner-title' }, '还没有验收清单：让 AI 起草一份'),
           props.actionKind === 'acceptance-draft'
-            ? h('p', { className: 'dc-empty-line' }, '下一步就是「生成验收清单」，生成后回到这里逐条点结果。')
+            ? h('p', { className: 'dc-empty-line' }, '下一步就是生成验收清单，生成后回到这里逐条看结果。')
             : null,
         )
       } else {
         content = h(
           React.Fragment,
           null,
-          acceptance.badJson
-            ? h('p', { className: 'dc-hint dc-hint-bad' }, '验收表不是合法 JSON，先修好文件再记录结果。')
-            : null,
-          truncated ? h('p', { className: 'dc-hint' }, '验收表超过 100 条，只显示前 100 条。') : null,
+          acceptance.badJson ? h('p', { className: 'dc-hint dc-hint-bad' }, '验收清单读不出来，先修好文件再记录结果。') : null,
+          truncated ? h('p', { className: 'dc-hint' }, '条目太多，只显示前 100 条。') : null,
           actionable.length > 0
-            ? renderTable(actionable)
-            : h('p', { className: 'dc-empty-line' }, '没有待处理的验收项。'),
+            ? h('ul', { className: 'dc-acc-list' }, actionable.map(renderRow))
+            : h('p', { className: 'dc-empty-line' }, '没有需要处理的验收项。'),
           cleanPassed.length > 0
             ? h(
                 'details',
                 { className: 'dc-passed-fold' },
-                h('summary', null, `已通过 ${passedCount} 条（展开）`),
-                renderTable(cleanPassed),
+                h('summary', null, `已经通过 ${passedCount} 条（展开）`),
+                h('ul', { className: 'dc-acc-list' }, cleanPassed.map(renderRow)),
               )
             : null,
         )
@@ -2661,14 +2613,9 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
 
       const meta =
         actionable.length > 0
-          ? `需处理 ${actionable.length} 条${staleCount > 0 ? ` · ${staleCount} 条已失效` : ''}`
-          : '全部已处理'
-      return h(
-        'section',
-        { className: 'dc-card' },
-        h(SectionHead, { title: '验收清单', meta }),
-        content,
-      )
+          ? `需要处理 ${actionable.length} 条${staleCount > 0 ? ` · ${staleCount} 条需要重新确认` : ''}`
+          : '全部处理完了'
+      return h('section', { className: 'dc-card' }, h(SectionHead, { title: '验收', meta }), content)
     }
 
     function FeatureBoardSection(props) {
@@ -2679,89 +2626,70 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const formatHint = String(features.formatHint || '')
       const [expanded, setExpanded] = React.useState({})
       const toggle = (id) => setExpanded((previous) => ({ ...previous, [id]: !previous[id] }))
+      // 技术格式只放「细节」里：默认行只给人看的标题与状态。
+      const technical = (extra) =>
+        h(
+          'details',
+          { className: 'dc-more' },
+          h('summary', null, '细节'),
+          h('div', { className: 'dc-more-body' },
+            extra,
+            formatHint ? h('pre', { className: 'dc-code-block' }, formatHint) : null,
+            source !== 'prd-missing'
+              ? h('p', { className: 'dc-hint' }, '面板不解析自由文本，只认「## 功能需求」下的「### FR-N 标题」。')
+              : null,
+          ),
+        )
 
       let board = null
       if (source === 'prd-missing') {
         board = h(
           'div',
           { className: 'dc-empty-box' },
-          h('div', { className: 'dc-banner-title' }, '还没有 prd.md —— 想清楚阶段会产出它'),
-          h(
-            'p',
-            { className: 'dc-empty-line' },
-            '功能账需要 PRD 里的受控功能清单。把 prd.md 放到项目根目录（或 docs/prd.md），写好功能需求节后再回来看。',
-          ),
-          h('code', { className: 'dc-code' }, 'prd.md  /  docs/prd.md'),
+          h('div', { className: 'dc-banner-title' }, '还没有 PRD——「想清楚」阶段会产出它'),
+          h('p', { className: 'dc-empty-line' }, '有了它，这里会按功能列出每一步做到哪了。'),
+          technical(h('p', { className: 'dc-hint' }, '把文件放到项目根目录的 prd.md 或 docs/prd.md。')),
         )
       } else if (strategy === 'none') {
         board = h(
           'div',
           { className: 'dc-empty-box' },
           h('div', { className: 'dc-banner-title' }, '认不出功能清单'),
-          formatHint ? h('pre', { className: 'dc-code-block' }, formatHint) : null,
-          h(
-            'p',
-            { className: 'dc-empty-line' },
-            '面板不解析自由文本，只认这个结构：在 prd.md 里写「## 功能需求」，其下每条用「### FR-1 标题」。',
-          ),
+          h('p', { className: 'dc-empty-line' }, 'PRD 里有内容，但没有找到面板认识的写法。'),
+          technical(null),
         )
       } else if (items.length === 0) {
         board = h(
           'div',
           { className: 'dc-empty-box' },
           h('div', { className: 'dc-banner-title' }, 'PRD 里还没有功能条目'),
-          h('p', { className: 'dc-empty-line' }, '功能需求节存在，但里面没有解析到「### FR-N 标题」条目。补上后刷新即可。'),
+          h('p', { className: 'dc-empty-line' }, '功能需求那一节还是空的，补上后刷新即可。'),
+          technical(null),
         )
       } else {
         board = h(
-          'div',
-          { className: 'dc-table-wrap' },
-          h(
-            'table',
-            { className: 'dc-table' },
-            h('caption', { className: 'dc-sr' }, '功能账：状态、待修、验收与最近进展'),
-            h(
-              'thead',
-              null,
-              h(
-                'tr',
-                null,
-                h('th', { scope: 'col' }, '功能'),
-                h('th', { scope: 'col' }, '状态'),
-                h('th', { scope: 'col', className: 'dc-num' }, '待修'),
-                h('th', { scope: 'col', className: 'dc-num' }, '验收'),
-                h('th', { scope: 'col' }, '最近进展'),
-              ),
-            ),
-            h(
-              'tbody',
-              null,
-              items.map((item, index) => {
-                const key = (item && item.id) || `feature${index}`
-                return h(FeatureRow, {
-                  key,
-                  item,
-                  expanded: expanded[key] === true,
-                  onToggle: () => toggle(key),
-                })
-              }),
-            ),
-          ),
+          'ul',
+          { className: 'dc-feature-list' },
+          items.map((item, index) => {
+            const key = (item && item.id) || `feature${index}`
+            return h(FeatureRow, {
+              key,
+              item,
+              expanded: expanded[key] === true,
+              onToggle: () => toggle(key),
+            })
+          }),
         )
       }
 
       return h(
         'section',
         { className: 'dc-card' },
-        h(SectionHead, {
-          title: '功能账 & 缺陷账',
-          meta: features.prdPath || (strategy === 'none' ? '未识别清单' : undefined),
-        }),
+        h(SectionHead, { title: '功能' }),
         board,
       )
     }
 
-    // 未归属阻塞单列（紧凑）：按路径没匹配到功能的缺陷不能悄悄丢。
     function DefectsSection(props) {
       const features = props.features || {}
       const unattributed = features.unattributed || {}
@@ -2770,7 +2698,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       return h(
         'section',
         { className: 'dc-card' },
-        h(SectionHead, { title: '未归属缺陷', meta: `${blocking} 条` }),
+        h(SectionHead, { title: '没归到功能的待修问题', meta: `${blocking} 条` }),
         h('p', { className: 'dc-hint' }, '按路径没匹配到任何功能，可能是共享代码或全项目问题。'),
         h(BugList, { issues: unattributed.issues }),
       )
@@ -2787,7 +2715,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const acceptanceTotal = Number(acceptance.total) || 0
       const acceptancePassed = Number(acceptance.passed) || 0
       const stale = Number(acceptance.stale) || 0
-      // 阻塞与功能表同源：归属到功能的未处置阻塞 + 未归属缺陷。
+      // 卡点与功能表同源：归属到功能的未处置卡点 + 没归到功能的待修问题。
       let blocking = 0
       for (const item of asArray(features.items)) {
         const bugs = (item && item.bugs) || {}
@@ -2800,11 +2728,11 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         asArray(props.ledger && props.ledger.receipts).some((receipt) => receipt && receipt.needsDecision)
       const percent = featureTotal > 0 ? Math.round((featureDone / featureTotal) * 100) : 0
       const stats = [
-        { key: 'features', label: '功能', value: featureTotal > 0 ? `${featureDone}/${featureTotal}` : '—' },
-        { key: 'acceptance', label: '验收', value: acceptanceTotal > 0 ? `${acceptancePassed}/${acceptanceTotal}` : '—' },
-        { key: 'blocking', label: '缺陷', value: String(blocking), tone: blocking > 0 ? 'bad' : null, title: '未处置的审核 blocking，含未归属' },
-        { key: 'stale', label: '失效', value: String(stale), tone: stale > 0 ? 'warn' : null },
-        { key: 'decision', label: '待决策', value: hasDecision ? '1' : '0', tone: hasDecision ? 'warn' : null },
+        { key: 'features', label: '已完成功能', value: featureTotal > 0 ? `${featureDone}/${featureTotal}` : '—' },
+        { key: 'acceptance', label: '验收通过', value: acceptanceTotal > 0 ? `${acceptancePassed}/${acceptanceTotal}` : '—' },
+        { key: 'blocking', label: '待修问题', value: String(blocking), tone: blocking > 0 ? 'bad' : null, title: '还没修掉的待修问题，含没归到功能的' },
+        { key: 'stale', label: '需要重新确认', value: String(stale), tone: stale > 0 ? 'warn' : null },
+        { key: 'decision', label: '需要你决定', value: hasDecision ? '1' : '0', tone: hasDecision ? 'warn' : null },
       ]
       return h(
         'div',
@@ -2829,9 +2757,9 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       )
     }
 
-    // ---------- 右栏：待决策 / 审核账本 / 执行回执 / 数据提示 ----------
+    // ---------- 右栏：需要你决定 / 代码检查 / 项目动态 / 数据说明 ----------
 
-    // 「最严重」一条：优先审核账本 issues，缺明细时从功能/未归属的 bug 里挑。
+    // 「最严重」一条：优先代码检查 issues，缺明细时从功能/未归属的 bug 里挑。
     function mostSevereIssue(review, features) {
       const rank = { critical: 0, important: 1, minor: 2 }
       const pool = asArray(review.issues).slice()
@@ -2853,70 +2781,61 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         return h(
           'section',
           { className: 'dc-rail-group' },
-          h('div', { className: 'dc-rail-head' }, h('h3', { className: 'dc-rail-title' }, '审核账本')),
+          h('div', { className: 'dc-rail-head' }, h('h3', { className: 'dc-rail-title' }, '代码检查')),
           h(
             'p',
             { className: 'dc-rail-note' },
-            review.reason === 'no-ledger' ? '未接审核账本，挑毛病阶段不做判定。' : '审核账本读取失败。',
+            review.reason === 'no-ledger' ? '还没有接过代码检查。' : '代码检查暂时没读到。',
           ),
         )
       }
       const blocking = Number(review.blocking) || 0
-      const fixed = Number(review.fixed) || 0
       const rounds = Number(review.rounds) || 0
-      const gateText = blocking > 0 ? '门禁未过' : rounds > 0 ? '门禁已清' : '未开始'
-      const gateTone = blocking > 0 ? 'bad' : rounds > 0 ? 'ok' : 'unknown'
       const severe = mostSevereIssue(review, features)
+      const gateText = blocking > 0 ? '有要修的' : rounds > 0 ? '最近检查通过' : '还没检查'
+      const gateTone = blocking > 0 ? 'bad' : rounds > 0 ? 'ok' : 'unknown'
       return h(
         'section',
         { className: 'dc-rail-group' },
         h(
           'div',
           { className: 'dc-rail-head' },
-          h('h3', { className: 'dc-rail-title' }, '审核账本'),
+          h('h3', { className: 'dc-rail-title' }, '代码检查'),
           h(Chip, { tone: gateTone }, gateText),
         ),
-        h(
-          'div',
-          { className: 'dc-rail-stats' },
-          h('span', null, '阻塞 ', h('b', { className: 'dc-rail-num' }, String(blocking))),
-          h('span', null, '待复检 ', h('b', { className: 'dc-rail-num' }, String(fixed))),
-          h('span', null, '已清 ', h('b', { className: 'dc-rail-num' }, `${rounds} 轮`)),
-        ),
-        h(
-          'div',
-          { className: 'dc-rail-severe' },
-          severe
-            ? h(
-                'span',
-                {
-                  className: 'dc-rail-severe-text',
-                  title: `[${SEVERITY_TEXT[severe.severity] || severe.severity || '问题'}] ${severe.title || ''}` +
-                    (severe.file ? ` · ${severe.file}${severe.line ? `:${severe.line}` : ''}` : ''),
-                },
-                h(
-                  'span',
-                  { className: `dc-bug-sev dc-bug-sev-${severe.severity || 'minor'}` },
-                  SEVERITY_TEXT[severe.severity] || severe.severity || '问题',
-                ),
-                ` ${severe.title || '（没有标题）'}`,
-                severe.file
-                  ? h('span', { className: 'dc-bug-file' }, ` · ${severe.file}${severe.line ? `:${severe.line}` : ''}`)
-                  : null,
-              )
-            : h(
-                'span',
-                { className: 'dc-rail-note' },
-                blocking > 0 ? `阻塞 ${blocking} 条（明细未提供）` : '没有未处置阻塞',
-              ),
-        ),
+        blocking > 0
+          ? h(
+              React.Fragment,
+              null,
+              h('p', { className: 'dc-rail-note' }, `有 ${blocking} 个待修问题`),
+              severe
+                ? h(
+                    'div',
+                    {
+                      className: 'dc-rail-severe-text',
+                      title: `[${SEVERITY_TEXT[severe.severity] || '问题'}] ${severe.title || ''}` +
+                        (severe.file ? ` · ${severe.file}${severe.line ? `:${severe.line}` : ''}` : ''),
+                    },
+                    h(
+                      'span',
+                      { className: `dc-bug-sev dc-bug-sev-${severe.severity || 'minor'}` },
+                      SEVERITY_TEXT[severe.severity] || '问题',
+                    ),
+                    ` ${severe.title || '（没有标题）'}`,
+                  )
+                : h('span', { className: 'dc-rail-note' }, '明细还没读到。'),
+            )
+          : h(
+              'p',
+              { className: 'dc-rail-note' },
+              rounds > 0 ? `最近 ${rounds} 轮检查通过 · 没问题` : '还没做代码检查。',
+            ),
       )
     }
 
     function ReceiptsTimeline(props) {
       const ledger = props.ledger || {}
       const receipts = asArray(ledger.receipts)
-      const total = Number(ledger.total) || receipts.length
       const lastAt = ledger.lastAt || (receipts[0] && receipts[0].at) || null
       return h(
         'section',
@@ -2924,11 +2843,11 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         h(
           'div',
           { className: 'dc-rail-head' },
-          h('h3', { className: 'dc-rail-title' }, '执行回执'),
-          h('span', { className: 'dc-rail-meta' }, lastAt ? `上次 ${formatRelative(lastAt)}` : '还没有回执'),
+          h('h3', { className: 'dc-rail-title' }, '项目动态'),
+          h('span', { className: 'dc-rail-meta' }, lastAt ? `上次 ${formatRelative(lastAt)}` : '还没有动态'),
         ),
         receipts.length === 0
-          ? h('p', { className: 'dc-rail-note' }, 'Agent 每完成一步会写一条。')
+          ? h('p', { className: 'dc-rail-note' }, '做过的每一步会出现在这里。')
           : h(
               'ol',
               { className: 'dc-receipts-timeline' },
@@ -2936,9 +2855,9 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                 const event = receipt && receipt.event
                 const auditText =
                   event === 'acceptance-recheck'
-                    ? '验收复核'
+                    ? '重新确认'
                     : event === 'acceptance-stale'
-                      ? '验收失效'
+                      ? '需要重新确认'
                       : null
                 return h(
                   'li',
@@ -2950,30 +2869,19 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                   ),
                   h(
                     'span',
-                    { className: 'dc-timeline-body' },
+                    { className: 'dc-timeline-text', title: (receipt && receipt.summary) || '' },
                     h(
                       'span',
-                      { className: 'dc-timeline-top' },
-                      h(
-                        'span',
-                        { className: 'dc-timeline-stage' },
-                        (receipt && (receipt.stageName || STAGE_TEXT[receipt.stage])) || '未知阶段',
-                      ),
-                      auditText ? h(Chip, { tone: 'idle' }, auditText) : null,
+                      { className: 'dc-timeline-stage' },
+                      (receipt && (receipt.stageName || STAGE_TEXT[receipt.stage])) || '这一步',
                     ),
-                    h(
-                      'span',
-                      {
-                        className: 'dc-timeline-summary',
-                        title: (receipt && receipt.summary) || '',
-                      },
-                      (receipt && receipt.summary) || '（没有摘要）',
-                    ),
+                    '：',
+                    (receipt && receipt.summary) || '（没有摘要）',
                   ),
+                  auditText ? h(Chip, { tone: 'idle' }, auditText) : null,
                 )
               }),
             ),
-        h('div', { className: 'dc-rail-foot' }, `共 ${total} 条`),
       )
     }
 
@@ -2982,19 +2890,18 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const receipts = asArray(ledger.receipts)
       const warnings = asArray(props.warnings)
       const dataGaps = asArray(props.dataGaps)
-      // 功能账的提示（含「功能超过 N 条只显示前 N 条」的截断告警）不能静默丢。
       const featureNotes = asArray(props.features && props.features.notes)
       const decisionReceipt = receipts.find((receipt) => receipt && receipt.needsDecision) || null
       const decision = decisionReceipt && decisionReceipt.needsDecision
       const gapCount = warnings.length + dataGaps.length + featureNotes.length
       return h(
         'aside',
-        { className: 'dc-rail', 'aria-label': '项目辅助信息' },
+        { className: 'dc-rail', 'aria-label': '补充信息' },
         decision
           ? h(
               'section',
               { className: 'dc-rail-group dc-decision', role: 'status' },
-              h('div', { className: 'dc-decision-title' }, `待你决策：${decision.title || '需要人工判断'}`),
+              h('div', { className: 'dc-decision-title' }, `需要你决定：${decision.title || '这件事需要你拍板'}`),
               asArray(decision.options).length > 0
                 ? h(
                     'ul',
@@ -3013,18 +2920,18 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           ? h(
               'details',
               { className: 'dc-rail-details' },
-              h('summary', null, `数据提示 ${gapCount} 条`),
+              h('summary', null, '数据说明'),
               h(
                 'ul',
                 null,
                 warnings.map((item, index) =>
-                  h('li', { key: `warning${index}` }, `读取异常：${(item && item.message) || item}`),
+                  h('li', { key: `warning${index}` }, `有东西没读到：${(item && item.message) || item}`),
                 ),
                 dataGaps.map((item, index) =>
-                  h('li', { key: `gap${index}` }, `数据缺口：${(item && item.message) || item}`),
+                  h('li', { key: `gap${index}` }, `这里缺数据：${(item && item.message) || item}`),
                 ),
                 featureNotes.map((item, index) =>
-                  h('li', { key: `note${index}` }, `功能账：${(item && item.message) || item}`),
+                  h('li', { key: `note${index}` }, `${(item && item.message) || item}`),
                 ),
               ),
             )
@@ -3032,36 +2939,6 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       )
     }
 
-    function LedgerRow(props) {
-      const receipt = props.receipt || {}
-      const statusKey = receipt.status || 'unknown'
-      const tone = STATUS_TONE[statusKey] || 'unknown'
-      const statusText = STATUS_TEXT[statusKey] || statusKey
-      const stageName = receipt.stageName || STAGE_TEXT[receipt.stage] || receipt.stage || '未知阶段'
-      const auditText =
-        receipt.event === 'acceptance-recheck' ? '验收复核' : receipt.event === 'acceptance-stale' ? '验收失效' : null
-      const artifacts = asArray(receipt.artifacts)
-      const meta = []
-      if (receipt.iterationId) meta.push(receipt.iterationId)
-      if (receipt.usedSkill) meta.push(`用了 ${receipt.usedSkill}`)
-      if (receipt.taskRef) meta.push(`任务 ${receipt.taskRef}`)
-      if (artifacts.length > 0) meta.push(`${artifacts.length} 个产物`)
-      return h(
-        'li',
-        { className: 'dc-ledger-item' },
-        h(
-          'div',
-          { className: 'dc-ledger-head' },
-          h('span', { className: 'dc-ledger-stage' }, stageName),
-          h(Chip, { tone }, statusText),
-          auditText ? h(Chip, { tone: 'idle', title: '审计事件：只留痕，不参与进度投影' }, auditText) : null,
-          receipt.needsDecision ? h(Chip, { tone: 'warn' }, '待决策') : null,
-          h('span', { className: 'dc-ledger-when', title: receipt.at ? new Date(receipt.at).toLocaleString() : '' }, formatRelative(receipt.at)),
-        ),
-        h('p', { className: 'dc-ledger-summary' }, receipt.summary || '（这条回执没写人话摘要）'),
-        meta.length > 0 ? h('div', { className: 'dc-ledger-meta' }, meta.join(' · ')) : null,
-      )
-    }
 
     // ---------- 详情页 ----------
 
@@ -3076,8 +2953,33 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const [initResult, setInitResult] = React.useState(null)
 
       const lastAt = ledger.lastAt || (asArray(ledger.receipts)[0] && asArray(ledger.receipts)[0].at) || null
-      const engineText = degraded || props.panelError ? '数据待确认' : '引擎正常'
-      const engineTone = degraded || props.panelError ? 'unknown' : 'ok'
+      const engineText = degraded || props.panelError ? '服务待确认' : '服务正常'
+      const features = panel.features || {}
+      const acceptance = panel.acceptance || {}
+      const stageName = action.stageName || STAGE_TEXT[action.stageId] || '这里'
+      let blockingCount = 0
+      for (const item of asArray(features.items)) {
+        const bugs = (item && item.bugs) || {}
+        if (bugs.known !== false) blockingCount += Number(bugs.blocking) || 0
+      }
+      const unattributed = features.unattributed || {}
+      if (unattributed.known !== false) blockingCount += Number(unattributed.blocking) || 0
+      const acceptanceTotal = Number(acceptance.total) || 0
+      const acceptancePassed = Number(acceptance.passed) || 0
+      const healthText = [
+        `正在${stageName}`,
+        blockingCount > 0 ? `${blockingCount} 个待修问题` : '暂时没有待修问题',
+        acceptanceTotal > 0 ? `验收通过 ${acceptancePassed}/${acceptanceTotal}` : '还没验收',
+      ].join(' · ')
+      const sourceNames = {
+        receipts: '项目动态',
+        acceptance: '验收',
+        review: '代码检查',
+        prd: '需求文档',
+        tasks: '任务',
+        trellis: '项目规则',
+        project: '项目名片',
+      }
 
       const header = h(
         'header',
@@ -3090,10 +2992,20 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
             { type: 'button', className: 'dc-btn dc-btn-ghost', onClick: props.backToOverview },
             '← 全部项目',
           ),
-          h('h1', { className: 'dc-title' }, project.name || baseName(project.path) || '项目'),
-          h(Chip, { tone: engineTone }, engineText),
-          h(Chip, { tone: 'idle' }, (panel.iteration && panel.iteration.current) || '未开始迭代'),
+          h(
+            'div',
+            { className: 'dc-head-main' },
+            h('h1', { className: 'dc-title' }, project.name || baseName(project.path) || '项目'),
+            h('div', { className: 'dc-head-summary', title: healthText }, healthText),
+          ),
+          h(Chip, { tone: 'idle' }, (panel.iteration && panel.iteration.current) || '还没开始'),
           h('span', { className: 'dc-spacer' }),
+          h(
+            'span',
+            { className: 'dc-service', title: degraded || props.panelError ? '有些数据没读到' : '一切正常' },
+            h('span', { className: `dc-service-dot${degraded || props.panelError ? ' dc-service-dot-warn' : ''}` }),
+            engineText,
+          ),
           panel.generatedAt
             ? h('span', { className: 'dc-sub dc-time' }, `更新于 ${formatTime(panel.generatedAt)}`)
             : null,
@@ -3163,9 +3075,9 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                 h(
                   'div',
                   { className: 'dc-banner-title' },
-                  '账本存在损坏行（已降级显示）',
+                  '动态记录里有几行读不出来（已降级显示）',
                 ),
-                h('div', { className: 'dc-hint' }, `有 ${badLines} 行不是合法回执，已跳过；下面的统计可能偏低。`),
+                h('div', { className: 'dc-hint' }, `有 ${badLines} 行不是合法动态，已跳过；下面的统计可能偏低。`),
               )
             : null,
           degraded
@@ -3174,7 +3086,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                 {
                   tone: 'error',
                   role: 'alert',
-                  title: '数据待确认：读取有异常，先别按下一步行动',
+                  title: '有些数据没读到，先别按下一步行动',
                 },
                 h(
                   'ul',
@@ -3184,7 +3096,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                         h(
                           'li',
                           { key: `reason${index}` },
-                          `${(reason && reason.source) || '未知来源'}：${(reason && reason.message) || '读取失败'}`,
+                          `${sourceNames[(reason && reason.source) || ''] || '数据'}：${(reason && reason.message) || '没读到'}`,
                         ),
                       )
                     : h('li', null, '服务端报告降级，但没有给出原因。'),
@@ -3207,6 +3119,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                 action,
                 degraded,
                 iteration: panel.iteration,
+                progression: panel.progression,
                 projectPath: project.path || props.selectedPath,
                 onApplied: (result) => {
                   setInitResult(result)
@@ -3340,6 +3253,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
     }
   },
 })
+
+
 
 
 

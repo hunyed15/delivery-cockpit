@@ -302,6 +302,15 @@ const HARNESS = `(function () {
           // visual-toast 用 A6（当前是 pass）截图，changed 才会真正让「通过」失效。
           if (openShotBoxAndSetUrl(scenario === 'visual-toast' ? 'A6' : 'A4')) return
         }
+        // human-details：展开第一条功能与第一条验收的「细节」。
+        if (scenario === 'human-details') {
+          var featureRow = document.querySelector('.dc-feature-row')
+          if (featureRow) featureRow.click()
+          var accMore = document.querySelector('.dc-acc-more > summary')
+          if (accMore) accMore.click()
+          setTimeout(function () { document.title = 'ready:' + scenario }, 600)
+          return
+        }
         // visual-regression：把每行的「历史」都展开，一张图看全五种结论与历史列表。
         if (scenario === 'visual-regression') {
           ;['A1', 'A2', 'A4', 'A5', 'A6'].forEach(function (id) { clickInRow(id, '历史') })

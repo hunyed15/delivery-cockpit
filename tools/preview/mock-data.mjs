@@ -99,7 +99,7 @@ const FEATURES = {
       title: '信号采集',
       priority: 'P0',
       status: 'blocked',
-      statusLabel: '有阻塞',
+      statusLabel: '有卡点',
       // A1 已失效：Host 的 passed 会排除失效条，所以这里 passed=0、missingEvidence=1。
       acceptance: { total: 2, passed: 0, failed: 1, blocked: 0, missingEvidence: 1 },
       bugs: {
@@ -154,7 +154,7 @@ const FEATURES = {
       status: 'not-started',
       statusLabel: '未开始',
       acceptance: { total: 1, passed: 0, failed: 0, blocked: 0, missingEvidence: 1 },
-      // known:false 是「没有路径/回执关联，没法判断」：待修列必须显示 —，不能显示 0。
+      // known:false 是「没有路径/动态关联，没法判断」：待修列必须显示 —，不能显示 0。
       bugs: { blocking: 0, known: false, issues: [] },
       lastAt: null,
       lastSummary: null,
@@ -184,7 +184,7 @@ const FEATURES = {
     known: true,
     issues: [{ severity: 'important', title: '全局错误提示重复弹出', file: 'src/shared/toast.ts', line: 8 }],
   },
-  notes: ['功能状态由验收、归属 bug、回执三路证据推导；没有证据的功能不显示 0'],
+  notes: ['状态来自验收结果、待修问题和项目动态；没有信息时不显示 0'],
 }
 
 const FEATURES_PRD_MISSING = {
@@ -254,12 +254,12 @@ const PROTOTYPE_ACTION = {  priority: 5,
   missing: [],
   disabled: false,
   disabledReason: '',
-  notes: ['审核账本可用：最近 2 轮已清'],
+  notes: ['代码检查能读到：最近 2 轮都通过'],
   buttons: ['copy'],
 }
 
 // 验收清单（panel.acceptance.items）：面板内直接改结果，所以至少覆盖
-// 通过（带证据，含 URL）/ 失败 / 阻塞 / 未填 四种状态。
+// 通过（带证据，含 URL）/ 失败 / 卡点 / 未填 四种状态。
 const ACCEPTANCE_ITEMS = [
   {
     id: 'A1',
@@ -447,7 +447,7 @@ function makePanel(overrides = {}) {
     },
     warnings: [],
     features: FEATURES,
-    dataGaps: [{ source: 'tasks', message: '任务状态来自回执自报，不是 Agent Teams 实时读取' }],
+    dataGaps: [{ source: 'tasks', message: '任务状态来自 AI 自报，不是实时读取' }],
     degraded: { flag: false, reasons: [] },
   }
   return { ...base, ...overrides }
@@ -463,12 +463,12 @@ export function panelFor(scenario) {
           stageId: null,
           stageName: '先确认数据',
           title: '先确认数据，再按下一步',
-          reason: '账本与验收表读取失败，现在给出的结论不可信。',
+          reason: '动态记录和验收清单没读全，现在给出的结论不可信。',
           instruction: null,
           capabilities: [],
           missing: [],
           disabled: true,
-          disabledReason: '账本不可信：先确认数据来源，再行动。',
+          disabledReason: '数据没读全：先确认数据来源，再行动。',
           notes: ['receipts.jsonl 有 2 行损坏', 'acceptance.json 不是合法 JSON'],
           buttons: [],
         },
@@ -511,7 +511,7 @@ export function panelFor(scenario) {
           stageId: 'prototype',
           stageName: '看原型',
           title: '客户标签要不要支持批量打标？',
-          reason: '这条回执标了需要你拍板，处理完才能继续。',
+          reason: '这条动态标了需要你拍板，处理完才能继续。',
           instruction: '请先确认：客户标签这轮只做单个打标，还是直接做批量打标？',
           capabilities: [],
           missing: [],
@@ -582,7 +582,7 @@ export function panelFor(scenario) {
           stageId: 'init',
           stageName: '初始化',
           title: '初始化这个项目',
-          reason: '还没有 .trellis 与 RULES.md，先建好规则与账本。',
+          reason: '还没有 .trellis 与 RULES.md，先建好项目规则和记录。',
           instruction: null,
           capabilities: [],
           missing: [],
@@ -614,7 +614,7 @@ export function panelFor(scenario) {
         dataGaps: [{ source: 'prd', message: 'PRD 里没找到「### FR-N 标题」结构' }],
       })
     case 'acceptance-truncated': {
-      // 只下发 2 条可见条目，但全局 passed/total 是完整账本的：验证摘要用 Host 真值。
+      // 只下发 2 条可见条目，但全局 passed/total 是完整动态记录的：验证摘要用 Host 真值。
       const base = makePanel()
       return {
         ...base,
@@ -758,5 +758,7 @@ export function approveResult(iterationId) {
     },
   }
 }
+
+
 
 
