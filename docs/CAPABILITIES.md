@@ -207,7 +207,7 @@
 ### 装配建议（最佳组合）
 
 - **Trellis 作底座**：安装/启用 Trellis CLI 与 skills（`trellis-start/brainstorm/before-dev/check/finish-work/update-spec`），承接 S1/S2/S3(design)/S5/S6(quality)/S9(收尾)；
-- **superpowers**：TDD、writing-plans、executing-plans、subagent-driven-development、worktrees、finishing-a-development-branch（已全局可用）；
+- **自建纪律 skill（替代 superpowers）**：``tdd-loop``（S5）、``verify-claims``（S6/S8）；DSH 原生 subagent/workflow 负责并行，git 原生命令负责 worktree/branch 收尾；
 - **anthropics/skills**：`frontend-design`（已装）、**`webapp-testing`（建议安装，补 Playwright 测试）**；
 - **mattpocock**：`grilling`（S1/S2）、`code-review`（S7）；
 - **本驾驶舱**：9 阶段门禁、验收确认、截图/视觉回归、阶段汇报（S8 唯一方案）；
