@@ -538,3 +538,12 @@ test('功能行细进度条：0/部分/全过 + 360 不溢出', () => {
 
 
 
+
+test('阶段检查：hero 读取 panel.gates，展示检查状态 / 方法 / 交付物', () => {
+  assert.ok(source.includes('gates: panel.gates'), 'DetailPage 必须把 gates 传给 hero')
+  assert.ok(source.includes('阶段检查'), 'hero 必须有阶段检查标签')
+  assert.ok(source.includes("validateArchitecture: 'architecture'") && source.includes("validateTestReport: 'tests'") && source.includes("validateRelease: 'release'"), '技术门映射三键')
+  assert.ok(source.includes("gateOk ? 'success' : 'warn'"), '通过用 success，未过用 warn')
+  assert.ok(source.includes('方法：') && source.includes('交付物：'), '展示 method 与 deliverables')
+  assert.ok(css.includes('.dc-gate {') && css.includes('.dc-gate-label {'), '门禁样式存在')
+})

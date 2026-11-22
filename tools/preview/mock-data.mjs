@@ -678,7 +678,53 @@ export function panelFor(scenario) {
         },
       }
     }
-    case 'goal-empty-prd':
+    case 'goal-gates': {
+      const base = makePanel()
+      return {
+        ...base,
+        nextAction: {
+          priority: 4.5,
+          kind: 'architecture',
+          stageId: 'architecture',
+          stageName: '架构契约',
+          title: '先定架构与契约',
+          reason: '还缺架构契约：docs/architecture.md、docs/api.md',
+          instruction: '写 docs/architecture.md（组件/数据模型/接口清单/关键决策）与 docs/api.md，然后写回执。',
+          capabilities: [
+            { kind: 'skill', name: 'ponytail', mode: 'full', optional: false, present: 'present', note: null, missingMessage: null },
+            { kind: 'inline', name: 'architecture-template', mode: 'inline', optional: false, present: 'present', note: null, missingMessage: null },
+          ],
+          missing: [],
+          disabled: false,
+          disabledReason: '',
+          notes: [],
+          buttons: ['copy'],
+          method: null,
+          constraint: 'ponytail',
+          deliverables: ['docs/architecture.md', 'docs/api.md'],
+          technicalGate: 'validateArchitecture',
+          decisionGate: { title: '架构签核', approveAction: 'approve-architecture' },
+        },
+        gates: {
+          architecture: { available: false, ok: false, missing: ['docs/architecture.md', 'docs/api.md'], reason: 'missing', detail: null },
+          tests: { available: false, ok: false, missing: ['.dsh/plugin-state/test-report.json'], reason: 'missing', detail: null },
+          release: { available: false, ok: false, missing: ['.dsh/plugin-state/release.json'], reason: 'missing', detail: null },
+        },
+        progression: {
+          coldStart: [node('bootstrap', '项目立项', 'done', '初始化 .trellis 与 .dsh/plugin-state')],
+          cycle: [
+            node('requirements', '需求定义', 'done', '本轮范围写进 prd.md'),
+            node('architecture', '架构契约', 'current', null),
+            node('prototype', '原型设计', 'pending', null),
+            node('implementation', '代码开发', 'pending', null),
+            node('testing', '测试验证', 'pending', null),
+            node('code-review', '代码复核', 'pending', null),
+            node('acceptance', '验收确认', 'pending', null),
+            node('release', '部署发布', 'pending', null),
+          ],
+        },
+      }
+    }    case 'goal-empty-prd':
       return panelFor('features-prd-missing')
     case 'goal-empty-acc':
       return panelFor('acceptance-empty')

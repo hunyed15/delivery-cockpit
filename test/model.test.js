@@ -19,6 +19,7 @@ const DETAIL_KEYS = [
   'dataGaps',
   'degraded',
   'features',
+  'gates',
   'generatedAt',
   'iteration',
   'ledger',
@@ -821,4 +822,29 @@ test('trellis 与 acceptance 计数如实投影，不把 null 变成 0', () => {
   assert.equal(model.acceptance.passed, null)
   assert.equal(model.acceptance.empty, false)
   assert.equal(model.acceptance.badJson, false)
+})
+
+test('gates：技术门只读投影（ok/missing/reason/detail），无 gates 时为 null', () => {
+  const model = build(
+    evidence({
+      gates: {
+        architecture: { available: false, ok: false, missing: ['docs/architecture.md'], reason: 'missing' },
+        tests: { available: true, ok: false, missing: ['failed>0（2 个失败）'], reason: 'failed', detail: { failed: 2 } },
+        release: null,
+      },
+    }),
+  )
+  assert.deepEqual(model.gates.architecture, {
+    available: false,
+    ok: false,
+    missing: ['docs/architecture.md'],
+    reason: 'missing',
+    detail: null,
+  })
+  assert.equal(model.gates.tests.ok, false)
+  assert.equal(model.gates.tests.detail.failed, 2)
+  assert.equal(model.gates.release, null)
+
+  const noGates = build(evidence())
+  assert.equal(noGates.gates, null, '没有 gates 时返回 null，客户端不渲染门禁块')
 })

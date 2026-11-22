@@ -639,7 +639,7 @@ features: {
   - `validateTestReport(projectPath)`：优先 `.dsh/plugin-state/test-report.json`（`command`/`passed`/`failed`/`at` 合法且 `failed===0`）；文件不存在时回退 `.dsh/plugin-state/manual-check.json`（非代码项目：`checks[]` 非空 + `at`，`fail`/`blocked` 均不放行）。test-report 存在时优先，不静默改用回退。
   - `validateRelease(projectPath)`：`.dsh/plugin-state/release.json`，`version`/`artifacts`（非空，字符串或 `{path}`）/`rollback`/`at` 合法。
   - `readGateEvidence(projectPath)`：三门并发读取、逐个兜错；文件不存在记 `missing`，**不触发 `degraded`**（阶段未完成不是读取故障）。
-- 接入 `lib/evidence.js`：`readEvidence` 顶部新增 `gates: { architecture, tests, release }`；降级分支同样带 gates 键。
+- 接入 `lib/evidence.js`：`readEvidence` 顶部新增 `gates: { architecture, tests, release }`；降级分支同样带 gates 键。- 接入面板：`lib/model.js` 的 `gatesSection` 把三门只读投影给 `detail.gates`；hero 的「阶段检查」块显示 已通过/未通过/未就绪 + 方法/约束/交付物（`client.js`，token-only 样式）。
 - 状态机门禁决策（`lib/state.js`，插在既有 1–14 序号之间，保持旧序号不动）：
   - **4.5**：有 PRD 但架构契约门不过 ⇒ `architecture`「先定架构与契约」（在原型之前）。
   - **6.5**：任务做完但测试门不过 ⇒ `testing`「补测试证据」（在代码复核之前；失败数>0 的文案带失败数）。

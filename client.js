@@ -599,6 +599,9 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:600; letter-
 .dc-cap-optional { color:var(--dsw-alias-label-secondary); font-size:11px; }
 .dc-cap .dc-chip { height:18px; padding:0 6px; font-size:10.5px; border:0; background:transparent; }
 .dc-cap .dc-chip::before { width:5px; height:5px; }
+.dc-gate { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; margin-top:10px; font-size:12px; color:var(--dsw-alias-label-secondary); }
+.dc-gate-label { font-weight:600; color:var(--dsw-alias-label-primary); }
+.dc-gate-method, .dc-gate-detail { overflow-wrap:anywhere; }
 .dc-missing { margin-top:12px; padding:12px 14px; border-radius:8px; font-size:12.5px; overflow-wrap:anywhere;
   border:1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary) 38%, transparent);
   background:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 8%, transparent); color:var(--dsw-alias-label-primary); }
@@ -2093,6 +2096,27 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           { className: 'dc-action-reason' },
           action.reason || '服务端没有返回下一步，可能是插件版本不匹配。',
         ),
+        (() => {
+          const gateMap = { validateArchitecture: 'architecture', validateTestReport: 'tests', validateRelease: 'release' }
+          const gateKey = action.technicalGate ? gateMap[action.technicalGate] : ''
+          const gate = gateKey && props.gates ? props.gates[gateKey] : null
+          if (!gateKey || !gate) return null
+          const gateOk = gate.ok === true
+          const gateText = gateOk ? '已通过' : gate.available === true ? '未通过' : '未就绪'
+          const missingGate = asArray(gate.missing)
+          return h(
+            'div',
+            { className: 'dc-gate', 'data-gate': gateKey },
+            h('span', { className: 'dc-gate-label' }, '阶段检查'),
+            h(Chip, { tone: gateOk ? 'success' : 'warn' }, gateText),
+            action.method ? h('span', { className: 'dc-gate-method' }, `方法：${action.method}`) : null,
+            action.constraint ? h('span', { className: 'dc-gate-method' }, `约束：${action.constraint}`) : null,
+            missingGate.length > 0 ? h('span', { className: 'dc-gate-detail' }, `缺：${missingGate.join('、')}`) : null,
+            asArray(action.deliverables).length > 0
+              ? h('span', { className: 'dc-gate-detail' }, `交付物：${asArray(action.deliverables).join('、')}`)
+              : null,
+          )
+        })(),
         caps.length > 0
           ? h(
               'div',
@@ -3738,6 +3762,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
               h(NextActionSection, {
                 action,
                 degraded,
+                gates: panel.gates,
                 iteration: panel.iteration,
                 progression: panel.progression,
                 projectPath: project.path || props.selectedPath,
