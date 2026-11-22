@@ -60,13 +60,21 @@ const chrome = spawn(
 )
 
 // 浏览器进程与临时 profile 都要收干净：之前每截一张就在 %TEMP% 留一个目录。
+// Windows 上 kill 后文件锁常是瞬时占用，删一次失败要重试，不能静默留垃圾。
 const stop = async () => {
   try {
     chrome.kill()
   } catch {
     // 已经退出
   }
-  await rm(profile, { recursive: true, force: true }).catch(() => {})
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await rm(profile, { recursive: true, force: true })
+      return
+    } catch {
+      await sleep(300)
+    }
+  }
 }
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
