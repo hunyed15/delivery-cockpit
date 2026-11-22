@@ -1,0 +1,152 @@
+# 能力规划（Capabilities Matrix）
+
+> 本文件回答：9 个阶段里，哪些由 Agent 本体完成、哪些需要 Skill、哪些需要 MCP、哪些需要工具/人工。
+> 结论会写进 `templates/playbook.json` 的 `capabilities` 声明，由驾驶舱探测、降级与校验。
+
+## 1. 能力分类
+
+| 类别 | 含义 | 谁执行 | 驾驶舱的职责 |
+|---|---|---|---|
+| `agent` | Agent 原生能力：推理、读写文件、跑命令、git、写代码 | Agent | 给指令、收 receipt、不直接执行 |
+| `skill` | 方法/流程知识（提示词资产）：TDD、代码风格、原型设计、复核规范 | Agent 加载 skill 后执行 | 探测、缺失提示、给替代 skill |
+| `mcp` | 外部系统连接：浏览器、文档检索、部署平台、数据库 | Agent 通过 MCP 工具调用 | 探测、缺失给安装指引、降级方案 |
+| `tool` | 插件注册的工具：`cockpit_*`、`claude_review` 等 | Agent 调用 | 自己提供或探测 |
+| `subagent` | 角色化子代理：架构/前端/后端/联调/复核 | Agent 派生 | 显示 lane、绑定 receipt |
+| `human` | 决策门：范围签核、架构签核、原型通过、验收、发布 | 甲方 | 必须人工点击，不可自动通过 |
+
+## 2. 九阶段能力矩阵
+
+图例：● 必需 / ○ 可选 / — 不需要 / ⚠ 当前缺失（有回退）
+
+### S1 项目立项
+
+| 能力 | 内容 | 现状 |
+|---|---|---|
+| agent | 初始化目录、探测技术栈、写首条 receipt | ● 可用 |
+| tool | `cockpit_init`（释放 RULES/项目名片/验收空表） | ● 可用（本插件） |
+| skill | 原 `trellis-start` | ⚠ 缺失（回退：`inline:plugin-init` 已覆盖） |
+| mcp | — | — |
+| human | 无（自动门） | — |
+
+### S2 需求定义
+
+| 能力 | 内容 | 现状 |
+|---|---|---|
+| agent | 访谈、收敛范围、写 `docs/prd.md` | ● 可用 |
+| skill | `trellis-brainstorm`；替代：`writing-plans` + PRD 模板 | ⚠ trellis 缺失（回退可用） |
+| tool | `cockpit_acceptance`（按 FR 起草验收条目） | ● 可用 |
+| mcp | — | — |
+| human | **范围签核**（功能范围与优先级） | 待实现 |
+
+### S3 架构契约（强制技术门）
+
+| 能力 | 内容 | 现状 |
+|---|---|---|
+| agent | 架构推理、写 `architecture.md` / ADR / API 契约 | ● 可用 |
+| skill | 无专门架构 skill（**缺口**）；替代：`writing-plans` + 本仓库架构模板 | ⚠ 需补模板/skill |
+| mcp | `context7`（查框架/库文档）；替代：`web_search` / `dsh-doc` | ⚠ 缺失（回退可用） |
+| tool | 契约校验器（P0 新增） | 待实现 |
+| human | **架构签核** | 待实现 |
+
+### S4 原型设计
+
+| 能力 | 内容 | 现状 |
+|---|---|---|
+| agent | 生成静态 `prototype.html`（假数据） | ● 可用 |
+| skill | `ui-ux-pro-max`、`frontend-design`、`impeccable` | ● 可用 |
+| mcp | `playwright`（打开/验证/截图）；替代：本机 Chrome CDP 截图 | ⚠ 缺失（回退已实现） |
+| tool | 原型批准门禁（`approve-prototype`） | ● 可用 |
+| human | **原型通过** | ● 已实现 |
+
+### S5 代码开发
+
+| 能力 | 内容 | 现状 |
+|---|---|---|
+| agent | 写代码、跑命令、git、自测 | ● 可用 |
+| skill | `ponytail`、`test-driven-development`、`systematic-debugging`、`writing-plans` | ● 可用 |
+| tool | 任务板 + `cockpit_report`（写作用域/回执） | 部分（回执已有，内置任务板待做） |
+| subagent | 前端 / 后端 / 联调 lane | 待实现（P1） |
+| mcp | `context7`（可选，查文档）、数据库 MCP（可选） | ⚠ 缺失（可选） |
+| human | 无 | — |
+
+### S6 测试验证（强制技术门）
+
+| 能力 | 内容 | 现状 |
+|---|---|---|
+| agent | 跑测试命令、整理失败原因 | ● 可用 |
+| skill | `test-driven-development`、`verification-before-completion` | ● 可用 |
+| mcp | `playwright`（端到端）；替代：人工 + CDP 截图 | ⚠ 缺失（回退可用） |
+| tool | 测试报告校验器（P0 新增） | 待实现 |
+| human | 无 | — |
+
+### S7 代码复核
+
+| 能力 | 内容 | 现状 |
+|---|---|---|
+| agent | 调复核工具、处置 findings、写 disposition | ● 可用 |
+| skill | `claude-code-review`、`receiving-code-review` | ● 可用 |
+| tool | `claude_review`（旧插件引擎）、账本读取（本插件） | ● 可用（P2 合并） |
+| mcp | — | — |
+| human | 无（重大争议可升级为决策门） | — |
+
+### S8 验收确认
+
+| 能力 | 内容 | 现状 |
+|---|---|---|
+| agent | 生成证据、说明结果、复核 | ● 可用 |
+| skill | `verification-before-completion` | ● 可用 |
+| mcp | `playwright`（交互式验证）；替代：CDP 截图 + 人工 | ⚠ 缺失（回退可用） |
+| tool | 验收表、截图、像素对比、失效门禁 | ● 可用（本插件核心） |
+| human | **验收签核**（逐条通过/失败/阻塞/撤销） | ● 已实现 |
+
+### S9 部署发布
+
+| 能力 | 内容 | 现状 |
+|---|---|---|
+| agent | 构建、打 tag、执行部署命令、写发布清单 | ● 可用 |
+| skill | `finishing-a-development-branch` | ● 可用 |
+| mcp | 部署平台 MCP（Vercel / Cloudflare / Docker / 云厂商）；替代：本机命令 + 部署说明 | ⚠ 缺失（回退可用） |
+| tool | `release.json` 校验器（P0 新增） | 待实现 |
+| human | **发布批准** | 待实现 |
+
+## 3. 当前 profile 探测结果（2026-11-22）
+
+- **已装 Skills**：`claude-code-review`、`frontend-design`、`impeccable`、`ponytail`、`test-driven-development`、`systematic-debugging`、`verification-before-completion`、`finishing-a-development-branch`、`writing-plans`、`executing-plans`、`requesting-code-review`、`receiving-code-review`、`ui-ux-pro-max`、`using-git-worktrees`、`subagent-driven-development`、`dispatching-parallel-agents`、`writing-skills`。
+- **缺失 Skills**（playbook 引用但未装）：`trellis-start`、`trellis-brainstorm`、`trellis-spec-bootstrap`、`trellis-before-dev`、`trellis-check`、`trellis-finish-work` → 全部改为**可选 + 回退**，不作为硬依赖。
+- **MCP**：`playwright` 缺失、`context7` 缺失、无部署平台 MCP → 全部走回退，并给安装指引。
+- **Tools**：`cockpit_*`（本插件）、`claude_review*`（旧插件）可用。
+
+## 4. playbook 结构扩展（P0 落地）
+
+每个阶段从"只有 promptTemplate"扩展为：
+
+```json
+{
+  "id": "architecture",
+  "name": "架构契约",
+  "objective": "冻结组件、数据模型、接口契约与关键决策",
+  "execution": ["agent", "skill:writing-plans", "mcp:context7"],
+  "capabilities": [
+    { "kind": "skill", "name": "writing-plans", "required": false, "fallback": "本仓库架构模板" },
+    { "kind": "mcp", "name": "context7", "required": false, "fallback": "web_search" }
+  ],
+  "deliverables": [
+    { "path": "docs/architecture.md", "sections": ["组件", "数据模型", "接口清单", "关键决策"] },
+    { "path": "docs/api.md" }
+  ],
+  "technicalGate": "validateContract",
+  "decisionGate": { "title": "架构签核", "approveAction": "approve-architecture" },
+  "definitionOfDone": ["契约文件齐全", "甲方签核"]
+}
+```
+
+新增字段：`execution`、`capabilities[].required/fallback`、`deliverables[]`、`technicalGate`、`decisionGate`、`definitionOfDone`。
+探测规则：`agent` 永远可用；`skill` 查本机 skills 目录；`mcp` 查 MCP 配置/工具；`tool` 查 `ctx.tools`；`human` 为门禁配置。
+
+## 5. 规划结论
+
+1. **必需 vs 可选**：只有 S3（架构契约）、S6（测试验证）、S9（部署发布）的**技术门**是硬的；skills/MCP 绝大多数是"可选 + 回退"，避免因缺插件卡死全流程。
+2. **硬依赖只有一个**：S7 的复核工具（`claude_review`）。缺失时 S7 技术门无法通过，面板必须明确阻塞并给安装/启用指引。
+3. **缺口优先级**：① 架构模板（S3，可先做提示词模板，不必新 skill）；② 部署 MCP 推荐与指引（S9）；③ Playwright 安装指引（S4/S6/S8，已有 CDP 回退）；④ 回执/任务板（S5）。
+4. **人工门共 5 个**：范围签核、架构签核、原型通过、验收签核、发布批准。
+5. **探测即规划**：矩阵写进 playbook 后，面板直接显示每阶段的"必需能力 / 可选能力 / 缺失 / 回退方案"，不需要人记。
