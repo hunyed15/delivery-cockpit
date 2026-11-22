@@ -81,7 +81,9 @@ test('样式隔离：只依赖 host token 与 .dc- 前缀', () => {
   assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(css), 'CSS 不得出现字面十六进制色值')
   assert.ok(!/(?:rgba?|hsla?)\(/.test(css), 'CSS 不得出现字面 rgb/hsl 色值')
   assert.ok(source.includes("document.createElement('style')") && source.includes('document.head.appendChild'), '样式注入 head')
-  assert.ok(!source.includes('document.body') && !source.includes('querySelector'), '不得碰宿主 DOM')
+  assert.ok(!source.includes('document.body') && !/body\.appendChild/.test(source), '不得向 body 追加节点')
+  // 面板只在自己 DOM 里找行（j/k 与「去验收」需要），不读取宿主其它区域。
+  assert.ok(source.includes("querySelectorAll('[data-kb-row]')"), '键盘导航只查询面板自己的行')
 })
 
 test('记住上次项目', () => {
@@ -163,7 +165,7 @@ test('功能：人话列表、行可展开、细节才给技术信息', () => {
 
 test('功能空态：PRD 缺失 / 认不出 / 无条目', () => {
   assert.ok(source.includes("source === 'prd-missing'"), '必须处理 prd-missing')
-  assert.ok(source.includes('还没有 PRD——「想清楚」阶段会产出它'), 'PRD 缺失文案必须人话')
+  assert.ok(source.includes('还没有 PRD，所以列不出功能'), 'PRD 缺失文案必须人话')
   assert.ok(source.includes("strategy === 'none'"), '必须处理 strategy===\'none\'')
   assert.ok(source.includes('formatHint') && source.includes('dc-code-block'), '格式提示必须存在（折叠里）')
   assert.ok(source.includes('PRD 里还没有功能条目'), '无条目要有独立文案')
@@ -193,7 +195,7 @@ test('验收：默认极简、细节折叠、已通过折叠', () => {
   assert.ok(source.includes('截图并附到证据') && source.includes('编辑证据'), '截图/证据编辑在细节里保留')
   assert.ok(source.includes('通过必须附证据'), '通过必须有证据')
   assert.ok(source.includes('if (props.onRefresh) props.onRefresh()'), '成功后必须刷新')
-  assert.ok(source.includes('还没有验收清单：让 AI 起草一份'), '空态文案必须人话')
+  assert.ok(source.includes('还没有验收条目'), '空态文案必须人话')
   assert.ok(source.includes("props.actionKind === 'acceptance-draft'"), 'acceptance-draft 时要有指引')
 })
 
@@ -296,7 +298,7 @@ test('降级 / 坏行 / 缺失能力 / 错误态兜底', () => {
   assert.ok(source.includes('missingBlocks') && source.includes('暂不下发指令'), '能力缺失时显示缺失文案')
   assert.ok(source.includes('disabledReason'), '主按钮禁用要给出原因')
   assert.ok(source.includes('还没有项目工作区'), '总览空态')
-  assert.ok(source.includes('还没有验收清单'), '验收空态')
+  assert.ok(source.includes('还没有验收条目'), '验收空态')
   assert.ok(source.includes('正在加载'), '加载态')
   assert.ok(source.includes('getDerivedStateFromError') && source.includes('面板渲染失败'), 'ErrorBoundary 兜底')
   assert.ok(source.includes("'重试'"), '错误态可重试')
@@ -334,3 +336,67 @@ test('视觉体系：字号 / 等宽数字 / focus / 动效 / 双主题 / 骨架
   assert.ok(source.includes("h('summary', null, '细节')"), '折叠统一叫「细节」')
   assert.ok(css.includes('.dc-more > summary') || css.includes('.dc-more > summary'), '细节折叠有可展开样式')
 })
+
+test('空态引导：一句原因 + 一个真能用的动作', () => {
+  assert.ok(source.includes('function EmptyState(props)'), '必须有统一 EmptyState')
+  for (const text of [
+    '还没有 PRD，所以列不出功能',
+    'PRD 里没有「### FR-N」结构',
+    '还没有验收条目',
+    '项目还没有动态',
+    '项目还没初始化',
+  ]) {
+    assert.ok(source.includes(text), `缺少空态文案：${text}`)
+  }
+  for (const label of ['复制下一步指令', '复制起草指令']) {
+    assert.ok(source.includes(label), `缺少空态动作：${label}`)
+  }
+  assert.ok(source.includes('id: \'dc-hero-copy\''), 'hero 复制按钮必须有稳定 id')
+  assert.ok(source.includes('function focusHeroCopy()'), '空态动作要能滚到 hero 并聚焦')
+  assert.ok(source.includes("scrollIntoView({ block: 'center'") && source.includes('button.focus()'), '动作=滚动+聚焦，不自动复制')
+  assert.ok(source.includes('AI 每完成一步会记一条'), '无动态空态必须人话')
+})
+
+test('功能 ↔ 验收联动：过滤、去验收、高亮', () => {
+  assert.ok(source.includes("entry.featureRef === item.id"), '功能细节必须按 featureRef 过滤验收项')
+  assert.ok(source.includes("'这个功能的验收'"), '细节里必须有一段「这个功能的验收」')
+  assert.ok(source.includes('这个功能还没有验收条目'), '没有关联验收时要有一句兜底')
+  assert.ok(source.includes("'去验收'") && source.includes('onJumpToAcceptance'), '每条关联验收要有「去验收」')
+  assert.ok(source.includes("'data-acc-id': id") && source.includes('tabIndex: -1'), '验收行要有稳定锚点且可聚焦')
+  assert.ok(source.includes('function jumpToAcceptance(id)') && source.includes('classList.add(\'dc-acc-flash\')'), '跳转后要加高亮类')
+  assert.ok(source.includes('setTimeout(() => row.classList.remove(\'dc-acc-flash\'), 2000)'), '高亮 2 秒后移除')
+  assert.ok(css.includes('.dc-acc-flash') && css.includes('transition:background-color .15s ease-out'), '高亮只做背景过渡')
+})
+
+test('项目动态按时间分组：今天 / 本周 / 更早', () => {
+  assert.ok(source.includes('function timelineGroupOf(value)'), '必须有分组函数')
+  for (const label of ["'今天'", "'本周'", "'更早'"]) assert.ok(source.includes(label), `缺少分组：${label}`)
+  assert.ok(source.includes("role: 'group'") && source.includes("'aria-label': label"), '分组要有语义 aria-label')
+  assert.ok(source.includes('dc-timeline-group-title'), '分组标题必须渲染')
+  assert.ok(source.includes('dc-timeline-scroll') && css.includes('max-height:420px'), '时间线仍 420 滚动')
+  assert.ok(source.includes("event === 'acceptance-stale'") && source.includes('需要重新确认'), '审计徽章保留')
+})
+
+test('密度切换：紧凑/舒适 + localStorage', () => {
+  assert.ok(source.includes("const DENSITY_KEY = 'delivery-cockpit:density'"), '密度 localStorage key 必须逐字')
+  assert.ok(source.includes('function readDensity()') && source.includes('function saveDensity('), '密度要读写本地记忆')
+  assert.ok(source.includes('dc-compact') && source.includes("'aria-pressed': props.density === 'compact'"), '切换按钮要有 aria-pressed')
+  assert.ok(source.includes("props.density === 'compact' ? '紧凑' : '舒适'"), '按钮文案要紧凑/舒适')
+  assert.ok(css.includes('.dc-root.dc-compact') && css.includes('.dc-compact .dc-feature-row'), '紧凑态有独立样式')
+  assert.ok(css.includes('.dc-compact .dc-card') && css.includes('.dc-compact .dc-thumb'), '区间距与缩略图也要随密度变')
+})
+
+test('键盘：j/k、Enter、Esc、? + 输入框不劫持', () => {
+  assert.ok(source.includes('function usePanelKeyboard(rootRef)'), '必须有键盘导航 hook')
+  assert.ok(source.includes("node.addEventListener('keydown', onKeyDown)") && source.includes("node.removeEventListener('keydown', onKeyDown)"), '监听必须挂在根上且卸载时清理')
+  assert.ok(source.includes("element.tagName === 'INPUT'") && source.includes("element.tagName === 'TEXTAREA'") && source.includes("element.tagName === 'SELECT'") && source.includes('element.isContentEditable'), '输入框/可编辑区不劫持')
+  assert.ok(source.includes("event.key === 'j' || event.key === 'k'") && source.includes('% list.length'), 'j/k 必须在行间移动并回绕')
+  assert.ok(source.includes("event.key === 'Enter'") && source.includes("details.open = !details.open"), 'Enter 要能开合验收细节')
+  assert.ok(source.includes("event.key === 'Escape'") && source.includes("expandedFeature.click()"), 'Esc 要能收起当前展开行')
+  assert.ok(source.includes("event.key === '?'") && source.includes(".dc-shortcuts"), '? 要打开快捷键说明')
+  assert.ok(source.includes('aria-keyshortcuts'), '行上必须有 aria-keyshortcuts')
+  assert.ok(source.includes("'data-kb-row': 'true'"), '功能行与验收行必须参与 j/k')
+  assert.ok(source.includes("className: 'dc-shortcuts'") && source.includes("h('kbd', null, 'j')"), 'header 要有快捷键 details 列表')
+  assert.ok(css.includes('.dc-shortcuts-summary') && css.includes('.dc-shortcuts-body'), '快捷键说明有可展开样式')
+})
+

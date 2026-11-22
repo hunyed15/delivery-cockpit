@@ -650,11 +650,34 @@ export function panelFor(scenario) {
           kind: 'acceptance-draft',
           stageId: 'verification',
           stageName: '验效果',
-          title: '生成验收清单',
-          reason: '验收表还是空的，先让 Agent 起草第一版。',
-          instruction: '请用 `cockpit_acceptance` 起草人话验收清单：每条写清步骤与期望，放进 .dsh/plugin-state/acceptance.json。',
+          title: '起草验收清单',
+          reason: '验收清单还是空的，先让 AI 起草第一版。',
+          instruction: '请按 PRD 起草一份人话验收清单：每条写清操作步骤和期望结果，存进项目的验收清单文件。',
           buttons: ['copy'],
         },
+      }
+    }
+    case 'goal-empty-prd':
+      return panelFor('features-prd-missing')
+    case 'goal-empty-acc':
+      return panelFor('acceptance-empty')
+    case 'goal-empty-receipts': {
+      const base = makePanel()
+      return {
+        ...base,
+        ledger: { ...base.ledger, receipts: [], total: 0, lastAt: null, missing: true },
+      }
+    }
+    case 'goal-timeline': {
+      const base = makePanel()
+      const receipts = RECEIPTS.slice(0, 3).map((receipt, index) => ({
+        ...receipt,
+        id: `r-goal-${index}`,
+        at: [ago(30), ago(2 * 24 * 60), ago(20 * 24 * 60)][index],
+      }))
+      return {
+        ...base,
+        ledger: { ...base.ledger, receipts, total: receipts.length, lastAt: receipts[0].at },
       }
     }
     default:

@@ -111,6 +111,8 @@ ws.addEventListener('message', (event) => {
 await new Promise((resolve) => ws.addEventListener('open', resolve, { once: true }))
 
 await send('Page.enable')
+// headless 下窗口可能没有焦点，:focus 不生效；模拟焦点，键盘焦点环才截得到。
+await send('Emulation.setFocusEmulationEnabled', { enabled: true })
 await send('Emulation.setDeviceMetricsOverride', {
   width,
   height: requestedHeight,

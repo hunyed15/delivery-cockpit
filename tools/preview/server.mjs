@@ -116,6 +116,15 @@ const HARNESS = `(function () {
     }
   } catch (e) {}
 
+  // 密度场景：在渲染前写入本地记忆，根元素会带 dc-compact。
+  try {
+    if (scenario === 'goal-compact' || scenario === 'goal-360') {
+      localStorage.setItem('delivery-cockpit:density', 'compact')
+    } else {
+      localStorage.removeItem('delivery-cockpit:density')
+    }
+  } catch (e) {}
+
   var captured = null
   window.__ModuleLoader__ = { load: function (def) { captured = def } }
   var regs = []
@@ -301,6 +310,30 @@ const HARNESS = `(function () {
         ) {
           // visual-toast 用 A6（当前是 pass）截图，changed 才会真正让「通过」失效。
           if (openShotBoxAndSetUrl(scenario === 'visual-toast' ? 'A6' : 'A4')) return
+        }
+        // goal-feature-link：展开第一条功能，点一次「去验收」触发滚动 + 高亮。
+        if (scenario === 'goal-feature-link') {
+          var goalRow = document.querySelector('.dc-feature-row')
+          if (goalRow) goalRow.click()
+          setTimeout(function () {
+            var jump = null
+            var buttons = document.querySelectorAll('.dc-feature-detail .dc-btn')
+            for (var i = 0; i < buttons.length; i++) {
+              if ((buttons[i].textContent || '').indexOf('去验收') >= 0) { jump = buttons[i]; break }
+            }
+            if (jump) jump.click()
+            setTimeout(function () { document.title = 'ready:' + scenario }, 400)
+          }, 250)
+          return
+        }
+        // goal-keyboard：打开快捷键说明并聚焦第一条功能行，展示焦点环。
+        if (scenario === 'goal-keyboard') {
+          var shortcuts = document.querySelector('.dc-shortcuts')
+          if (shortcuts) shortcuts.open = true
+          var firstRow = document.querySelector('.dc-feature-row')
+          if (firstRow) firstRow.focus()
+          setTimeout(function () { document.title = 'ready:' + scenario }, 400)
+          return
         }
         // human-details：展开第一条功能与第一条验收的「细节」。
         if (scenario === 'human-details') {

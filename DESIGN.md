@@ -55,6 +55,21 @@ Operate 表面（DSH 内的交付驾驶舱面板）。视觉目标：**安静的
 - **右栏**：`需要你决定`（有才显示）→ `代码检查`（一句结论 + 最严重一条）→ `项目动态`（时间线，人话）→ `数据说明`（折叠）。
 - 技术信息不是删除，而是**降级到细节**：FR 编号、路径、file:line、像素比例、证据清单，展开可查、tooltip 可见。
 
+## 2.6 空态与首次使用（给人下一步，不给"暂无数据"）
+
+统一 `EmptyState`：标题（发生了什么）+ 一句原因 + **一个真的能用的动作** + 可选「细节」折叠（技术信息）。
+- PRD 缺失：「还没有 PRD，所以列不出功能」→「复制下一步指令」（滚动到 hero 并聚焦复制按钮，**不自动复制**）。
+- PRD 认不出结构：「PRD 里没有 `### FR-N` 结构」→ 同上 + 格式提示在细节里。
+- 验收空：「还没有验收条目」→ 当前是 `acceptance-draft` 时给「复制起草指令」，否则说清「验效果阶段会起草」。
+- 无动态：「项目还没有动态」+「AI 每完成一步会记一条，你不需要手写」。
+- 未初始化：「项目还没初始化」+「初始化此项目」（沿用 init 流程）。
+
+## 2.7 联动与定位（别让人手工找）
+
+- 功能展开「细节」里列该功能的验收条目（`featureRef` 匹配），每条带「去验收」：滚动到验收行、聚焦、2 秒背景高亮（`dc-acc-flash`，不影响布局）。
+- 验收行有稳定锚点（`data-acc-id`、`tabIndex=-1`），跳转后焦点落在该行，键盘可继续操作。
+- 项目动态按**今天 / 本周 / 更早**分组（本地日历日、周一为周首；空组不渲染），每组 `role="group"` + `aria-label`。
+
 ## 3. 文案：说人话
 
 非技术创始人读得懂是第一要求；专业词只在被告知的细节里出现。
@@ -138,9 +153,11 @@ Operate 表面（DSH 内的交付驾驶舱面板）。视觉目标：**安静的
 
 ## 9. 可访问性
 
-- 所有可点元素可 Tab 到；`:focus-visible` 2px brand 环 + offset 2px。
+- 所有可点元素可 Tab 到；`:focus-visible` 2px brand 环 + offset 2px；跳转/展开后焦点落到目标行。
+- 键盘：`j`/`k` 在功能行与验收行之间移动（回绕）、`Enter` 展开/收起、`Esc` 逐层收起后回顶部、`?` 打开快捷键说明；输入框/可编辑区域内不劫持；行标 `aria-keyshortcuts`；监听随组件卸载清理。
 - 正文对比度 ≥4.5:1；状态不只靠颜色；表格有表头、按钮有明确文案。
 - 代码块/路径用等宽字体但保持 13px；长路径可换行不溢出。
+- 密度切换（舒适/紧凑）用 `aria-pressed` 两态按钮，选择持久化；`localStorage` 不可用时降级为不记忆而不是报错。
 
 ## 10. 明确不做（anti-patterns）
 
@@ -152,7 +169,7 @@ Operate 表面（DSH 内的交付驾驶舱面板）。视觉目标：**安静的
 
 ## 11. 验证基线
 
-- 预览 harness（`tools/preview`）截图：`human-1200.png`（两栏）、`human-1000.png`（单栏）、`human-360.png`（堆叠）、`human-dark.png`（深色）、`human-details.png`（展开功能细节 + 验收细节）、`human-overview.png`。
+- 预览 harness（`tools/preview`）截图：`human-1200.png`（两栏）、`human-1000.png`（单栏）、`human-360.png`（堆叠）、`human-dark.png`（深色）、`human-details.png`（展开细节）、`human-overview.png`；可用性轮补充：`goal-empty-prd.png`、`goal-empty-acceptance.png`、`goal-empty-receipts.png`、`goal-feature-link.png`、`goal-timeline-groups.png`、`goal-compact.png`、`goal-keyboard.png`、`goal-360.png`、`goal-dark.png`。
 - 360 宽：`docScrollWidth = 360`、`offenders = []`；行自动堆叠。
 - 断点：容器 ≥1170 两栏、741–1169 单栏、≤740 主区 ≤700 堆叠；无混合态。
 - sticky：滚动后 header 0 / 摘要条贴 header / 右栏不遮挡。

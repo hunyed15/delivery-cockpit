@@ -19,6 +19,7 @@ window.__ModuleLoader__.load({
     const PANEL_ID = 'delivery-cockpit'
     const API = '/delivery-cockpit/api'
     const LAST_PROJECT_KEY = 'delivery-cockpit:last-project'
+    const DENSITY_KEY = 'delivery-cockpit:density'
     const POLL_MS = 8000
     const REQUEST_TIMEOUT_MS = 10000
 
@@ -301,6 +302,85 @@ window.__ModuleLoader__.load({
       } catch {
         // 隐私模式/配额满：记住失败不影响使用
       }
+    }
+
+    // ---------- 密度：紧凑 / 舒适（默认舒适），只影响样式 ----------
+
+    function readDensity() {
+      try {
+        return window.localStorage.getItem(DENSITY_KEY) === 'compact' ? 'compact' : 'cozy'
+      } catch {
+        return 'cozy'
+      }
+    }
+
+    function saveDensity(value) {
+      try {
+        window.localStorage.setItem(DENSITY_KEY, value === 'compact' ? 'compact' : 'cozy')
+      } catch {
+        // 记不住密度不影响使用
+      }
+    }
+
+    // 空态按钮：把用户带到 hero 的复制按钮，聚焦但不自动复制（避免误操作）。
+    function panelRoot() {
+      return typeof document === 'undefined' ? null : document.querySelector('.dc-root')
+    }
+    function focusHeroCopy() {
+      const root = panelRoot()
+      const button = root ? root.querySelector('#dc-hero-copy') : null
+      if (!button) return
+      try {
+        button.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      } catch {
+        button.scrollIntoView()
+      }
+      button.focus()
+    }
+
+    // 功能 → 验收：滚到对应验收行、聚焦并高亮 2 秒（只在面板自己的 DOM 里找）。
+    function jumpToAcceptance(id) {
+      const root = panelRoot()
+      if (!root) return
+      const rows = root.querySelectorAll('[data-acc-id]')
+      for (const row of rows) {
+        if (row.getAttribute('data-acc-id') !== String(id)) continue
+        try {
+          row.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        } catch {
+          row.scrollIntoView()
+        }
+        row.focus({ preventScroll: true })
+        row.classList.add('dc-acc-flash')
+        setTimeout(() => row.classList.remove('dc-acc-flash'), 2000)
+        return
+      }
+    }
+
+    // ---------- 项目动态：今天 / 本周 / 更早 ----------
+
+    const startOfLocalDay = (date) => {
+      const copy = new Date(date)
+      copy.setHours(0, 0, 0, 0)
+      return copy
+    }
+
+    const startOfLocalWeek = (date) => {
+      const day = startOfLocalDay(date)
+      const offset = (day.getDay() + 6) % 7 // 周一为一周起点
+      day.setDate(day.getDate() - offset)
+      return day
+    }
+
+    function timelineGroupOf(value) {
+      const date = new Date(value)
+      if (Number.isNaN(date.getTime())) return '更早'
+      const now = new Date()
+      const today = startOfLocalDay(now)
+      if (date.getTime() >= today.getTime()) return '今天'
+      const weekStart = startOfLocalWeek(now)
+      if (date.getTime() >= weekStart.getTime()) return '本周'
+      return '更早'
     }
 
     // ---------- 网络：只走自己的 Host 路由 ----------
@@ -629,6 +709,62 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:650; letter-
 .dc-acc-more { margin-top:2px; }
 .dc-acc-saved { margin-top:4px; font-size:11.5px; color:var(--dsw-alias-state-success-primary); }
 .dc-diff-block { display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
+
+/* ---------- 空态：一句原因 + 一个真能用的动作 ---------- */
+.dc-empty-state {
+  display:flex; flex-direction:column; align-items:flex-start; gap:8px;
+  padding:20px; border:1px dashed var(--dsw-alias-border-l2); border-radius:10px;
+  background:var(--dsw-alias-bg-base);
+}
+.dc-empty-state-inline { padding:14px; }
+.dc-empty-title { font-size:14px; font-weight:600; color:var(--dsw-alias-label-primary); }
+.dc-empty-reason { margin:0; font-size:12.5px; color:var(--dsw-alias-label-secondary); }
+
+/* ---------- 功能 ↔ 验收联动 ---------- */
+.dc-related-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.dc-related-item { display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; }
+.dc-related-title { font-size:12.5px; overflow-wrap:anywhere; }
+.dc-related-item .dc-btn { margin-left:auto; }
+.dc-acc-item:focus-visible, .dc-acc-item:focus { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:-2px; border-radius:4px; }
+.dc-acc-flash { background-color:var(--dsw-alias-bg-layer-2); transition:background-color .15s ease-out; }
+
+/* ---------- 密度切换 ---------- */
+.dc-root.dc-compact { font-size:13px; }
+.dc-compact .dc-card { padding-top:20px; padding-bottom:14px; }
+.dc-compact .dc-feature-row { min-height:40px; padding:6px 8px; }
+.dc-compact .dc-acc-item { padding:6px 0; }
+.dc-compact .dc-thumb { width:24px; height:24px; }
+.dc-compact .dc-diff-thumb { width:24px; height:24px; }
+.dc-compact .dc-more-body { gap:6px; }
+.dc-density { font-size:11.5px; }
+
+/* ---------- 键盘说明 ---------- */
+.dc-shortcuts { position:relative; font-size:11.5px; }
+.dc-shortcuts-summary { cursor:pointer; color:var(--dsw-alias-label-secondary); list-style:none; }
+.dc-shortcuts-summary::-webkit-details-marker { display:none; }
+.dc-shortcuts-summary:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; border-radius:3px; }
+.dc-shortcuts[open] .dc-shortcuts-summary { color:var(--dsw-alias-label-primary); }
+.dc-shortcuts-body {
+  position:absolute; right:0; top:22px; z-index:6; width:230px;
+  display:flex; flex-direction:column; gap:6px; padding:10px 12px;
+  border:1px solid var(--dsw-alias-border-l1); border-radius:8px;
+  background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-secondary);
+  font-size:11.5px; box-shadow:none;
+}
+.dc-shortcuts-body kbd {
+  display:inline-block; min-width:18px; padding:0 4px; border:1px solid var(--dsw-alias-border-l2);
+  border-radius:4px; background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary);
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:10.5px; text-align:center;
+}
+
+/* ---------- 动态分组 ---------- */
+.dc-timeline-scroll { max-height:420px; overflow-y:auto; scrollbar-width:thin; }
+.dc-timeline-group + .dc-timeline-group { margin-top:10px; }
+.dc-timeline-group-title {
+  font-size:11px; font-weight:600; color:var(--dsw-alias-label-secondary);
+  padding:2px 0 4px;
+}
+.dc-receipts-timeline { list-style:none; margin:0; padding:0; }
 .dc-table-wrap { max-width:100%; overflow-x:auto; scrollbar-width:thin; scrollbar-color:var(--dsw-alias-border-l2) transparent; }
 .dc-table-wrap::-webkit-scrollbar { height:8px; }
 .dc-table-wrap::-webkit-scrollbar-thumb { background:var(--dsw-alias-border-l2); border-radius:999px; border:2px solid transparent; background-clip:content-box; }
@@ -803,7 +939,7 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:650; letter-
 .dc-rail .dc-decision-options { margin-top:6px; }
 
 /* 动态时间线 */
-.dc-receipts-timeline { list-style:none; margin:0; padding:0; max-height:420px; overflow-y:auto; scrollbar-width:thin; }
+.dc-receipts-timeline { list-style:none; margin:0; padding:0; scrollbar-width:thin; }
 .dc-timeline-item { display:grid; grid-template-columns:64px minmax(0,1fr); gap:10px; padding:8px 0; border-bottom:1px solid var(--dsw-alias-border-l1); }
 .dc-timeline-item:last-child { border-bottom:0; }
 .dc-timeline-when { font-size:11px; color:var(--dsw-alias-label-secondary); font-variant-numeric:tabular-nums; padding-top:1px; }
@@ -993,6 +1129,29 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         { className: 'dc-section-head' },
         h('h2', { className: 'dc-section-title' }, props.title),
         props.meta ? h('span', { className: 'dc-section-meta' }, props.meta) : null,
+      )
+    }
+
+    // 空态统一形状：一句为什么 + 一个真能用的动作（默认带用户去 hero 复制）。
+    function EmptyState(props) {
+      return h(
+        'div',
+        { className: props.inline ? 'dc-empty-state dc-empty-state-inline' : 'dc-empty-state' },
+        h('div', { className: 'dc-empty-title' }, props.title),
+        props.reason ? h('p', { className: 'dc-empty-reason' }, props.reason) : null,
+        props.children || null,
+        props.actionLabel
+          ? h(
+              'button',
+              {
+                type: 'button',
+                className: props.primary ? 'dc-btn dc-btn-sm dc-btn-primary' : 'dc-btn dc-btn-sm',
+                disabled: props.disabled === true,
+                onClick: props.onAction || focusHeroCopy,
+              },
+              props.actionLabel,
+            )
+          : null,
       )
     }
 
@@ -1209,6 +1368,85 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       }
     }
 
+    // 面板键盘导航：j/k 在行间移动，Enter 展开，Esc 收起/回顶部，? 打开快捷键说明。
+    // 输入控件内不劫持；监听挂在面板根上，组件卸载时移除。
+    function usePanelKeyboard(rootRef) {
+      React.useEffect(() => {
+        const node = rootRef.current
+        if (!node) return undefined
+        const isEditable = (element) =>
+          Boolean(
+            element &&
+              (element.tagName === 'INPUT' ||
+                element.tagName === 'TEXTAREA' ||
+                element.tagName === 'SELECT' ||
+                element.isContentEditable),
+          )
+        const rows = () => Array.from(node.querySelectorAll('[data-kb-row]'))
+        const onKeyDown = (event) => {
+          if (isEditable(event.target)) return
+          if (event.key === 'j' || event.key === 'k') {
+            const list = rows()
+            if (list.length === 0) return
+            event.preventDefault()
+            const index = list.indexOf(document.activeElement)
+            const step = event.key === 'j' ? 1 : -1
+            const next = index < 0 ? (step === 1 ? 0 : list.length - 1) : (index + step + list.length) % list.length
+            list[next].focus()
+            return
+          }
+          if (event.key === 'Enter') {
+            const row = event.target.closest ? event.target.closest('[data-kb-row]') : null
+            if (!row) return
+            // 功能行是原生 button，回车由浏览器处理；验收行是 div[tabindex]，这里手动开合细节。
+            if (row.classList.contains('dc-acc-item')) {
+              const details = row.querySelector('.dc-acc-more')
+              if (details) {
+                event.preventDefault()
+                details.open = !details.open
+              }
+            }
+            return
+          }
+          if (event.key === 'Escape') {
+            const expandedFeature = node.querySelector('.dc-feature-row[aria-expanded="true"]')
+            if (expandedFeature) {
+              event.preventDefault()
+              expandedFeature.click()
+              return
+            }
+            const openDetail = node.querySelector('.dc-acc-more[open]')
+            if (openDetail) {
+              event.preventDefault()
+              openDetail.open = false
+              return
+            }
+            // 回顶：用 scrollIntoView 让最近的滚动容器把面板顶部带进视口（dc-root 自己不是滚动容器）。
+            const scrolled = (typeof window !== 'undefined' && window.scrollY > 0) || node.getBoundingClientRect().top < -1
+            if (!scrolled) return
+            event.preventDefault()
+            try {
+              node.scrollIntoView({ block: 'start', behavior: 'smooth' })
+            } catch {
+              node.scrollIntoView({ block: 'start' })
+            }
+            return
+          }
+          if (event.key === '?') {
+            const shortcuts = node.querySelector('.dc-shortcuts')
+            if (shortcuts) {
+              event.preventDefault()
+              shortcuts.open = true
+              const summary = shortcuts.querySelector('summary')
+              if (summary && typeof summary.focus === 'function') summary.focus()
+            }
+          }
+        }
+        node.addEventListener('keydown', onKeyDown)
+        return () => node.removeEventListener('keydown', onKeyDown)
+      }, [rootRef])
+    }
+
     // ---------- 总览 ----------
 
     function WorkspaceCard(props) {
@@ -1271,6 +1509,17 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           h('span', { className: 'dc-sub' }, '看看每个项目走到哪了'),
           h('span', { className: 'dc-spacer' }),
           h('span', { className: 'dc-section-meta' }, `共 ${projects.length} 个项目`),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dc-btn dc-btn-ghost dc-density',
+              'aria-pressed': props.density === 'compact' ? 'true' : 'false',
+              title: '在紧凑和舒适之间切换',
+              onClick: props.onToggleDensity,
+            },
+            props.density === 'compact' ? '紧凑' : '舒适',
+          ),
           overviewAt ? h('span', { className: 'dc-sub dc-time' }, `更新于 ${formatTime(overviewAt)}`) : null,
           h(
             'button',
@@ -1356,7 +1605,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
 
       return h(
         'div',
-        { className: 'dc-root' },
+        { className: `dc-root${props.density === 'compact' ? ' dc-compact' : ''}` },
         header,
         h('main', { className: 'dc-body' }, content),
       )
@@ -1405,17 +1654,16 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         return h(
           'div',
           { className: 'dc-action-row' },
-          h(
-            'button',
-            {
-              type: 'button',
-              className: primaryClass,
-              onClick: loadPlan,
-              disabled: props.disabled,
-            },
-            '初始化此项目',
-          ),
-          h('span', { className: 'dc-hint' }, '先预览会写哪些文件，确认后才落盘。'),
+          h(EmptyState, {
+            inline: true,
+            primary: props.primary !== false,
+            disabled: props.disabled === true,
+            title: '项目还没初始化',
+            reason: '先把项目规则和记录建好，再开始下一步。',
+            actionLabel: '初始化此项目',
+            onAction: loadPlan,
+          }),
+          h('span', { className: 'dc-hint' }, '先预览会写哪些文件，确认后才会写。'),
         )
       }
 
@@ -1695,6 +1943,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                 {
                   type: 'button',
                   className: 'dc-btn dc-btn-primary',
+                  id: 'dc-hero-copy',
                   onClick: copyInstruction,
                   disabled: disabled,
                   title: disabled ? disabledReason : '复制给 AI',
@@ -1898,7 +2147,11 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const when = item.lastAt ? formatRelative(item.lastAt) : ''
       const summary = String(item.lastSummary || '').trim()
       const recent = [when, summary].filter(Boolean).join(' · ') || '暂时没有动态'
-      const expandable = issues.length > 0 || paths.length > 0 || receipts > 0 || inferred > 0
+      const relatedAcceptance = asArray(props.acceptanceItems).filter(
+        (entry) => entry && entry.featureRef === item.id,
+      )
+      const expandable =
+        issues.length > 0 || paths.length > 0 || receipts > 0 || inferred > 0 || relatedAcceptance.length > 0
       const expanded = props.expanded === true
       const accepted = Number(acceptance.total) || 0
       const passed = Number(acceptance.passed) || 0
@@ -1925,9 +2178,16 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                 type: 'button',
                 className: 'dc-feature-row',
                 'aria-expanded': expanded ? 'true' : 'false',
+                'aria-keyshortcuts': 'j k Enter Escape',
+                'data-kb-row': 'true',
                 onClick: props.onToggle,
               }
-            : { className: 'dc-feature-row' },
+            : {
+                className: 'dc-feature-row',
+                tabIndex: 0,
+                'aria-keyshortcuts': 'j k',
+                'data-kb-row': 'true',
+              },
           h(
             'span',
             { className: 'dc-feature-main' },
@@ -2001,6 +2261,34 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                     ),
                   )
                 : null,
+              h(
+                'div',
+                { className: 'dc-detail-block' },
+                h('div', { className: 'dc-detail-label' }, '这个功能的验收'),
+                relatedAcceptance.length > 0
+                  ? h(
+                      'ul',
+                      { className: 'dc-related-list' },
+                      relatedAcceptance.map((entry) =>
+                        h(
+                          'li',
+                          { key: entry.id, className: 'dc-related-item' },
+                          h('span', { className: 'dc-related-title' }, entry.title || '（没有标题）'),
+                          h(AcceptanceResultChip, { result: entry.result }),
+                          h(
+                            'button',
+                            {
+                              type: 'button',
+                              className: 'dc-btn dc-btn-sm',
+                              onClick: () => props.onJumpToAcceptance && props.onJumpToAcceptance(entry.id),
+                            },
+                            '去验收',
+                          ),
+                        ),
+                      ),
+                    )
+                  : h('span', { className: 'dc-detail-hint' }, '这个功能还没有验收条目。'),
+              ),
             )
           : null,
       )
@@ -2512,7 +2800,15 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         const result = resultLabel(item)
         return h(
           'li',
-          { key: id, className: 'dc-acc-item', 'data-acceptance-id': id },
+          {
+            key: id,
+            className: 'dc-acc-item',
+            'data-acc-id': id,
+            'data-acceptance-id': id,
+            'data-kb-row': 'true',
+            'aria-keyshortcuts': 'j k Enter Escape',
+            tabIndex: -1,
+          },
           h(
             'div',
             { className: 'dc-acc-row' },
@@ -2583,14 +2879,14 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
 
       let content = null
       if (items.length === 0) {
-        content = h(
-          'div',
-          { className: 'dc-empty-box' },
-          h('div', { className: 'dc-banner-title' }, '还没有验收清单：让 AI 起草一份'),
-          props.actionKind === 'acceptance-draft'
-            ? h('p', { className: 'dc-empty-line' }, '下一步就是生成验收清单，生成后回到这里逐条看结果。')
-            : null,
-        )
+        const drafting = props.actionKind === 'acceptance-draft'
+        content = h(EmptyState, {
+          title: '还没有验收条目',
+          reason: drafting
+            ? '下一步就是按 PRD 起草第一版，生成后回来逐条看结果。'
+            : '「验效果」阶段会按 PRD 起草。',
+          actionLabel: drafting ? '复制起草指令' : null,
+        })
       } else {
         content = h(
           React.Fragment,
@@ -2621,6 +2917,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
     function FeatureBoardSection(props) {
       const features = props.features || {}
       const items = asArray(features.items)
+      const acceptanceItems = asArray((props.acceptance || {}).items)
       const source = features.source || 'prd'
       const strategy = features.strategy || 'none'
       const formatHint = String(features.formatHint || '')
@@ -2632,11 +2929,13 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           'details',
           { className: 'dc-more' },
           h('summary', null, '细节'),
-          h('div', { className: 'dc-more-body' },
+          h(
+            'div',
+            { className: 'dc-more-body' },
             extra,
             formatHint ? h('pre', { className: 'dc-code-block' }, formatHint) : null,
             source !== 'prd-missing'
-              ? h('p', { className: 'dc-hint' }, '面板不解析自由文本，只认「## 功能需求」下的「### FR-N 标题」。')
+              ? h('p', { className: 'dc-hint' }, '面板只认「## 功能需求」下的「### FR-N 标题」写法。')
               : null,
           ),
         )
@@ -2644,28 +2943,29 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       let board = null
       if (source === 'prd-missing') {
         board = h(
-          'div',
-          { className: 'dc-empty-box' },
-          h('div', { className: 'dc-banner-title' }, '还没有 PRD——「想清楚」阶段会产出它'),
-          h('p', { className: 'dc-empty-line' }, '有了它，这里会按功能列出每一步做到哪了。'),
-          technical(h('p', { className: 'dc-hint' }, '把文件放到项目根目录的 prd.md 或 docs/prd.md。')),
+          EmptyState,
+          {
+            title: '还没有 PRD，所以列不出功能',
+            reason: '「想清楚」阶段会产出它，先看上面的下一步。',
+            actionLabel: '复制下一步指令',
+          },
+          technical(h('p', { className: 'dc-hint' }, '以后把文件放到项目根目录的 prd.md 或 docs/prd.md 就行。')),
         )
       } else if (strategy === 'none') {
         board = h(
-          'div',
-          { className: 'dc-empty-box' },
-          h('div', { className: 'dc-banner-title' }, '认不出功能清单'),
-          h('p', { className: 'dc-empty-line' }, 'PRD 里有内容，但没有找到面板认识的写法。'),
+          EmptyState,
+          {
+            title: 'PRD 里没有「### FR-N」结构',
+            reason: '面板不解析自由文本，只认这种写法。',
+            actionLabel: '复制下一步指令',
+          },
           technical(null),
         )
       } else if (items.length === 0) {
-        board = h(
-          'div',
-          { className: 'dc-empty-box' },
-          h('div', { className: 'dc-banner-title' }, 'PRD 里还没有功能条目'),
-          h('p', { className: 'dc-empty-line' }, '功能需求那一节还是空的，补上后刷新即可。'),
-          technical(null),
-        )
+        board = h(EmptyState, {
+          title: 'PRD 里还没有功能条目',
+          reason: '功能需求那一节还是空的，补上后刷新即可。',
+        }, technical(null))
       } else {
         board = h(
           'ul',
@@ -2675,6 +2975,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
             return h(FeatureRow, {
               key,
               item,
+              acceptanceItems,
+              onJumpToAcceptance: props.onJumpToAcceptance,
               expanded: expanded[key] === true,
               onToggle: () => toggle(key),
             })
@@ -2682,12 +2984,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         )
       }
 
-      return h(
-        'section',
-        { className: 'dc-card' },
-        h(SectionHead, { title: '功能' }),
-        board,
-      )
+      return h('section', { className: 'dc-card' }, h(SectionHead, { title: '功能' }), board)
     }
 
     function DefectsSection(props) {
@@ -2847,38 +3144,60 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           h('span', { className: 'dc-rail-meta' }, lastAt ? `上次 ${formatRelative(lastAt)}` : '还没有动态'),
         ),
         receipts.length === 0
-          ? h('p', { className: 'dc-rail-note' }, '做过的每一步会出现在这里。')
+          ? h(EmptyState, {
+              inline: true,
+              title: '项目还没有动态',
+              reason: 'AI 每完成一步会记一条，你不需要手写。',
+            })
           : h(
-              'ol',
-              { className: 'dc-receipts-timeline' },
-              receipts.map((receipt, index) => {
-                const event = receipt && receipt.event
-                const auditText =
-                  event === 'acceptance-recheck'
-                    ? '重新确认'
-                    : event === 'acceptance-stale'
-                      ? '需要重新确认'
-                      : null
+              'div',
+              { className: 'dc-timeline-scroll' },
+              ['今天', '本周', '更早'].map((label) => {
+                const group = receipts.filter((receipt) => timelineGroupOf(receipt && receipt.at) === label)
+                if (group.length === 0) return null
                 return h(
-                  'li',
-                  { key: (receipt && receipt.id) || `receipt${index}`, className: 'dc-timeline-item' },
+                  'section',
+                  {
+                    key: label,
+                    className: 'dc-timeline-group',
+                    role: 'group',
+                    'aria-label': label,
+                  },
+                  h('div', { className: 'dc-timeline-group-title' }, label),
                   h(
-                    'span',
-                    { className: 'dc-timeline-when', title: receipt && receipt.at ? new Date(receipt.at).toLocaleString() : '' },
-                    receipt && receipt.at ? formatRelative(receipt.at) : '—',
+                    'ol',
+                    { className: 'dc-receipts-timeline' },
+                    group.map((receipt, index) => {
+                      const event = receipt && receipt.event
+                      const auditText =
+                        event === 'acceptance-recheck'
+                          ? '重新确认'
+                          : event === 'acceptance-stale'
+                            ? '需要重新确认'
+                            : null
+                      return h(
+                        'li',
+                        { key: (receipt && receipt.id) || `receipt${index}`, className: 'dc-timeline-item' },
+                        h(
+                          'span',
+                          { className: 'dc-timeline-when', title: receipt && receipt.at ? new Date(receipt.at).toLocaleString() : '' },
+                          receipt && receipt.at ? formatRelative(receipt.at) : '—',
+                        ),
+                        h(
+                          'span',
+                          { className: 'dc-timeline-text', title: (receipt && receipt.summary) || '' },
+                          h(
+                            'span',
+                            { className: 'dc-timeline-stage' },
+                            (receipt && (receipt.stageName || STAGE_TEXT[receipt.stage])) || '这一步',
+                          ),
+                          '：',
+                          (receipt && receipt.summary) || '（没有摘要）',
+                        ),
+                        auditText ? h(Chip, { tone: 'idle' }, auditText) : null,
+                      )
+                    }),
                   ),
-                  h(
-                    'span',
-                    { className: 'dc-timeline-text', title: (receipt && receipt.summary) || '' },
-                    h(
-                      'span',
-                      { className: 'dc-timeline-stage' },
-                      (receipt && (receipt.stageName || STAGE_TEXT[receipt.stage])) || '这一步',
-                    ),
-                    '：',
-                    (receipt && receipt.summary) || '（没有摘要）',
-                  ),
-                  auditText ? h(Chip, { tone: 'idle' }, auditText) : null,
                 )
               }),
             ),
@@ -2951,6 +3270,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const degradedReasons = asArray(panel.degraded && panel.degraded.reasons)
       const badLines = Number(ledger.badLines) || 0
       const [initResult, setInitResult] = React.useState(null)
+      const rootRef = React.useRef(null)
+      usePanelKeyboard(rootRef)
 
       const lastAt = ledger.lastAt || (asArray(ledger.receipts)[0] && asArray(ledger.receipts)[0].at) || null
       const engineText = degraded || props.panelError ? '服务待确认' : '服务正常'
@@ -3000,6 +3321,30 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           ),
           h(Chip, { tone: 'idle' }, (panel.iteration && panel.iteration.current) || '还没开始'),
           h('span', { className: 'dc-spacer' }),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dc-btn dc-btn-ghost dc-density',
+              'aria-pressed': props.density === 'compact' ? 'true' : 'false',
+              title: '在紧凑和舒适之间切换',
+              onClick: props.onToggleDensity,
+            },
+            props.density === 'compact' ? '紧凑' : '舒适',
+          ),
+          h(
+            'details',
+            { className: 'dc-shortcuts' },
+            h('summary', { className: 'dc-shortcuts-summary', title: '键盘快捷键（按 ? 打开）' }, '快捷键'),
+            h(
+              'div',
+              { className: 'dc-shortcuts-body' },
+              h('div', null, h('kbd', null, 'j'), ' / ', h('kbd', null, 'k'), ' 在功能/验收行之间移动'),
+              h('div', null, h('kbd', null, 'Enter'), ' 展开或收起点开的那一行'),
+              h('div', null, h('kbd', null, 'Esc'), ' 收起，再按一次回到顶部'),
+              h('div', null, h('kbd', null, '?'), ' 打开这份说明'),
+            ),
+          ),
           h(
             'span',
             { className: 'dc-service', title: degraded || props.panelError ? '有些数据没读到' : '一切正常' },
@@ -3061,7 +3406,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
 
       return h(
         'div',
-        { className: 'dc-root' },
+        { className: `dc-root${props.density === 'compact' ? ' dc-compact' : ''}`, ref: rootRef },
         header,
         h(
           'main',
@@ -3134,6 +3479,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
               }),
               h(FeatureBoardSection, {
                 features: panel.features,
+                acceptance: panel.acceptance,
+                onJumpToAcceptance: jumpToAcceptance,
               }),
               h(AcceptancePanel, {
                 acceptance: panel.acceptance,
@@ -3160,6 +3507,14 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
 
     function Page() {
       const cockpit = useCockpit()
+      const [density, setDensity] = React.useState(readDensity)
+      const toggleDensity = React.useCallback(() => {
+        setDensity((previous) => {
+          const next = previous === 'compact' ? 'cozy' : 'compact'
+          saveDensity(next)
+          return next
+        })
+      }, [])
       React.useEffect(() => {
         ensureStyles()
       }, [])
@@ -3185,6 +3540,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           goodAt: cockpit.goodAt,
           refresh: cockpit.refresh,
           backToOverview: cockpit.backToOverview,
+          density,
+          onToggleDensity: toggleDensity,
         })
       }
 
@@ -3195,6 +3552,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         overviewError: cockpit.overviewError,
         openProject: cockpit.openProject,
         refresh: cockpit.refresh,
+        density,
+        onToggleDensity: toggleDensity,
       })
     }
 
@@ -3253,6 +3612,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
     }
   },
 })
+
+
 
 
 
