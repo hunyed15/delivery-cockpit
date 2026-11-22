@@ -285,8 +285,9 @@
 
 **落地状态（2026-11-22）**：
 
-- `skills/verify-claims`、`skills/tdd-loop` 已加入本仓库（随包发布），并已安装到 DSH 全局 `D:\Users\Admin\.dsh\skills`；
-- 旧插件 `scripts/reviewer-role.md` 已注入五轴评审基线（mattpocock code-review rubric），reviewer-role 测试已加；
+- **本仓库**：`skills/verify-claims`、`skills/tdd-loop` 已加入本仓库（随包发布），`test/skills.test.js` 校验 frontmatter 与关键规则；两个 skill 已安装到本机 DSH 全局技能目录。
+- **外部仓库**（不属于本仓库、range 评审不可见）：`claude-code-review` 仓库的 `scripts/reviewer-role.md` 已注入五轴评审基线（mattpocock code-review rubric），对应测试在该仓库 `test/reviewer-role.test.mjs`；本仓库不含该文件与测试。
+- 本轮 range 评审生成的 `role-1.md` 已包含「五轴评审基线」章节（可在评审产物中复核）。
 - 下一步：把两者声明进 playbook（S5 Method=tdd-loop、S6/S8 Method=verify-claims、S7 rubric），并让 `cockpit_report` 校验 `used_skill_or_mcp`。
 ### 无 superpowers 的九阶段角色表（canonical）
 
