@@ -49,17 +49,17 @@
 
 | 原 8 阶段 | 新 9 阶段 |
 |---|---|
-| 初始化 + 搭骨架 | **环境准备** |
+| 初始化 + 搭骨架 | **项目立项** |
 | 想清楚 | **需求定义** |
 | （新增） | **架构契约** |
-| 看原型 | **原型规格** |
-| 写代码 | **编码实现** |
+| 看原型 | **原型设计** |
+| 写代码 | **代码开发** |
 | （拆分自原「验效果」） | **测试验证** |
 | 挑毛病 | **代码复核** |
 | 验效果 | **验收确认** |
-| 发出去 | **发布观测** |
+| 发出去 | **部署发布** |
 
-### S1 环境准备（bootstrap）
+### S1 项目立项（bootstrap）
 
 - Objective：建立项目状态目录与规则基线。
 - Deliverables：`RULES.md`、`project.json`（project card）、`acceptance.json`（空表）、`playbook.json`（可覆盖）。
@@ -85,7 +85,7 @@
 - Decision Gate：**Architecture Sign-off**（甲方确认技术选型与接口契约）。
 - DoD：契约冻结后，后续实现不得偏离（偏离需新增 ADR 并重新签核）。
 
-### S4 原型规格（prototype）
+### S4 原型设计（prototype）
 
 - Objective：用静态原型确认交互契约。
 - Deliverables：`prototype.html`（或 `docs/prototype.html`），含假数据。
@@ -93,7 +93,7 @@
 - Decision Gate：**Prototype Approval**（甲方点击"通过原型"，已实现）。
 - DoD：甲方批准记录写入 `approvals.json`。
 
-### S5 编码实现（implementation）
+### S5 代码开发（implementation）
 
 - Objective：按任务拆分实现，前后端可并行。
 - Deliverables：任务清单（`.trellis/tasks/*` 或 `.dsh/plugin-state/tasks.json`，含 `id/title/status/acceptance`）；代码；每条任务一条 receipt（`write_scope`）。
@@ -126,7 +126,7 @@
 - Decision Gate：**Acceptance Sign-off**（甲方点击通过/失败/阻塞，已实现）。
 - DoD：全部 pass 且无 stale。
 
-### S9 发布观测（release）
+### S9 部署发布（release）
 
 - Objective：发布并观测线上质量。
 - Deliverables：`.dsh/plugin-state/release.json`，schema：`{version, artifacts:[{path, sha256}], url, environment, rollback, changelog, at}`；发布 receipt。
