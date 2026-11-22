@@ -127,6 +127,37 @@
      → S7 代码复核：审核账本（blocking=0）
      → S8 验收确认：acceptance.json + 截图/差异（甲方逐条签核）
      → S9 部署发布：release.json（版本 / 产物 / 回滚 / 变更记录；甲方批准）
+## 2.6 必要性绑定（Capability Binding）
+
+原则：**一个 skill/MCP 只要出现在某个阶段，就必须满足三条，否则不许列**：
+
+1. 它的产出是门禁必需的（交付物依赖它）；
+2. 它能被证据证明"真的用过"（回执 `used_skill_or_mcp` 或工具/账本产物）；
+3. 缺失时要么**阻塞**（给安装指引），要么有**等价替代**（替代也必须产出同样的门禁证据）。
+
+### 九阶段绑定表（required = 缺了过不去；substitute = 等价替代；supporting = 不影响门禁，不强制）
+
+| 阶段 | required（必要时） | substitute | 证据（门禁怎么验） | 交付物 |
+|---|---|---|---|---|
+| 项目立项 | skill `grilling`（或 `grill-me` 触发） | `trellis-start` | 回执 `used_skill_or_mcp` ∈ {grilling, grill-me, trellis-start} | `docs/brief.md` + 初始化产物 |
+| 需求定义 | skill `grilling` / `trellis-brainstorm` | 内置 PRD 模板（agent 原生） | 回执匹配 + PRD 结构 | `docs/prd.md` |
+| 架构契约 | **无必要 skill**（不摆装饰）；MCP `context7` 为 supporting | `web_search` | 契约文件 + 甲方签核（不强制 skill） | `docs/architecture.md` + `docs/api.md` |
+| 原型设计 | skill ∈ {`ui-ux-pro-max`, `frontend-design`, `anthropic-frontend-design`, `impeccable`}（任一） | `unslop` | 回执匹配 + 原型文件 + 甲方批准 | `prototype.html` |
+| 代码开发 | skill `test-driven-development`（代码类项目） | 手工测试 + 测试报告（注释说明） | 回执匹配 + 任务完成 | 代码 + 任务 + 回执 |
+| 测试验证 | skill `verification-before-completion` | `trellis-check` | 回执匹配 + `test-report.json` | `test-report.json` |
+| 代码复核 | tool `claude_review`（硬依赖） | 无（缺失即阻塞） | 审核账本 blocking=0 | 审核账本 |
+| 验收确认 | skill `verification-before-completion` | — | 回执匹配 + 验收证据 | `acceptance.json` + 截图 |
+| 部署发布 | skill `finishing-a-development-branch` | `trellis-finish-work` | 回执匹配 + `release.json` | `release.json` |
+
+> 说明：架构契约阶段故意**不强制任何 skill**——它的门禁是"契约文件 + 甲方签核"；把 `ponytail` 写成 supporting（防过度设计），不列入必需，避免"为了用 skill 而用 skill"。
+
+### 执行机制（P0 实现）
+
+1. **playbook 声明**：每阶段 `capabilities[] = [{kind, name, necessity: required|substitute|supporting}]` + `deliverables[]` + `technicalGate` + `decisionGate`。
+2. **写入时校验**：`cockpit_report` 在该阶段要求 `used_skill_or_mcp` 非空且命中 required/substitute 白名单，否则拒绝回执并提示"本阶段必须使用 X"。
+3. **门禁校验**：技术门扫描本迭代该阶段的回执，要求 ≥1 条匹配的能力证据 + 交付物存在；缺一即阻塞下一阶段。
+4. **指令注入**：下一步指令必须写成"使用 X（skill/MCP）→ 产出 Y → 写回执（used_skill_or_mcp=X）"，不列无关能力。
+5. **能力缺失**：required 缺失 → 阶段 blocked + 安装指引；有 substitute → 允许用替代，回执记录替代名，门禁按替代白名单校验。
 ## 3. 当前 profile 探测结果（2026-11-22）
 
 ### 4.1 Skill 分布（实扫，2026-11-22）
