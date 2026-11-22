@@ -158,6 +158,60 @@
 3. **门禁校验**：技术门扫描本迭代该阶段的回执，要求 ≥1 条匹配的能力证据 + 交付物存在；缺一即阻塞下一阶段。
 4. **指令注入**：下一步指令必须写成"使用 X（skill/MCP）→ 产出 Y → 写回执（used_skill_or_mcp=X）"，不列无关能力。
 5. **能力缺失**：required 缺失 → 阶段 blocked + 安装指引；有 substitute → 允许用替代，回执记录替代名，门禁按替代白名单校验。
+## 2.7 社区最优解与 Trellis 评估（2026-11-22 调研）
+
+> 目标：9 个阶段各自用社区里"最优解"的 skill/MCP；并判断 Trellis 能否贯穿全周期。
+
+### 社区主要方案
+
+| 方案 | 定位 | 强项 |
+|---|---|---|
+| [obra/superpowers](https://github.com/obra/superpowers)（Jesse Vincent，14 个组合式 skill） | 编码 Agent 的完整开发方法论 | brainstorming、writing-plans、TDD、systematic-debugging、subagent 编排、worktrees、code review、verification、branch 收尾 |
+| [anthropics/skills](https://github.com/anthropics/skills)（官方，约 6.4 万 star） | 官方技能库 | frontend-design、**webapp-testing（Playwright 测试决策树）**、skill-creator、mcp-builder、docx/pdf |
+| [mattpocock/skills](https://github.com/mattpocock/skills)（Matt Pocock） | "grill → to-spec → to-tickets → implement → code-review → merge"端到端 | **grilling（设计树追问）**、spec、垂直 ticket、独立 code-review |
+| [BMAD-METHOD](https://github.com/bmad-code-org/BMAD-METHOD)（19+ 角色 Agent） | "no code until human-vetted plan" | Analyst/PM/Architect/Dev/QA 角色；PRD、Architecture Doc、UX spec；人类签核门 |
+| [GitHub Spec Kit](https://github.com/github/spec-kit) | 官方 spec-driven development | /speckit.specify → plan → tasks → implement |
+| [Agent OS](https://github.com/buildermethods/agent-os) | 标准/规范注入 | 项目 standards 转成可注入上下文 |
+| [Trellis](https://github.com/mindfold-ai/Trellis)（@mindfoldhq/trellis） | 工程化工作流底座 | spec 自动注入、任务目录（PRD/design/implement）、项目记忆 journal、质量门、多代理 channel、CLI（本机已装 `trellis.ps1`） |
+
+### 九阶段社区最优解
+
+| 阶段 | 最优解 | 备选 | 理由 |
+|---|---|---|---|
+| 项目立项 | **grilling**（mattpocock）+ Trellis `start` | superpowers brainstorming | grilling 用设计树逐轮追问、给推荐答案，产出可签核的 brief；Trellis 负责状态/路由 |
+| 需求定义 | **Trellis brainstorm**（PRD）+ grilling 收敛 | Spec Kit `/speckit.specify`、BMAD PM | Trellis 把 PRD 落到 `.trellis/tasks/*/prd.md`；Spec Kit 适合纯 spec-first |
+| 架构契约 | **BMAD Architect**（Architecture Doc）或 Spec Kit `/speckit.plan` | Trellis `design.md`、mattpocock domain modelling | 需要"组件/数据模型/接口契约/ADR"；Trellis design.md 只覆盖设计决策，不强制 API 契约 |
+| 原型设计 | **anthropic `frontend-design` + `ui-ux-pro-max`/`impeccable`** | `unslop`、`anthropic-frontend-design` | 社区 UI 质量最强组合；Trellis 无 UI 能力 |
+| 代码开发 | **superpowers writing-plans/executing-plans + TDD + subagent-driven-development** + Trellis `before-dev` | mattpocock `to-tickets` + `implement`、BMAD Dev | 计划→按 ticket 实现→子代理并行；Trellis 注入项目规范 |
+| 测试验证 | **anthropic `webapp-testing`（Playwright）+ superpowers verification-before-completion** + Trellis `check` | BMAD QA | webapp-testing 给"测试决策树 + 截图/console 证据"；Trellis check 做 lint/type/test/跨层 |
+| 代码复核 | **claude_review（独立 Claude Code 进程）+ mattpocock `code-review`** | superpowers requesting/receiving-code-review | 必须有独立第二视角；Trellis check 是质量门，不是独立 diff 评审 |
+| 验收确认 | **本驾驶舱（人工验收 + 截图/diff）** + `webapp-testing` 产证据 | verification-before-completion | 社区没有"甲方逐条验收 + 视觉回归 + 失效重验"的标准方案，本插件是差异化 |
+| 部署发布 | **superpowers `finishing-a-development-branch` + Trellis `finish-work`** + 部署 MCP/CI | 平台 MCP（Vercel/Cloudflare/GitHub Actions） | 社区没有通用部署 skill；收尾/归档有标准，部署靠平台 |
+
+### Trellis 能力评估（能否贯穿全周期）
+
+| 阶段 | Trellis 覆盖 | 说明 |
+|---|---|---|
+| 项目立项 | ✅ 覆盖 | `trellis-start` 读取身份/git/任务/规范并路由 |
+| 需求定义 | ✅ 覆盖 | `trellis-brainstorm` → `prd.md` |
+| 架构契约 | ◐ 部分 | `design.md` 记录设计；不强制 API 契约/ADR 结构 |
+| 原型设计 | ❌ 不覆盖 | 无 UI/UX/原型能力 |
+| 代码开发 | ✅ 覆盖 | `before-dev` 注入 spec + 任务工作流 + channel 多代理 |
+| 测试验证 | ◐ 部分 | `trellis-check` 做 lint/type/test/跨层质量门；不产标准测试报告 |
+| 代码复核 | ◐ 部分 | check 子代理评审，但非独立进程/独立模型 |
+| 验收确认 | ❌ 不覆盖 | 无人工验收表、截图对比、失效重验 |
+| 部署发布 | ◐ 部分 | `finish-work` 收尾/归档/记忆；不产部署清单与发布门禁 |
+
+**结论**：Trellis 是"过程与质量"的成熟底座，覆盖约 **5/9**（S1/S2/S5 完整，S3/S6/S7/S9 部分），但**不覆盖原型设计、验收确认、部署发布，也没有独立评审引擎**。它不能单独满足 9 阶段，但非常适合做 **S1–S7 的执行底座**，与驾驶舱互补。
+
+### 装配建议（最佳组合）
+
+- **Trellis 作底座**：安装/启用 Trellis CLI 与 skills（`trellis-start/brainstorm/before-dev/check/finish-work/update-spec`），承接 S1/S2/S3(design)/S5/S6(quality)/S9(收尾)；
+- **superpowers**：TDD、writing-plans、executing-plans、subagent-driven-development、worktrees、finishing-a-development-branch（已全局可用）；
+- **anthropics/skills**：`frontend-design`（已装）、**`webapp-testing`（建议安装，补 Playwright 测试）**；
+- **mattpocock**：`grilling`（S1/S2）、`code-review`（S7）；
+- **本驾驶舱**：9 阶段门禁、验收确认、截图/视觉回归、阶段汇报（S8 唯一方案）；
+- **部署**：平台 MCP/CI + `finishing-a-development-branch`（待补）。
 ## 3. 当前 profile 探测结果（2026-11-22）
 
 ### 4.1 Skill 分布（实扫，2026-11-22）
