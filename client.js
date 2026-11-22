@@ -60,6 +60,7 @@ window.__ModuleLoader__.load({
     }
 
     // 功能状态是 Host 三路证据推导的结果：界面只把 status/statusLabel 如实画出来，不自己推断。
+    // 两套 tone 命名并存：旧 chip 用 ok/bad/unknown，新模块与摘要用 success/error/idle。ok≡success、bad≡error；unknown 是灰虚线的 chip，idle 是 state-idle 实心，二者视觉不同，别混用。
     const FEATURE_STATUS_TEXT = {
       done: '已完成',
       blocked: '有卡点',
@@ -888,8 +889,6 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:600; letter-
 .dc-summary-stat { display:inline-flex; align-items:baseline; gap:6px; white-space:nowrap; }
 .dc-summary-label { font-size:11px; color:var(--dsw-alias-label-secondary); }
 .dc-summary-value { font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; color:var(--dsw-alias-label-primary); }
-.dc-summary-bad { color:var(--dsw-alias-state-error-primary); }
-.dc-summary-warn { color:var(--dsw-alias-state-warn-primary); }
 .dc-summary-progress { flex:1 1 120px; min-width:60px; height:3px; border-radius:999px; background:var(--dsw-alias-bg-layer-2); overflow:hidden; }
 .dc-summary-fill { display:block; height:100%; border-radius:999px; background:var(--dsw-alias-brand-primary); transition:width .15s ease-out; }
 
@@ -964,7 +963,36 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:600; letter-
   background:var(--dsw-alias-bg-layer-1);
   border-bottom:1px solid var(--dsw-alias-border-l1);
 }
-.dc-module-icon { display:inline-flex; align-items:center; justify-content:center; flex:none; color:var(--dsw-alias-label-secondary); }
+/* 图标底片：24×24、圆角 6、tone 10% 底；idle 用 layer-1 + 次要色 */
+.dc-module-icon {
+  width:24px; height:24px; border-radius:6px; box-sizing:border-box;
+  display:inline-flex; align-items:center; justify-content:center; flex:none;
+  background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-secondary);
+}
+.dc-module-icon-brand { background:color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent); color:var(--dsw-alias-brand-primary); }
+.dc-module-icon-success { background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, transparent); color:var(--dsw-alias-state-success-primary); }
+.dc-module-icon-warn { background:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 10%, transparent); color:var(--dsw-alias-state-warn-primary); }
+.dc-module-icon-error { background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent); color:var(--dsw-alias-state-error-primary); }
+.dc-module-icon-idle { background:var(--dsw-alias-bg-layer-1); color:var(--dsw-alias-label-secondary); }
+
+/* 摘要数字：只有有语义的数字上色 */
+.dc-summary-value.dc-summary-success { color:color-mix(in srgb, var(--dsw-alias-state-success-primary) 70%, var(--dsw-alias-label-primary)); }
+.dc-summary-value.dc-summary-brand { color:color-mix(in srgb, var(--dsw-alias-brand-primary) 70%, var(--dsw-alias-label-primary)); }
+.dc-summary-value.dc-summary-warn { color:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 70%, var(--dsw-alias-label-primary)); }
+.dc-summary-value.dc-summary-error { color:color-mix(in srgb, var(--dsw-alias-state-error-primary) 70%, var(--dsw-alias-label-primary)); }
+
+/* hero 4px 阶段色带：轨道 layer-2，推进部分 brand（decide 时 warn） */
+.dc-hero-band { height:4px; width:100%; background:var(--dsw-alias-bg-layer-2); overflow:hidden; }
+.dc-hero-band-fill { display:block; height:100%; background:var(--dsw-alias-brand-primary); }
+.dc-hero-band-warn .dc-hero-band-fill { background:var(--dsw-alias-state-warn-primary); }
+
+/* 功能行 3px 细进度条 */
+.dc-feature-progress {
+  width:60px; height:3px; flex:none; border-radius:2px; overflow:hidden;
+  background:var(--dsw-alias-bg-layer-2); display:inline-block; vertical-align:middle;
+}
+.dc-feature-progress-fill { display:block; height:100%; background:var(--dsw-alias-brand-primary); }
+.dc-feature-progress-full { background:var(--dsw-alias-state-success-primary); }
 .dc-module-title { margin:0; font-size:13px; font-weight:600; letter-spacing:0; color:var(--dsw-alias-label-primary); }
 .dc-module-meta { margin-left:auto; font-size:11.5px; font-weight:500; letter-spacing:0; color:var(--dsw-alias-label-secondary); white-space:nowrap; }
 .dc-module-meta-ok { color:var(--dsw-alias-state-success-primary); }
@@ -1024,6 +1052,7 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:600; letter-
 .dc-compact .dc-main { gap:10px; }
 .dc-compact .dc-rail { gap:10px; }
 .dc-compact .dc-feature-row { min-height:40px; }
+.dc-compact .dc-feature-progress { width:48px; }
 .dc-compact .dc-acc-item { padding:6px 0; }
 
 /* header 高 71；摘要条模块常驻在 header 下，右栏再让开摘要高度。 */
@@ -1092,6 +1121,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
   .dc-module-head { height:38px; padding:0 12px; }
   .dc-main, .dc-rail { gap:12px; }
   .dc-feature-row, .dc-acc-row { grid-template-columns:minmax(0,1fr); }
+  .dc-feature-side { flex-wrap:wrap; }
+  .dc-feature-progress { width:40px; }
   .dc-feature-side { justify-content:flex-start; flex-wrap:wrap; }
   .dc-acc-actions { justify-content:flex-start; flex-wrap:wrap; }
   .dc-feature-row { min-height:0; }
@@ -1257,16 +1288,21 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
     // 统一模块卡：模块头（图标+标题+meta）+ 模块体。
     function Module(props) {
       // 透传未知属性（role/aria-* 等）：模块只是容器，不能吞掉调用方的无障碍语义。
-      const { className, title, icon, meta, metaTone, level, children, ...rest } = props
+      const { className, title, icon, tone, band, meta, metaTone, level, children, ...rest } = props
       const Heading = level === 3 ? 'h3' : 'h2'
       return h(
         'section',
         { className: `dc-module${className ? ` ${className}` : ''}`, ...rest },
+        band || null,
         title
           ? h(
               'div',
               { className: 'dc-module-head' },
-              h('span', { className: 'dc-module-icon' }, h(ModuleIcon, { name: icon || 'info' })),
+              h(
+                'span',
+                { className: `dc-module-icon dc-module-icon-${tone || 'idle'}` },
+                h(ModuleIcon, { name: icon || 'info' }),
+              ),
               h(Heading, { className: 'dc-module-title' }, title),
               meta
                 ? h(
@@ -1986,6 +2022,16 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         cycleIndex >= 0
           ? `第 ${cycleIndex + 1} 步 / 共 ${cycleNodes.length || 6} 步 · ${stageText}`
           : stageText
+      const bandPercent =
+        cycleIndex >= 0 && cycleNodes.length > 0
+          ? Math.round(((cycleIndex + 1) / cycleNodes.length) * 100)
+          : 0
+      const heroTone = action.kind === 'decide' ? 'warn' : 'brand'
+      const heroBand = h(
+        'div',
+        { className: `dc-hero-band${heroTone === 'warn' ? ' dc-hero-band-warn' : ''}`, 'aria-hidden': 'true' },
+        h('span', { className: 'dc-hero-band-fill', style: { width: `${bandPercent}%` } }),
+      )
       const missing = asArray(action.missing)
       const caps = asArray(action.capabilities)
       const notes = asArray(action.notes)
@@ -2030,7 +2076,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
 
       return h(
         Module,
-        { className: 'dc-module-hero', title: '现在要做的下一件事', icon: 'next' },
+        { className: 'dc-module-hero', title: '现在要做的下一件事', icon: 'next', tone: heroTone, band: heroBand },
         h('div', { className: 'dc-action-eyebrow' }, stepText),
         h('h3', { className: 'dc-action-title' }, action.title || '暂无建议'),
         h(
@@ -2177,13 +2223,15 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const highlightId = action.stageId || (firstCurrent && firstCurrent.stageId) || ''
       const stageName = action.stageName || STAGE_TEXT[action.stageId] || '下一步'
       const coldPending = cold.filter((node) => node && node.state !== 'done')
+      const cycleAllDone = cycle.length > 0 && cycle.every((node) => node && node.state === 'done')
+      const progressTone = coldAllDone && cycleAllDone ? 'success' : 'brand'
       const summaryText = coldAllDone
         ? `冷启动已完成，现在在「${stageName}」`
         : `先完成冷启动：${coldPending.map((node) => node.name || STAGE_TEXT[node.stageId]).join('、') || '初始化'}`
 
       return h(
         Module,
-        { title: '项目进度', icon: 'progress' },
+        { title: '项目进度', icon: 'progress', tone: progressTone },
         h('p', { className: 'dc-progress-summary' }, summaryText),
         coldAllDone
           ? h(
@@ -2355,6 +2403,16 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
               text: featureStatusLabel(item),
             }),
             h('span', { className: 'dc-feature-acceptance' }, featureAcceptanceText(item)),
+            accepted > 0
+              ? h(
+                  'span',
+                  { className: 'dc-feature-progress', 'aria-hidden': 'true' },
+                  h('span', {
+                    className: `dc-feature-progress-fill${passed === accepted ? ' dc-feature-progress-full' : ''}`,
+                    style: { width: `${Math.round((passed / accepted) * 100)}%` },
+                  }),
+                )
+              : null,
             expandable ? h('span', { className: 'dc-feature-toggle', 'aria-hidden': 'true' }, expanded ? '收起' : '细节') : null,
           ),
         ),
@@ -2558,6 +2616,21 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const staleCount = Number.isFinite(staleRaw)
         ? staleRaw
         : items.filter((item) => item && item.stale === true).length
+      const failedRaw = Number(acceptance.failed)
+      const failedCount = Number.isFinite(failedRaw) ? failedRaw : items.filter((item) => item && item.result === 'fail').length
+      const blockedCount =
+        Number(acceptance.blocked) || items.filter((item) => item && item.result === 'blocked').length
+      const totalCount = Number(acceptance.total) || items.length
+      const acceptanceTone =
+        failedCount > 0
+          ? 'error'
+          : staleCount > 0 || blockedCount > 0
+            ? 'warn'
+            : totalCount > 0 && passedCount === totalCount
+              ? 'success'
+              : totalCount === 0
+                ? 'idle'
+                : 'brand'
       // 默认只展开需要动作的条目；干净的通过项收进折叠行。
       const actionable = items.filter((item) => item && (item.result !== 'pass' || item.stale === true))
       const cleanPassed = items.filter((item) => item && item.result === 'pass' && item.stale !== true)
@@ -3065,13 +3138,25 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         actionable.length > 0
           ? `需要处理 ${actionable.length} 条${staleCount > 0 ? ` · ${staleCount} 条需要重新确认` : ''}`
           : '全部处理完了'
-      return h(Module, { title: '验收', icon: 'acceptance', meta }, content)
+      return h(Module, { title: '验收', icon: 'acceptance', tone: acceptanceTone, meta }, content)
     }
 
     function FeatureBoardSection(props) {
       const features = props.features || {}
       const items = asArray(features.items)
       const acceptanceItems = asArray((props.acceptance || {}).items)
+      const progress = features.progress || {}
+      const featureTotal = Number(progress.total) || items.length
+      const featureDone = Number(progress.done) || 0
+      let featureBlocking = 0
+      for (const item of items) {
+        const bugs = (item && item.bugs) || {}
+        if (bugs.known !== false) featureBlocking += Number(bugs.blocking) || 0
+      }
+      const unattributed = features.unattributed || {}
+      if (unattributed.known !== false) featureBlocking += Number(unattributed.blocking) || 0
+      const featuresTone =
+        featureBlocking > 0 ? 'warn' : featureTotal > 0 && featureDone === featureTotal ? 'success' : 'brand'
       const source = features.source || 'prd'
       const strategy = features.strategy || 'none'
       const formatHint = String(features.formatHint || '')
@@ -3141,7 +3226,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         )
       }
 
-      return h(Module, { title: '功能', icon: 'feature' }, board)
+      return h(Module, { title: '功能', icon: 'feature', tone: featuresTone }, board)
     }
 
     function DefectsSection(props) {
@@ -3151,7 +3236,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       if (blocking <= 0) return null
       return h(
         Module,
-        { title: '没归到功能的待修问题', icon: 'defects', meta: `${blocking} 条` },
+        { title: '没归到功能的待修问题', icon: 'defects', tone: 'error', meta: `${blocking} 条` },
         h('p', { className: 'dc-hint' }, '按路径没匹配到任何功能，可能是共享代码或全项目问题。'),
         h(BugList, { issues: unattributed.issues }),
       )
@@ -3180,12 +3265,42 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         Boolean(props.action && props.action.kind === 'decide') ||
         asArray(props.ledger && props.ledger.receipts).some((receipt) => receipt && receipt.needsDecision)
       const percent = featureTotal > 0 ? Math.round((featureDone / featureTotal) * 100) : 0
+      const acceptanceItems = asArray(acceptance.items)
+      const failedCount =
+        Number(acceptance.failed) || acceptanceItems.filter((item) => item && item.result === 'fail').length
+      const blockedCount =
+        Number(acceptance.blocked) || acceptanceItems.filter((item) => item && item.result === 'blocked').length
       const stats = [
-        { key: 'features', label: '已完成功能', value: featureTotal > 0 ? `${featureDone}/${featureTotal}` : '—' },
-        { key: 'acceptance', label: '验收通过', value: acceptanceTotal > 0 ? `${acceptancePassed}/${acceptanceTotal}` : '—' },
-        { key: 'blocking', label: '待修问题', value: String(blocking), tone: blocking > 0 ? 'bad' : null, title: '还没修掉的待修问题，含没归到功能的' },
+        {
+          key: 'features',
+          label: '已完成功能',
+          value: featureTotal > 0 ? `${featureDone}/${featureTotal}` : '—',
+          tone: featureTotal > 0 ? (featureDone === featureTotal ? 'success' : 'brand') : null,
+        },
+        {
+          key: 'acceptance',
+          label: '验收通过',
+          value: acceptanceTotal > 0 ? `${acceptancePassed}/${acceptanceTotal}` : '—',
+          tone:
+            acceptanceTotal > 0
+              ? failedCount > 0
+                ? 'error'
+                : stale > 0 || blockedCount > 0
+                  ? 'warn'
+                  : acceptancePassed === acceptanceTotal
+                    ? 'success'
+                    : 'brand'
+              : null,
+        },
+        {
+          key: 'blocking',
+          label: '待修问题',
+          value: String(blocking),
+          tone: blocking > 0 ? 'error' : null,
+          title: '还没修掉的待修问题，含没归到功能的',
+        },
         { key: 'stale', label: '需要重新确认', value: String(stale), tone: stale > 0 ? 'warn' : null },
-        { key: 'decision', label: '需要你决定', value: hasDecision ? '1' : '0', tone: hasDecision ? 'warn' : null },
+        { key: 'decision', label: '需要你决定', value: hasDecision ? '1' : '—', tone: hasDecision ? 'warn' : null },
       ]
       return h(
         Module,
@@ -3237,7 +3352,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       if (review.available === false) {
         return h(
           Module,
-          { title: '代码检查', icon: 'review' },
+          { title: '代码检查', icon: 'review', tone: 'idle' },
           h(
             'p',
             { className: 'dc-rail-note' },
@@ -3251,7 +3366,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const gateText = blocking > 0 ? '有要修的' : rounds > 0 ? '最近检查通过' : '还没检查'
       return h(
         Module,
-        { title: '代码检查', icon: 'review', level: 3, meta: gateText, metaTone: blocking > 0 ? 'warn' : rounds > 0 ? 'ok' : 'unknown' },
+        { title: '代码检查', icon: 'review', tone: blocking > 0 ? 'warn' : rounds > 0 ? 'success' : 'idle', level: 3, meta: gateText, metaTone: blocking > 0 ? 'warn' : rounds > 0 ? 'ok' : 'unknown' },
         blocking > 0
           ? h(
               React.Fragment,
@@ -3288,7 +3403,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const lastAt = ledger.lastAt || (receipts[0] && receipts[0].at) || null
       return h(
         Module,
-        { title: '项目动态', icon: 'receipts', meta: lastAt ? `上次 ${formatRelative(lastAt)}` : '还没有动态' },
+        { title: '项目动态', icon: 'receipts', tone: receipts.length > 0 ? 'brand' : 'idle', meta: lastAt ? `上次 ${formatRelative(lastAt)}` : '还没有动态' },
         receipts.length === 0
           ? h(EmptyState, {
               inline: true,
@@ -3366,7 +3481,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         decision
           ? h(
               Module,
-              { className: 'dc-module-warn', title: '需要你决定', icon: 'defects', level: 3, role: 'status' },
+              { className: 'dc-module-warn', title: '需要你决定', icon: 'defects', tone: 'warn', level: 3, role: 'status' },
               h('div', { className: 'dc-decision-title' }, decision.title || '这件事需要你拍板'),
               asArray(decision.options).length > 0
                 ? h(
@@ -3385,7 +3500,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         gapCount > 0
           ? h(
               Module,
-              { title: '数据说明', icon: 'info', level: 3 },
+              { title: '数据说明', icon: 'info', tone: 'warn', level: 3 },
               h(
                 'details',
                 { className: 'dc-more' },
@@ -3763,6 +3878,9 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
     }
   },
 })
+
+
+
 
 
 

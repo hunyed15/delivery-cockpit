@@ -117,6 +117,13 @@ Operate 表面（DSH 内的交付驾驶舱面板）。视觉目标：**安静的
 - 线：`border-l1`（常规 hairline）/ `border-l2`（强调分隔、输入聚焦底）。
 - 字：`label-primary` / `label-secondary`；禁用 `opacity: .5`。
 - 主色 `brand-primary` 只用于：主按钮、当前步骤、focus ring、链接、选中态。
+- **状态色体系（tone）**：`brand / success / warn / error / idle` 五个 token 色，界面任何"语义色"都从这五个里选，不新造色：
+  - 模块头图标：24×24 圆角 6 底片 = `color-mix(tone 10%)`，图标 `color:tone`；idle 用 layer-1 底 + 次要色图标。
+  - 模块 tone 语义：下一步/项目动态=brand；项目进度（全完成=success，否则 brand）；功能（有卡点=warn，全完成=success，否则 brand）；验收（失败=error，待确认/卡住=warn，全过=success，空=idle）；待修问题=error；代码检查=success/warn/idle；数据说明=warn/idle；需要你决定=warn。
+  - 摘要数字按语义上色：待修问题 >0 error；需要重新确认 >0 warn；需要你决定 >0 warn；已完成功能全完成 success、否则 brand；验收通过 有失败 error、待确认 warn、全过 success、否则 brand；无值保持 primary（不要全彩）。
+  - hero 顶部 4px 阶段色带：轨道 layer-2，填充 `(当前步骤+1)/总步数` brand；`decide` 状态整条 warn；`aria-hidden`。
+  - 功能行 3px 细进度条（60px，紧凑 48/360 40）：验收通过比例，全过 success、部分 brand、空轨 layer-2；无验收条目不渲染；`aria-hidden`，朗读交给旁边文字。
+
 - 状态色只给状态（成功/警告/错误/进行中），且**永远配文字**，不单靠颜色：
   - pass/已完成 = success；fail/阻塞 = error/warn；stale = warn + 「已失效」文字；未开始 = 中性。
   - 状态 pill = 6px 圆点 + 文字（弱底 + 1px 边框），不用大面积高饱和块。
@@ -171,7 +178,7 @@ Operate 表面（DSH 内的交付驾驶舱面板）。视觉目标：**安静的
 
 ## 11. 验证基线
 
-- 预览 harness（`tools/preview`）截图：`style-1200.png`（模块化两栏）、`style-dark.png`（深色三层）、`style-360.png`、`style-compact.png`、`style-details.png`、`style-empty.png`、`style-overview.png`；可用性轮补充：`goal-empty-prd.png`、`goal-empty-acceptance.png`、`goal-empty-receipts.png`、`goal-feature-link.png`、`goal-timeline-groups.png`、`goal-compact.png`、`goal-keyboard.png`、`goal-360.png`、`goal-dark.png`。
+- 预览 harness（`tools/preview`）截图：`style-1200.png`（模块化两栏）、`style-dark.png`（深色三层）、`style-360.png`、`style-compact.png`、`style-details.png`、`style-empty.png`、`style-overview.png`；状态色加码：`accent-1200.png`、`accent-dark.png`、`accent-360.png`、`accent-compact.png`、`accent-status.png`（error/warn/success 底片）、`accent-hero.png`（色带）、`accent-features.png`（进度条三态）；可用性轮补充：`goal-empty-prd.png`、`goal-empty-acceptance.png`、`goal-empty-receipts.png`、`goal-feature-link.png`、`goal-timeline-groups.png`、`goal-compact.png`、`goal-keyboard.png`、`goal-360.png`、`goal-dark.png`。
 - 360 宽：`docScrollWidth = 360`、`offenders = []`；行自动堆叠。
 - 断点：容器 ≥1170 两栏、741–1169 单栏、≤740 主区 ≤700 堆叠；无混合态。
 - sticky：滚动后 header 0 / 摘要条贴 header / 右栏不遮挡。

@@ -455,6 +455,56 @@ test('模块尺寸：360 与紧凑', () => {
   assert.ok(css.includes('.dc-root { background:var(--dsw-alias-bg-layer-1); font-size:13.5px'), '画布 layer-1 且正文 13.5')
 })
 
+test('状态色：模块图标底片 + 摘要数字 tone', () => {
+  const tones = ['brand', 'success', 'warn', 'error', 'idle']
+  for (const tone of tones) {
+    assert.ok(css.includes(`.dc-module-icon-${tone}`), `缺少模块图标 tone：${tone}`)
+  }
+  assert.ok(css.includes('.dc-module-icon {') && css.includes('width:24px; height:24px; border-radius:6px'), '图标是 24×24 圆角 6 底片')
+  assert.ok(css.includes('background:color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent)'), '底片用 tone 10% 混合')
+  assert.ok(css.includes('.dc-module-icon-idle { background:var(--dsw-alias-bg-layer-1)'), 'idle 底片用 layer-1')
+  assert.ok(source.includes('dc-module-icon-${tone ||') || source.includes("dc-module-icon-${tone || 'idle'}"), 'Module 必须按 tone 上底片')
+  // 各模块语义 tone
+  assert.ok(source.includes('tone: heroTone'), 'hero 用 brand（decide 时 warn）')
+  assert.ok(source.includes('tone: progressTone'), '项目进度按阶段 tone')
+  assert.ok(source.includes('tone: featuresTone'), '功能按卡点/完成 tone')
+  assert.ok(source.includes('tone: acceptanceTone'), '验收按失败/待确认/通过 tone')
+  assert.ok(source.includes("tone: 'error'") && source.includes('title: \'没归到功能的待修问题\''), '待修问题 error')
+  assert.ok(source.includes("tone: 'warn'") && source.includes("title: '数据说明'"), '数据说明 warn')
+  assert.ok(source.includes("tone: 'warn'") && source.includes("title: '需要你决定'"), '需要你决定 warn')
+  // 摘要数字语义色
+  for (const tone of ['success', 'brand', 'warn', 'error']) {
+    assert.ok(css.includes(`.dc-summary-value.dc-summary-${tone}`), `摘要数字缺少 tone：${tone}`)
+  }
+  assert.ok(source.includes("key: 'blocking'") && source.includes("tone: blocking > 0 ? 'error' : null"), '待修问题 >0 才红')
+  assert.ok(source.includes("key: 'stale'") && source.includes("tone: stale > 0 ? 'warn' : null"), '需要重新确认 >0 才 warn')
+  assert.ok(!/dc-summary-(bad|ok)\b/.test(css) && !source.includes("tone: blocking > 0 ? 'bad'"), '不再用旧 bad/ok tone')
+})
+
+test('hero 阶段色带：4px、推进百分比、decide 变 warn', () => {
+  assert.ok(source.includes("className: 'dc-hero-band"), 'hero 必须有色带容器')
+  assert.ok(source.includes("'aria-hidden': 'true'") && source.includes('dc-hero-band-fill'), '色带 aria-hidden 且填充层存在')
+  assert.ok(source.includes('const bandPercent =') && source.includes('(cycleIndex + 1) / cycleNodes.length'), '按当前步骤计算推进百分比')
+  assert.ok(source.includes('style: { width: `${bandPercent}%` }'), '色带 fill 宽度使用百分比')
+  assert.ok(source.includes("action.kind === 'decide' ? 'warn' : 'brand'"), 'decide 阶段改 warn')
+  assert.ok(source.includes('dc-hero-band-warn'), 'warn 色带类存在')
+  assert.ok(/\.dc-hero-band \{ height:4px; width:100%; background:var\(--dsw-alias-bg-layer-2\)/.test(css), '色带 4px、轨道 layer-2、贴顶')
+  assert.ok(css.includes('.dc-hero-band-fill { display:block; height:100%; background:var(--dsw-alias-brand-primary); }'), '色带填充 brand')
+})
+
+test('功能行细进度条：0/部分/全过 + 360 不溢出', () => {
+  assert.ok(source.includes("className: 'dc-feature-progress'"), '功能行必须有进度条')
+  assert.ok(source.includes("'aria-hidden': 'true'") && source.includes('dc-feature-progress-fill'), '进度条 aria-hidden（文字已朗读）')
+  assert.ok(source.includes('accepted > 0') && source.includes('dc-feature-progress'), '无验收条目不渲染进度条')
+  assert.ok(source.includes("passed === accepted ? ' dc-feature-progress-full'"), '全过用 success 填充')
+  assert.ok(source.includes('style: { width: `${Math.round((passed / accepted) * 100)}%` }'), '进度按 passed/total')
+  assert.ok(css.includes('.dc-feature-progress {') && css.includes('width:60px; height:3px'), '3px 细条、宽 60')
+  assert.ok(css.includes('.dc-feature-progress-fill { display:block; height:100%; background:var(--dsw-alias-brand-primary); }'), '部分进度 brand')
+  assert.ok(css.includes('.dc-feature-progress-full { background:var(--dsw-alias-state-success-primary); }'), '全过 success')
+  assert.ok(css.includes('.dc-feature-progress { width:40px; }'), '360 下缩到 40px')
+  assert.ok(css.includes('.dc-compact .dc-feature-progress { width:48px; }'), '紧凑下 48px')
+})
+
 
 
 

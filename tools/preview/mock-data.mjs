@@ -657,6 +657,24 @@ export function panelFor(scenario) {
         },
       }
     }
+    case 'accent-features': {
+      // 三种进度条形态：0/2、1/1、没有验收条目（不渲染进度条）。
+      const base = makePanel()
+      return {
+        ...base,
+        features: {
+          ...base.features,
+          items: base.features.items.map((item, index) =>
+            index === 3
+              ? {
+                  ...item,
+                  acceptance: { total: 0, passed: 0, failed: 0, blocked: 0, missingEvidence: 0 },
+                }
+              : item,
+          ),
+        },
+      }
+    }
     case 'goal-empty-prd':
       return panelFor('features-prd-missing')
     case 'goal-empty-acc':
