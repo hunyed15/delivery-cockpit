@@ -7,6 +7,7 @@
 // 用法：
 //   node tools/preview/shot.mjs <url> <width> <height> <out.png> [full]
 //   node tools/preview/shot.mjs <url> <width> --measure
+//   node tools/preview/shot.mjs <url> <width> <height> <out.png> full --click="<selector>"
 //
 // 浏览器探测顺序：CHROME_PATH -> Chrome -> Edge。都没有就报错，不偷偷装依赖。
 import { spawn } from 'node:child_process'
@@ -148,6 +149,18 @@ if (!title.startsWith('ready:')) {
   console.error(`页面没有就绪（title=${title || '空'}）`)
 }
 await sleep(250)
+
+// 预览交互态：截图前点一个元素（例如展开某个阶段的只读详情）。
+const clickArg = args.find((arg) => arg.startsWith('--click='))
+if (clickArg) {
+  const selector = clickArg.slice('--click='.length)
+  const clicked = await send('Runtime.evaluate', {
+    expression: `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.click(); return true })()`,
+    returnByValue: true,
+  })
+  if (clicked.result.value !== true) console.error(`没有找到可点击元素：${selector}`)
+  await sleep(400)
+}
 
 const measureExpression = `(() => {
   const root = document.querySelector('.dc-root')

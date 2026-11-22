@@ -547,3 +547,12 @@ test('阶段检查：hero 读取 panel.gates，展示检查状态 / 方法 / 交
   assert.ok(source.includes('方法：') && source.includes('交付物：'), '展示 method 与 deliverables')
   assert.ok(css.includes('.dc-gate {') && css.includes('.dc-gate-label {'), '门禁样式存在')
 })
+test('阶段只读详情：节点可点击（data-stage / aria-pressed），详情只读且不改下一步', () => {
+  assert.ok(source.includes("className: 'dc-stage-tap'"), '节点必须是可点击按钮')
+  assert.ok(source.includes("'data-stage': node.stageId"), '节点带 data-stage 便于定位')
+  assert.ok(source.includes("'aria-pressed': selected"), '按钮有 aria-pressed 状态')
+  assert.ok(source.includes('阶段详情') && source.includes('function StageDetail'), '只读阶段详情组件存在')
+  assert.ok(source.includes('回到当前'), '详情可回到当前阶段')
+  assert.ok(source.includes('const [selectedId, setSelectedId] = React.useState'), '选中态只在客户端')
+  assert.ok(css.includes('.dc-stage-detail {') && css.includes('.dc-stage-row-label {'), '详情样式存在')
+})

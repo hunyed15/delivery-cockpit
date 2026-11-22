@@ -453,6 +453,27 @@ function makePanel(overrides = {}) {
     dataGaps: [{ source: 'tasks', message: '任务状态来自 AI 自报，不是实时读取' }],
     degraded: { flag: false, reasons: [] },
   }
+  const track = [...base.progression.coldStart, ...base.progression.cycle]
+  base.stages = STAGE.map((stage) => {
+    const node = track.find((item) => item.stageId === stage.id) || null
+    const state = node ? node.state : 'pending'
+    return {
+      id: stage.id,
+      name: stage.name,
+      cycle: stage.id !== 'bootstrap',
+      state,
+      isCurrent: state === 'current',
+      goal: `完成${stage.name}，产出本阶段交付物`,
+      method: stage.id === 'implementation' ? 'tdd-loop' : stage.id === 'testing' || stage.id === 'acceptance' ? 'verify-claims' : stage.id === 'prototype' ? 'frontend-design' : null,
+      constraint: stage.id === 'implementation' ? 'ponytail' : null,
+      deliverables: stage.id === 'architecture' ? ['docs/architecture.md', 'docs/api.md'] : stage.id === 'testing' ? ['.dsh/plugin-state/test-report.json'] : [],
+      technicalGate: stage.id === 'architecture' ? 'validateArchitecture' : stage.id === 'testing' ? 'validateTestReport' : stage.id === 'release' ? 'validateRelease' : null,
+      decisionGate: stage.id === 'prototype' ? { title: '原型通过', approveAction: 'approve-prototype' } : null,
+      gate: null,
+      capabilities: [],
+      receipts: { count: 0, items: [] },
+    }
+  })
   return { ...base, ...overrides }
 }
 
@@ -710,6 +731,20 @@ export function panelFor(scenario) {
           tests: { available: false, ok: false, missing: ['.dsh/plugin-state/test-report.json'], reason: 'missing', detail: null },
           release: { available: false, ok: false, missing: ['.dsh/plugin-state/release.json'], reason: 'missing', detail: null },
         },
+        stages: base.stages.map((stage) =>
+          stage.id === 'architecture'
+            ? {
+                ...stage,
+                gate: { key: 'architecture', available: false, ok: false, missing: ['docs/architecture.md', 'docs/api.md'], reason: 'missing' },
+                deliverables: ['docs/architecture.md', 'docs/api.md'],
+                constraint: 'ponytail',
+                receipts: {
+                  count: 1,
+                  items: [{ id: 'r-arch', at: ago(50), status: 'in_progress', summary: '写了组件与数据模型，接口清单还没冻结', usedSkill: 'ponytail', artifacts: ['docs/architecture.md'], taskRef: 'T1' }],
+                },
+              }
+            : stage,
+        ),
         progression: {
           coldStart: [node('bootstrap', '项目立项', 'done', '初始化 .trellis 与 .dsh/plugin-state')],
           cycle: [

@@ -28,6 +28,7 @@ const DETAIL_KEYS = [
   'progression',
   'project',
   'review',
+  'stages',
   'tasks',
   'trellis',
   'warnings',
@@ -847,4 +848,41 @@ test('gates：技术门只读投影（ok/missing/reason/detail），无 gates �
 
   const noGates = build(evidence())
   assert.equal(noGates.gates, null, '没有 gates 时返回 null，客户端不渲染门禁块')
+})
+test('stages：9 阶段只读详情（元信息/门禁/能力/最近记录），不回写状态机', async () => {
+  const gates = {
+    architecture: { available: false, ok: false, missing: ['docs/architecture.md'], reason: 'missing' },
+    tests: { available: true, ok: true, missing: [], reason: null, detail: { command: 'node --test', passed: 1, failed: 0, at: '2026-11-22T00:00:00.000Z' } },
+    release: { available: false, ok: false, missing: ['.dsh/plugin-state/release.json'], reason: 'missing' },
+  }
+  const { readFile } = await import('node:fs/promises')
+  const builtin = JSON.parse(await readFile(new URL('../templates/playbook.json', import.meta.url), 'utf8'))
+  const model = build(
+    evidence({
+      gates,
+      receipts: { receipts: [receipt({ stage: 'coding', used_skill_or_mcp: 'tdd-loop', task_ref: 'T1' })], badLines: 0, missing: false, lastAt: null },
+    }),
+    { playbook: builtin },
+  )
+  assert.equal(model.stages.length, 9)
+  const architecture = model.stages.find((stage) => stage.id === 'architecture')
+  assert.equal(architecture.name, '架构契约')
+  assert.equal(architecture.cycle, true)
+  assert.equal(architecture.method, null)
+  assert.equal(architecture.constraint, 'ponytail')
+  assert.deepEqual(architecture.deliverables, ['docs/architecture.md', 'docs/api.md'])
+  assert.equal(architecture.technicalGate, 'validateArchitecture')
+  assert.equal(architecture.gate.ok, false)
+  assert.deepEqual(architecture.gate.missing, ['docs/architecture.md'])
+  assert.equal(architecture.decisionGate.title, '架构签核')
+
+  const testing = model.stages.find((stage) => stage.id === 'testing')
+  assert.equal(testing.gate.ok, true)
+
+  const implementation = model.stages.find((stage) => stage.id === 'implementation')
+  assert.equal(implementation.receipts.count, 1, '旧 stage coding 归一到 implementation')
+  assert.equal(implementation.receipts.items[0].usedSkill, 'tdd-loop')
+
+  const bootstrap = model.stages.find((stage) => stage.id === 'bootstrap')
+  assert.equal(bootstrap.cycle, false)
 })

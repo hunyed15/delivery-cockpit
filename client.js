@@ -651,6 +651,20 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:600; letter-
 .dc-stage-current .dc-stage-name { color:var(--dsw-alias-brand-primary); font-weight:600; }
 .dc-stage-current .dc-stage-state { color:var(--dsw-alias-brand-primary); font-weight:600; }
 .dc-stage-pending { opacity:.72; }
+.dc-stage-tap { display:flex; flex-direction:column; gap:2px; align-items:flex-start; width:100%; background:transparent; border:0; padding:0; color:inherit; font:inherit; text-align:left; cursor:pointer; border-radius:6px; }
+.dc-stage-tap:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; }
+.dc-stage-selected .dc-stage-dot { box-shadow:0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary) 26%, transparent); }
+.dc-stage-detail { margin-top:16px; padding:12px 14px; border:1px solid var(--dsw-alias-border-l2); border-radius:8px; background:var(--dsw-alias-bg-layer-1); font-size:12.5px; }
+.dc-stage-detail-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+.dc-stage-detail-head strong { font-size:13px; }
+.dc-stage-detail-head .dc-btn { margin-left:auto; }
+.dc-stage-row { display:flex; gap:10px; padding:3px 0; align-items:baseline; }
+.dc-stage-row-column { flex-direction:column; gap:3px; }
+.dc-stage-row-label { flex:none; min-width:64px; color:var(--dsw-alias-label-secondary); font-size:11.5px; font-weight:600; }
+.dc-stage-row-value { color:var(--dsw-alias-label-primary); overflow-wrap:anywhere; }
+.dc-stage-list { margin:0; padding-left:16px; display:flex; flex-direction:column; gap:2px; color:var(--dsw-alias-label-primary); overflow-wrap:anywhere; }
+.dc-stage-caps { display:flex; flex-wrap:wrap; gap:6px; }
+.dc-stage-empty { color:var(--dsw-alias-label-secondary); }
 
 /* ---------- ④ 功能 & 待修问题账 ---------- */
 .dc-decision { margin:0 0 12px; padding:12px 14px; border-radius:8px;
@@ -2223,23 +2237,128 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const node = props.node || {}
       const state = node.state === 'done' || node.state === 'current' ? node.state : 'pending'
       const highlighted = state === 'current' && props.highlight
+      const selected = props.selected === true
       const stateText = state === 'done' ? '已完成' : state === 'current' ? '当前' : '未开始'
       const summary = node.receipt && node.receipt.summary
+      const onSelect = typeof props.onSelect === 'function' ? props.onSelect : null
       return h(
         'li',
         {
-          className: `dc-stage dc-stage-${highlighted ? 'current' : state === 'current' ? 'pending' : state}`,
+          className: `dc-stage dc-stage-${highlighted ? 'current' : state === 'current' ? 'pending' : state}${selected ? ' dc-stage-selected' : ''}`,
           'aria-current': highlighted ? 'step' : undefined,
           // 阶段卡片只保留一行；动态摘要放在 title 里，避免一屏四区被进度条挤满。
           title: summary ? `${stateText}：${summary}` : `${(node.name || node.stageId || '')}：${stateText}`,
         },
         h(
-          'span',
-          { className: 'dc-stage-dot', 'aria-hidden': 'true' },
-          state === 'done' ? '✓' : '',
+          'button',
+          {
+            type: 'button',
+            className: 'dc-stage-tap',
+            'aria-pressed': selected,
+            'data-stage': node.stageId,
+            onClick: () => onSelect && onSelect(node.stageId),
+          },
+          h(
+            'span',
+            { className: 'dc-stage-dot', 'aria-hidden': 'true' },
+            state === 'done' ? '✓' : '',
+          ),
+          h('span', { className: 'dc-stage-name' }, node.name || STAGE_TEXT[node.stageId] || node.stageId || '阶段'),
+          h('span', { className: 'dc-stage-state' }, stateText),
         ),
-        h('span', { className: 'dc-stage-name' }, node.name || STAGE_TEXT[node.stageId] || node.stageId || '阶段'),
-        h('span', { className: 'dc-stage-state' }, stateText),
+      )
+    }
+
+    // 阶段详情：只读。点进度节点打开，不改变状态机给的下一步。
+    function StageDetail(props) {
+      const stage = props.stage || {}
+      const gate = stage.gate
+      const caps = asArray(stage.capabilities)
+      const receipts = asArray(stage.receipts && stage.receipts.items)
+      const stateText = stage.state === 'done' ? '已完成' : stage.state === 'current' ? '当前' : '未开始'
+      const stateTone = stage.state === 'done' ? 'success' : stage.state === 'current' ? 'brand' : 'idle'
+      const row = (label, value) =>
+        value ? h('div', { className: 'dc-stage-row' }, h('span', { className: 'dc-stage-row-label' }, label), h('span', { className: 'dc-stage-row-value' }, value)) : null
+      const gateText = gate
+        ? gate.ok
+          ? '已通过'
+          : gate.available
+            ? '未通过'
+            : '未就绪'
+        : null
+      return h(
+        'div',
+        {
+          className: 'dc-stage-detail',
+          role: 'region',
+          'aria-label': `${stage.name || '阶段'}详情`,
+          onKeyDown: (event) => {
+            if (event.key === 'Escape' && typeof props.onClose === 'function') {
+              event.stopPropagation()
+              props.onClose()
+            }
+          },
+        },
+        h(
+          'div',
+          { className: 'dc-stage-detail-head' },
+          h('strong', null, stage.name || '阶段'),
+          h(Chip, { tone: stateTone }, stateText),
+          h('button', { type: 'button', className: 'dc-btn', onClick: props.onClose }, '回到当前'),
+        ),
+        row('目标', stage.goal),
+        row('方法', stage.method),
+        row('约束', stage.constraint),
+        asArray(stage.deliverables).length > 0
+          ? h(
+              'div',
+              { className: 'dc-stage-row dc-stage-row-column' },
+              h('span', { className: 'dc-stage-row-label' }, '交付物'),
+              h('ul', { className: 'dc-stage-list' }, asArray(stage.deliverables).map((item, index) => h('li', { key: `d${index}` }, item))),
+            )
+          : null,
+        gate
+          ? row('阶段检查', gate.missing.length > 0 ? `${gateText} · 缺：${gate.missing.join('、')}` : gateText)
+          : null,
+        stage.decisionGate && stage.decisionGate.title ? row('需要你确认', stage.decisionGate.title) : null,
+        caps.length > 0
+          ? h(
+              'div',
+              { className: 'dc-stage-row dc-stage-row-column' },
+              h('span', { className: 'dc-stage-row-label' }, '能力'),
+              h(
+                'div',
+                { className: 'dc-stage-caps' },
+                caps.map((capability, index) => {
+                  const presence = PRESENCE_TEXT[capability.present] || PRESENCE_TEXT.unknown
+                  return h(
+                    'span',
+                    { key: `c${index}`, className: 'dc-cap', title: capability.note || undefined },
+                    h('span', { className: 'dc-cap-name' }, capability.name || '未命名能力'),
+                    h(Chip, { tone: presence.tone }, presence.text),
+                  )
+                }),
+              ),
+            )
+          : null,
+        h(
+          'div',
+          { className: 'dc-stage-row dc-stage-row-column' },
+          h('span', { className: 'dc-stage-row-label' }, `记录（${stage.receipts ? stage.receipts.count : 0}）`),
+          receipts.length > 0
+            ? h(
+                'ul',
+                { className: 'dc-stage-list' },
+                receipts.map((receipt, index) =>
+                  h(
+                    'li',
+                    { key: `r${index}` },
+                    `${formatRelative(receipt.at)} · ${STATUS_TEXT[receipt.status] || receipt.status || '状态未知'} · ${receipt.summary || '无摘要'}${receipt.usedSkill ? ` · 用了 ${receipt.usedSkill}` : ''}`,
+                  ),
+                ),
+              )
+            : h('span', { className: 'dc-stage-empty' }, '这个阶段还没有记录'),
+        ),
       )
     }
 
@@ -2247,6 +2366,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const progression = props.progression || {}
       const cold = asArray(progression.coldStart)
       const cycle = asArray(progression.cycle)
+      const stages = asArray(props.stages)
+      const [selectedId, setSelectedId] = React.useState('')
       const iteration = props.iteration || {}
       const action = props.action || {}
       const coldAllDone = cold.length > 0 && cold.every((node) => node && node.state === 'done')
@@ -2261,6 +2382,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const summaryText = coldAllDone
         ? `冷启动已完成，现在在「${stageName}」`
         : `先完成冷启动：${coldPending.map((node) => node.name || STAGE_TEXT[node.stageId]).join('、') || '初始化'}`
+      const selected = selectedId !== '' ? stages.find((stage) => stage && stage.id === selectedId) : null
+      const onSelect = (stageId) => setSelectedId((current) => (current === stageId ? '' : stageId))
 
       return h(
         Module,
@@ -2292,6 +2415,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                     key: `cold${index}`,
                     node,
                     highlight: node && node.stageId === highlightId,
+                    selected: node && node.stageId === selectedId,
+                    onSelect,
                   }),
                 ),
               ),
@@ -2305,9 +2430,12 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
               key: `cycle${index}`,
               node,
               highlight: node && node.stageId === highlightId,
+              selected: node && node.stageId === selectedId,
+              onSelect,
             }),
           ),
         ),
+        selected ? h(StageDetail, { stage: selected, onClose: () => setSelectedId('') }) : null,
       )
     }
 
@@ -3774,6 +3902,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
               }),
               h(ProgressionSection, {
                 progression: panel.progression,
+                stages: panel.stages,
                 iteration: panel.iteration,
                 action,
               }),
