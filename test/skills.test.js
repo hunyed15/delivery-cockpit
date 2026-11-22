@@ -38,7 +38,8 @@ test('自建纪律 skill：tdd-loop 结构与关键规则', async () => {
   const text = await readSkill('tdd-loop')
   const fields = parseFrontmatter(text)
   assert.equal(fields.name, 'tdd-loop')
-  assert.ok(fields.description.length > 20, 'description 必须非空（含冒号时必须加引号，避免 YAML 解析失败）')
+  assert.ok(fields.description.length > 20, 'description 必须非空')
+  assert.match(fields.description, /^".*"$/, 'description 含冒号时必须用双引号包裹，避免 YAML 解析失败')
   for (const phrase of ['Red（写失败测试）', 'Green（最小实现）', 'Refactor（重构）', 'test-report.json', '回归测试']) {
     assert.ok(text.includes(phrase), `缺少关键规则：${phrase}`)
   }
