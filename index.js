@@ -19,7 +19,7 @@ import { applyInit, planInit } from './lib/init.js'
 import { buildDetailModel, buildOverviewRow } from './lib/model.js'
 import { entryForStage, loadPlaybook, resolveCapabilities, STAGE_DEFS } from './lib/playbook.js'
 import { readProjectCard } from './lib/project-card.js'
-import { appendReceipt } from './lib/receipts.js'
+import { appendReceipt, STAGES } from './lib/receipts.js'
 import { createAcceptanceResultHandler, createAcceptanceScreenshotHandler, createApproveHandler, createInitHandler, createRoutes } from './lib/route.js'
 import { captureScreenshot, writeScreenshot } from './lib/screenshot.js'
 import { compareScreenshots, pickBaselineEvidence, renderDiffPng } from './lib/visual-diff.js'
@@ -54,7 +54,8 @@ const DEFAULT_CONFIG = {
   receiptOnInvalidate: true,
 }
 
-const REPORT_STAGES = ['init', 'scaffold', 'brainstorm', 'prototype', 'coding', 'code_review', 'verification', 'release']
+// 与账本常量共用一份枚举：9 阶段迁移后不再手写第二份，避免工具 schema 与 lib 漂移。
+const REPORT_STAGES = STAGES
 const REPORT_STATUSES = ['in_progress', 'completed', 'blocked', 'failed', 'dropped']
 
 const COCKPIT_REPORT = {
@@ -67,7 +68,7 @@ const COCKPIT_REPORT = {
     required: ['iteration_id', 'stage', 'status', 'summary_for_human'],
     properties: {
       iteration_id: { type: 'string', description: '迭代版本号；冷启动阶段固定传 "bootstrap"' },
-      stage: { type: 'string', enum: REPORT_STAGES },
+      stage: { type: 'string', enum: REPORT_STAGES, description: 'canonical 9 阶段 id（旧 id 只在读取历史账本时归一，工具入口不接受）' },
       status: { type: 'string', enum: REPORT_STATUSES },
       summary_for_human: { type: 'string', description: '一两句人话：做完了什么 / 卡在哪' },
       used_skill_or_mcp: { type: 'string' },
@@ -83,7 +84,7 @@ const COCKPIT_REPORT = {
         type: 'string',
         enum: ['acceptance-recheck'],
         description:
-          '验收复核留痕：你亲自复核了某条验收就传 acceptance-recheck。此时 stage 必须是 verification、status 必须是 completed；' +
+          '验收复核留痕：你亲自复核了某条验收就传 acceptance-recheck。此时 stage 必须是 acceptance、status 必须是 completed；' +
           'summary_for_human 写清复核了哪条（如 A1「能添加客户」）和结论（仍通过 / 发现的问题 / 已失效原因）。' +
           '这类回执只进流水账，**不改验收结果、不参与进度投影**——改结果仍要人在面板点。',
       },

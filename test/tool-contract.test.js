@@ -68,7 +68,7 @@ test('cockpit_report execute 真的把回执追加进会话工作目录的账本
     const tools = createToolDefinitions(fakeCtx)
     const report = tools.find((item) => item.name === 'cockpit_report')
     const value = await report.execute(
-      { iteration_id: 'bootstrap', stage: 'init', status: 'completed', summary_for_human: '工作区建好了' },
+      { iteration_id: 'bootstrap', stage: 'bootstrap', status: 'completed', summary_for_human: '工作区建好了' },
       execIn(project),
     )
     assert.equal(value.ok, true)
@@ -78,7 +78,7 @@ test('cockpit_report execute 真的把回执追加进会话工作目录的账本
     assert.equal(lines.length, 1)
     const row = JSON.parse(lines[0])
     assert.equal(row.summary_for_human, '工作区建好了')
-    assert.equal(row.stage, 'init')
+    assert.equal(row.stage, 'bootstrap')
   } finally {
     await rm(project, { recursive: true, force: true })
   }
@@ -91,7 +91,7 @@ test('cockpit_report 支持验收复核留痕（event=acceptance-recheck），�
     const value = await report.execute(
       {
         iteration_id: 'v1.0',
-        stage: 'verification',
+        stage: 'acceptance',
         status: 'completed',
         summary_for_human: '复核 A1「能添加客户」：按步骤重走一遍，仍通过',
         feature_ids: ['FR-1'],
@@ -104,20 +104,20 @@ test('cockpit_report 支持验收复核留痕（event=acceptance-recheck），�
     const text = await readFile(join(project, '.dsh', 'plugin-state', 'receipts.jsonl'), 'utf8')
     const row = JSON.parse(text.trim().split(/\r?\n/)[0])
     assert.equal(row.event, 'acceptance-recheck')
-    assert.equal(row.stage, 'verification')
+    assert.equal(row.stage, 'acceptance')
     assert.equal(row.status, 'completed')
     assert.deepEqual(row.feature_ids, ['FR-1'])
 
     // 审计事件必须配对正确的 stage/status，不能伪装成别的阶段进度
     await assert.rejects(() =>
       report.execute(
-        { iteration_id: 'v1.0', stage: 'coding', status: 'completed', summary_for_human: 'x', event: 'acceptance-recheck' },
+        { iteration_id: 'v1.0', stage: 'implementation', status: 'completed', summary_for_human: 'x', event: 'acceptance-recheck' },
         execIn(project),
       ),
     )
     // 普通回执不带 event 时保持原行为
     await report.execute(
-      { iteration_id: 'v1.0', stage: 'verification', status: 'in_progress', summary_for_human: '开始验效果' },
+      { iteration_id: 'v1.0', stage: 'acceptance', status: 'in_progress', summary_for_human: '开始验收' },
       execIn(project),
     )
     const rows = (await readFile(join(project, '.dsh', 'plugin-state', 'receipts.jsonl'), 'utf8')).trim().split(/\r?\n/)
@@ -131,7 +131,7 @@ test('cockpit_report execute 对非法参数必须抛错（不能静默写坏数
   const project = await mkdtemp(join(tmpdir(), 'dc-tool-'))
   try {
     const report = createToolDefinitions(fakeCtx).find((item) => item.name === 'cockpit_report')
-    await assert.rejects(() => report.execute({ iteration_id: 'v1.0', stage: 'coding', status: 'completed' }, execIn(project)))
+    await assert.rejects(() => report.execute({ iteration_id: 'v1.0', stage: 'implementation', status: 'completed' }, execIn(project)))
     assert.equal(await exists(join(project, '.dsh', 'plugin-state', 'receipts.jsonl')), false)
   } finally {
     await rm(project, { recursive: true, force: true })
@@ -217,7 +217,7 @@ test('取不到工作目录时直接报错，不回退到进程启动目录', as
   await assert.rejects(
     () =>
       report.execute(
-        { iteration_id: 'bootstrap', stage: 'init', status: 'completed', summary_for_human: '不该写进去' },
+        { iteration_id: 'bootstrap', stage: 'bootstrap', status: 'completed', summary_for_human: '不该写进去' },
         {},
       ),
     /无法确定项目目录/,
@@ -240,7 +240,7 @@ test('cockpit_acceptance：声明 output、items 必填、只追加不覆盖', a
     // 验收表属于迭代环：先有一条 v1.0 的回执
     await appendReceipt(project, {
       iteration_id: 'v1.0',
-      stage: 'brainstorm',
+      stage: 'requirements',
       status: 'completed',
       summary_for_human: '需求定了',
     })

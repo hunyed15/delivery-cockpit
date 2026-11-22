@@ -25,15 +25,24 @@ window.__ModuleLoader__.load({
 
     // ---------- 文案映射：契约里的英文枚举在界面上必须说人话 ----------
 
+    // 9 阶段 canonical id → 4 字中文名；旧 id 保留映射，历史记录/旧账本仍显示人话。
     const STAGE_TEXT = {
+      bootstrap: '项目立项',
+      requirements: '需求定义',
+      architecture: '架构契约',
+      prototype: '原型设计',
+      implementation: '代码开发',
+      testing: '测试验证',
+      'code-review': '代码复核',
+      acceptance: '验收确认',
+      release: '部署发布',
+      // 旧 id（8 阶段模型）：只用于显示旧记录，不再写入新账本。
       init: '初始化',
       scaffold: '搭骨架',
       brainstorm: '想清楚',
-      prototype: '看原型',
       coding: '写代码',
       code_review: '挑毛病',
       verification: '验效果',
-      release: '发出去',
     }
 
     const STATUS_TEXT = {
@@ -2020,7 +2029,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const cycleIndex = cycleNodes.findIndex((node) => node && node.stageId === action.stageId)
       const stepText =
         cycleIndex >= 0
-          ? `第 ${cycleIndex + 1} 步 / 共 ${cycleNodes.length || 6} 步 · ${stageText}`
+          ? `第 ${cycleIndex + 1} 步 / 共 ${cycleNodes.length || 8} 步 · ${stageText}`
           : stageText
       const bandPercent =
         cycleIndex >= 0 && cycleNodes.length > 0
@@ -3111,7 +3120,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           title: '还没有验收条目',
           reason: drafting
             ? '下一步就是按 PRD 起草第一版，生成后回来逐条看结果。'
-            : '「验效果」阶段会按 PRD 起草。',
+            : '「验收确认」阶段会按 PRD 起草。',
           actionLabel: drafting ? '复制起草指令' : null,
         })
       } else {
@@ -3186,7 +3195,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           {
             icon: 'feature',
             title: '还没有 PRD，所以列不出功能',
-            reason: '「想清楚」阶段会产出它，先看上面的下一步。',
+            reason: '「需求定义」阶段会产出它，先看上面的下一步。',
             actionLabel: '复制下一步指令',
           },
           technical(h('p', { className: 'dc-hint' }, '以后把文件放到项目根目录的 prd.md 或 docs/prd.md 就行。')),

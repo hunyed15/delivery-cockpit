@@ -411,7 +411,7 @@ test('一条锚点都没有时明确提示先写 feature_ids', () => {
     receipts: [receipt({ feature_ids: [], write_scope: ['src/whatever'] })],
     review: reviewOf([]),
   })
-  assert.ok(board.notes.some((note) => /第一条 coding 回执请写上 feature_ids/.test(note)))
+  assert.ok(board.notes.some((note) => /第一条代码开发回执请写上 feature_ids/.test(note)))
 })
 
 test('自动归属：一条覆盖多个功能的回执会多处归属，但 note 按唯一回执计数', () => {

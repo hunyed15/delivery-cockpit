@@ -220,7 +220,7 @@ test('acceptance-draft：缺必需能力时不得被 hint 解禁（§6.3 优先�
   const model = build(evidence({ acceptance: emptyAcceptance }), {
     features: board,
     stageCapabilities: makeStageCapabilities({
-      verification: [resolved('verification-skill', { present: 'no', missingMessage: '该阶段需要的技能未安装：verification-skill。' })],
+      acceptance: [resolved('verification-skill', { present: 'no', missingMessage: '该阶段需要的技能未安装：verification-skill。' })],
     }),
   })
 
@@ -272,7 +272,7 @@ test('验收清单：stale 与计数随载荷下发（阶段门据此拦人）',
 
 test('审计回执（失效留痕）不参与进度轨，但仍出现在流水账里', () => {
   const audit = receipt({
-    stage: 'verification',
+    stage: 'acceptance',
     status: 'in_progress',
     event: 'acceptance-stale',
     summary_for_human: '截图有变化，验收「能添加客户」已失效',
@@ -281,16 +281,16 @@ test('审计回执（失效留痕）不参与进度轨，但仍出现在流水�
   const model = build(
     evidence({
       receipts: {
-        receipts: [receipt({ stage: 'coding', status: 'completed' }), audit],
+        receipts: [receipt({ stage: 'implementation', status: 'completed' }), audit],
         lastAt: audit.at,
       },
     }),
   )
   const cycle = model.progression.cycle
-  const verification = cycle.find((node) => node.stageId === 'verification')
-  assert.notEqual(verification.state, 'current', '审计回执不能把「验效果」标成进行中')
+  const acceptance = cycle.find((node) => node.stageId === 'acceptance')
+  assert.notEqual(acceptance.state, 'current', '审计回执不能把「验收确认」标成进行中')
   // 流水账照常展示它（审计事件是给人看的痕迹，不是进度）
-  assert.ok(model.ledger.receipts.some((row) => row.stage === 'verification' && /已失效/.test(row.summary)))
+  assert.ok(model.ledger.receipts.some((row) => row.stage === 'acceptance' && /已失效/.test(row.summary)))
 })
 
 test('验收清单：条目字段原样映射，未知 result 归一成 null，超 100 条标 truncated', () => {
@@ -451,7 +451,7 @@ test('总览行：形状固定，阶段名是人话，待决策与上次回执�
   assert.equal(row.path, ev.projectPath)
   assert.equal(row.initialized, true)
   assert.equal(row.stageId, 'prototype')
-  assert.equal(row.stageName, '看原型')
+  assert.equal(row.stageName, '原型设计')
   assert.equal(row.nextKind, 'decide')
   assert.match(row.nextTitle, /登录方式选哪种/)
   assert.equal(row.degraded, false)
@@ -475,12 +475,12 @@ test('详情模型：顶层形状逐字符合契约，ok 恒为 true', () => {
   for (const key of DETAIL_KEYS) assert.ok(key in model, `缺少字段 ${key}`)
 })
 
-test('progression：冷启动 2 + 迭代环 6，当前阶段恰好一个且是决策指向的写代码', () => {
+test('progression：冷启动 1 + 迭代环 8，当前阶段恰好一个且是决策指向的代码开发', () => {
   const model = build(
     evidence({
       receipts: {
         receipts: [
-          receipt({ stage: 'brainstorm', status: 'completed', summary_for_human: '需求定了' }),
+          receipt({ stage: 'requirements', status: 'completed', summary_for_human: '需求定了' }),
           receipt({ stage: 'prototype', status: 'completed', summary_for_human: '原型过了' }),
         ],
       },
@@ -488,32 +488,42 @@ test('progression：冷启动 2 + 迭代环 6，当前阶段恰好一个且是�
     }),
   )
 
-  assert.equal(model.progression.coldStart.length, 2)
-  assert.equal(model.progression.cycle.length, 6)
-  assert.deepEqual(model.progression.coldStart.map((node) => node.stageId), ['init', 'scaffold'])
-  assert.deepEqual(model.progression.cycle.map((node) => node.stageId), ['brainstorm', 'prototype', 'coding', 'code_review', 'verification', 'release'])
-  assert.deepEqual(model.progression.coldStart.map((node) => node.name), ['初始化', '搭骨架'])
+  assert.equal(model.progression.coldStart.length, 1)
+  assert.equal(model.progression.cycle.length, 8)
+  assert.deepEqual(model.progression.coldStart.map((node) => node.stageId), ['bootstrap'])
+  assert.deepEqual(model.progression.cycle.map((node) => node.stageId), [
+    'requirements',
+    'architecture',
+    'prototype',
+    'implementation',
+    'testing',
+    'code-review',
+    'acceptance',
+    'release',
+  ])
+  assert.deepEqual(model.progression.coldStart.map((node) => node.name), ['项目立项'])
   for (const node of [...model.progression.coldStart, ...model.progression.cycle]) {
     assert.deepEqual(Object.keys(node).sort(), STAGE_NODE_KEYS)
   }
 
   const current = currentNodes(model)
   assert.equal(current.length, 1, `当前阶段必须恰好一个：${current.map((node) => node.stageId).join(',')}`)
-  assert.equal(current[0].stageId, 'coding')
+  assert.equal(current[0].stageId, 'implementation')
 
   const cycle = model.progression.cycle
   assert.equal(cycle[0].state, 'done')
   assert.equal(cycle[0].receipt.status, 'completed')
-  assert.equal(cycle[1].state, 'done')
-  assert.equal(cycle[2].state, 'current')
-  assert.equal(cycle[2].receipt, null, '没有回执的阶段 receipt 必须是 null，不编造')
-  assert.equal(cycle[3].state, 'pending')
+  assert.equal(cycle[1].state, 'pending', '架构契约没有回执 ⇒ 不是 done')
+  assert.equal(cycle[2].state, 'done')
+  assert.equal(cycle[3].state, 'current')
+  assert.equal(cycle[3].receipt, null, '没有回执的阶段 receipt 必须是 null，不编造')
+  assert.equal(cycle[4].state, 'pending')
 })
 
 test('progression：有非 completed 回执时，回执优先于决策指向，仍只有一个 current', () => {
   const model = build(
     evidence({
-      receipts: { receipts: [receipt({ stage: 'code_review', status: 'in_progress' })] },
+      receipts: { receipts: [receipt({ stage: 'code-review', status: 'in_progress' })] },
       review: { available: true, rounds: 1, blocking: 0, fixed: 0 },
     }),
   )
@@ -522,27 +532,28 @@ test('progression：有非 completed 回执时，回执优先于决策指向，�
   assert.equal(model.nextAction.stageId, 'release')
   const current = currentNodes(model)
   assert.equal(current.length, 1)
-  assert.equal(current[0].stageId, 'code_review', '回执说在挑毛病，决策指向发出去时以回执为准')
+  assert.equal(current[0].stageId, 'code-review', '回执说在代码复核，决策指向部署发布时以回执为准')
   assert.equal(model.progression.cycle.find((node) => node.stageId === 'release').state, 'pending')
 })
 
-test('progression：冷启动阶段有回执时按 bootstrap 迭代记账', () => {
+test('progression：冷启动阶段有回执时按 bootstrap 迭代记账（旧 init 回执也投影到 bootstrap）', () => {
   const model = build(
     evidence({
       trellis: { exists: true, rules: true, initialized: false, partial: false },
       iteration: { current: 'bootstrap', isBootstrap: true },
       receipts: {
         receipts: [
-          receipt({ iteration_id: 'bootstrap', stage: 'init', status: 'completed' }),
-          receipt({ iteration_id: 'bootstrap', stage: 'scaffold', status: 'in_progress' }),
+          receipt({ iteration_id: 'bootstrap', stage: 'init', status: 'in_progress', summary_for_human: '正在建' }),
         ],
       },
     }),
   )
 
   assert.equal(model.nextAction.kind, 'init')
-  assert.equal(model.progression.coldStart[0].state, 'done')
-  assert.equal(model.progression.coldStart[1].state, 'current')
+  assert.equal(model.nextAction.stageId, 'bootstrap')
+  assert.equal(model.progression.coldStart.length, 1)
+  assert.equal(model.progression.coldStart[0].stageId, 'bootstrap')
+  assert.equal(model.progression.coldStart[0].state, 'current')
   assert.equal(currentNodes(model).length, 1)
 })
 
@@ -556,11 +567,11 @@ test('progression：整轮发布完成后 release 是 done，不会硬造第二�
 test('instruction 为 null 且缺阻断能力 ⇒ 禁用，disabledReason 取第一条 missing', () => {
   const missingMessage = '该阶段需要的技能未安装：ponytail。可以从技能市场安装，或跳过它用人工方式完成。'
   const stageCapabilities = makeStageCapabilities({
-    coding: [resolved('ponytail', { present: 'no', missingMessage }), resolved('tdd')],
+    implementation: [resolved('ponytail', { present: 'no', missingMessage }), resolved('tdd')],
   })
   const model = build(
     evidence({ tasks: { available: true, total: 1, open: 1, completed: 0 } }),
-    { playbook: makePlaybook({ omit: ['coding'] }), stageCapabilities },
+    { playbook: makePlaybook({ omit: ['implementation'] }), stageCapabilities },
   )
 
   assert.equal(model.nextAction.kind, 'coding')
@@ -576,9 +587,9 @@ test('instruction 为 null 且缺阻断能力 ⇒ 禁用，disabledReason 取第
 test('缺阻断能力时指令原文必须置空（模板存在也一样），否则复制/发送会下发注定失败的指令', () => {
   const missingMessage = '该阶段需要的技能未安装：ponytail。'
   const stageCapabilities = makeStageCapabilities({
-    coding: [resolved('ponytail', { present: 'no', missingMessage }), resolved('tdd')],
+    implementation: [resolved('ponytail', { present: 'no', missingMessage }), resolved('tdd')],
   })
-  // playbook 完整（coding 有 promptTemplate），所以指令本可以渲染出来；
+  // playbook 完整（implementation 有 promptTemplate），所以指令本可以渲染出来；
   // 正因为能力缺失，它必须被压成 null。
   const model = build(evidence({ tasks: { available: true, total: 1, open: 1 } }), { stageCapabilities })
 
@@ -591,8 +602,8 @@ test('缺阻断能力时指令原文必须置空（模板存在也一样），�
 
 test('instruction 为 null 但没有缺失能力时，不误报禁用', () => {
   const model = build(evidence({ tasks: { available: true, total: 1, open: 1 } }), {
-    playbook: makePlaybook({ omit: ['coding'] }),
-    stageCapabilities: makeStageCapabilities({ coding: [] }),
+    playbook: makePlaybook({ omit: ['implementation'] }),
+    stageCapabilities: makeStageCapabilities({ implementation: [] }),
   })
   assert.equal(model.nextAction.instruction, null)
   assert.equal(model.nextAction.missing.length, 0)
@@ -623,17 +634,51 @@ test('buttons：复制 / 初始化 / 原型批准 / 降级时只留复制（先�
 
 test('nextAction 能力来自 stageCapabilities，指令由 playbook 模板渲染', () => {
   const stageCapabilities = makeStageCapabilities({
-    release: [resolved('finishing-a-development-branch'), resolved('trellis-finish-work'), resolved('context7', { kind: 'mcp', present: 'unknown', missingMessage: null })],
+    release: [resolved('trellis-finish-work'), resolved('context7', { kind: 'mcp', present: 'unknown', missingMessage: null })],
   })
   const model = build(evidence(), { stageCapabilities })
 
   assert.equal(model.nextAction.kind, 'release')
-  assert.equal(model.nextAction.stageName, '发出去')
+  assert.equal(model.nextAction.stageName, '部署发布')
   assert.deepEqual(model.nextAction.capabilities, stageCapabilities.release)
   assert.deepEqual(model.nextAction.missing, [], 'unknown 与 present=yes 都不算阻断')
-  assert.match(model.nextAction.instruction, /finishing-a-development-branch/)
   assert.match(model.nextAction.instruction, /trellis-finish-work/)
   assert.doesNotMatch(model.nextAction.instruction, /context7/, 'present=unknown 不进指令')
+})
+
+test('nextAction 原样透传 9 阶段元信息：method / constraint / deliverables / technicalGate / decisionGate', () => {
+  const stageCapabilities = makeStageCapabilities()
+  const playbook = {
+    version: 2,
+    stages: {
+      部署发布: {
+        capabilities: [{ kind: 'skill', name: 'skill-release', mode: 'full' }],
+        promptTemplate: '执行【部署发布】：{capabilities}',
+        method: 'trellis-finish-work',
+        constraint: 'ponytail',
+        deliverables: ['.dsh/plugin-state/release.json', 'dist/'],
+        technicalGate: 'validateRelease',
+        decisionGate: { title: '发布批准', approveAction: 'approve-release' },
+      },
+    },
+    missingHints: {},
+  }
+  const model = build(evidence(), { playbook, stageCapabilities })
+
+  assert.equal(model.nextAction.stageId, 'release')
+  assert.equal(model.nextAction.method, 'trellis-finish-work')
+  assert.equal(model.nextAction.constraint, 'ponytail')
+  assert.deepEqual(model.nextAction.deliverables, ['.dsh/plugin-state/release.json', 'dist/'])
+  assert.equal(model.nextAction.technicalGate, 'validateRelease')
+  assert.deepEqual(model.nextAction.decisionGate, { title: '发布批准', approveAction: 'approve-release' })
+
+  // 没有阶段/条目的动作：元信息为 null / []，不编造。
+  const degraded = build(evidence({ degraded: { flag: true, reasons: [{ source: 'card', message: '坏了' }] } }))
+  assert.equal(degraded.nextAction.method, null)
+  assert.equal(degraded.nextAction.constraint, null)
+  assert.deepEqual(degraded.nextAction.deliverables, [])
+  assert.equal(degraded.nextAction.technicalGate, null)
+  assert.equal(degraded.nextAction.decisionGate, null)
 })
 
 test('ledger：倒序取 20 条，total 是全量，truncated 与二者一致，坏行原样上报', () => {
@@ -641,7 +686,7 @@ test('ledger：倒序取 20 条，total 是全量，truncated 与二者一致，
     receipt({
       id: `r-${index + 1}`,
       at: new Date(Date.UTC(2026, 10, 20, 10, index, 0)).toISOString(),
-      stage: index % 2 === 0 ? 'coding' : 'code_review',
+      stage: index % 2 === 0 ? 'implementation' : 'code-review',
       status: 'completed',
       summary_for_human: `第 ${index + 1} 条`,
       artifacts: ['a.ts'],
@@ -660,7 +705,7 @@ test('ledger：倒序取 20 条，total 是全量，truncated 与二者一致，
   assert.deepEqual(Object.keys(model.ledger.receipts[0]).sort(), LEDGER_RECEIPT_KEYS)
   assert.equal(model.ledger.receipts[0].id, 'r-25', '必须最新在上')
   assert.equal(model.ledger.receipts[19].id, 'r-6')
-  assert.equal(model.ledger.receipts[0].stageName, model.ledger.receipts[0].stage === 'coding' ? '写代码' : '挑毛病')
+  assert.equal(model.ledger.receipts[0].stageName, model.ledger.receipts[0].stage === 'implementation' ? '代码开发' : '代码复核')
   assert.equal(model.ledger.receipts[0].iterationId, 'v1.0')
   assert.equal(model.ledger.receipts[0].summary, '第 25 条')
   assert.equal(model.ledger.receipts[0].usedSkill, 'ponytail')

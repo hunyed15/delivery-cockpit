@@ -79,7 +79,7 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
     // 1) 未初始化 → 初始化
     let { decision } = await decisionOf(project)
     assert.equal(decision.kind, 'init')
-    assert.equal(decision.stageId, 'init')
+    assert.equal(decision.stageId, 'bootstrap')
 
     // 2) 初始化之后（名片名字由目录名回退、定位留空等人填）→ 想清楚
     const plan = await planInit(project)
@@ -88,12 +88,12 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
     assert.equal(applied.applied, true)
     ;({ decision } = await decisionOf(project))
     assert.equal(decision.kind, 'brainstorm')
-    assert.equal(decision.stageId, 'brainstorm')
+    assert.equal(decision.stageId, 'requirements')
 
     // 3) 迭代开始 + PRD 写出来 → 看原型
     await appendReceipt(project, {
       iteration_id: 'v1.0',
-      stage: 'brainstorm',
+      stage: 'requirements',
       status: 'completed',
       summary_for_human: '需求收敛成 prd.md',
       used_skill_or_mcp: 'trellis-brainstorm',
@@ -114,7 +114,7 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
     assert.equal(approved.ok, true)
     ;({ decision } = await decisionOf(project))
     assert.equal(decision.kind, 'coding')
-    assert.equal(decision.stageId, 'coding')
+    assert.equal(decision.stageId, 'implementation')
 
     // 5) 建了任务 → 继续写代码
     await mkdir(join(project, '.trellis', 'tasks', 'T1'), { recursive: true })
@@ -147,7 +147,7 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
     )
     ;({ decision } = await decisionOf(project))
     assert.equal(decision.kind, 'verification')
-    assert.equal(decision.stageId, 'verification')
+    assert.equal(decision.stageId, 'acceptance')
 
     // 8) pass 必须带证据；只有 result 不算
     await writeFile(
@@ -188,7 +188,7 @@ test('待人工决策最高优：与 status 填什么无关', async () => {
     await applyInit(project, plan)
     await appendReceipt(project, {
       iteration_id: 'v1.0',
-      stage: 'brainstorm',
+      stage: 'requirements',
       status: 'in_progress',
       summary_for_human: '登录方式需要你拍板',
       needs_human_decision: { title: '登录方式选哪种', options: ['手机号', '邮箱'], recommended: '手机号' },
@@ -211,7 +211,7 @@ test('面板详情与总览来自同一份证据：金额/数字不跨源', asyn
     await mkdir(join(project, '.dsh', 'plugin-state'), { recursive: true })
     await writeFile(
       join(project, '.dsh', 'plugin-state', 'receipts.jsonl'),
-      `{ this is not json\n${JSON.stringify({ id: 'r-1', at: '2026-01-01T00:00:00.000Z', iteration_id: 'bootstrap', stage: 'init', status: 'completed', summary_for_human: '建好了' })}\n`,
+      `{ this is not json\n${JSON.stringify({ id: 'r-1', at: '2026-01-01T00:00:00.000Z', iteration_id: 'bootstrap', stage: 'bootstrap', status: 'completed', summary_for_human: '建好了' })}\n`,
       'utf8',
     )
     const model = await detailOf(project)
@@ -238,7 +238,7 @@ test('验收失效联动阶段门：通过 → 截图变化 → 回验效果 →
     // 迭代与前置阶段：prd + 原型批准 + 任务全部完成
     await appendReceipt(project, {
       iteration_id: 'v1.0',
-      stage: 'brainstorm',
+      stage: 'requirements',
       status: 'completed',
       summary_for_human: '需求定了',
     })
@@ -256,7 +256,7 @@ test('验收失效联动阶段门：通过 → 截图变化 → 回验效果 →
     )
     await appendReceipt(project, {
       iteration_id: 'v1.0',
-      stage: 'coding',
+      stage: 'implementation',
       status: 'completed',
       summary_for_human: '列表做完了',
       feature_ids: ['FR-1'],
@@ -320,7 +320,7 @@ test('功能账端到端：PRD 的 FR 标题 → 回执 → 验收，三路证�
     )
     await appendReceipt(project, {
       iteration_id: 'v1.0',
-      stage: 'coding',
+      stage: 'implementation',
       status: 'completed',
       summary_for_human: '客户列表做完了',
       feature_ids: ['FR-1'],
@@ -330,7 +330,7 @@ test('功能账端到端：PRD 的 FR 标题 → 回执 → 验收，三路证�
     })
     await appendReceipt(project, {
       iteration_id: 'v1.0',
-      stage: 'coding',
+      stage: 'implementation',
       status: 'completed',
       summary_for_human: '导入写完，等验收',
       feature_ids: ['FR-2'],

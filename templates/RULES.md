@@ -1,13 +1,28 @@
-# 本项目的工作规则（项目驾驶舱）
+# 本项目的工作规则（Delivery Cockpit）
 
 > 放在 `.dsh/plugin-state/RULES.md`。任何会话在这个项目里工作，都按这份规则执行。
 > 它只规定**底线与顺序**，不规定技术细节；技术细节由各 skill 负责。
 
 ## 1. 阶段由插件决定，不由 skill 决定
 
-- 项目走到哪一步、下一步做什么，**以「项目驾驶舱」面板的「下一步」为准**。
-- 技能（skill）只能决定"这一步**怎么做**"，**不得改变"做哪一步"**。
+项目阶段固定为 9 个（4 字中文名 / canonical id）：
+
+| 中文名 | id | 说明 |
+|---|---|---|
+| 项目立项 | `bootstrap` | 冷启动，每项目一次 |
+| 需求定义 | `requirements` | PRD / FR / 验收标准 |
+| 架构契约 | `architecture` | 组件 / 数据模型 / 接口 / ADR |
+| 原型设计 | `prototype` | 静态原型 + 人点通过 |
+| 代码开发 | `implementation` | 按任务实现 |
+| 测试验证 | `testing` | 测试报告（失败数=0） |
+| 代码复核 | `code-review` | 独立评审，blocking=0 |
+| 验收确认 | `acceptance` | 人工逐条验收 + 证据 |
+| 部署发布 | `release` | 发布清单 + 人批准 |
+
+- 走到哪一步、下一步做什么，**以驾驶舱面板的「下一步」为准**。
+- 技能（skill）只决定"这一步**怎么做**"，**不得改变"做哪一步"**。
 - 若某个 skill 的流程与本规则冲突，**以本规则为准**，并在回执里说明"我偏离了哪个 skill 的哪一条"。
+- 历史账本里的旧 stage id（`init`/`scaffold`/`brainstorm`/`coding`/`code_review`/`verification`）会被自动归一，不影响既有记录。
 
 ## 2. 动手前先认领
 
@@ -17,31 +32,35 @@
 
 ## 3. 每一步都必须交回执
 
-任何技能/MCP 跑完，往 `.dsh/plugin-state/receipts.jsonl` **追加一行**：
+优先调用 `cockpit_report` 工具（强类型校验，参数见工具 schema）；工具不可用时才手工往 `.dsh/plugin-state/receipts.jsonl` 追加一行，schema 如下：
 
 ```json
-{"at":"2026-11-20T14:40:12+08:00","stage":"验效果","skill":"playwright","status":"ready",
- "summary_for_human":"下单主流程跑通，截图 2 张","artifacts":["shots/order-1.png"],
- "task_ref":"T3","write_scope":["web/orders/**"],
- "blocking_issues":[],"needs_human_decision":false}
+{"iteration_id":"v1.0","stage":"acceptance","status":"completed",
+ "summary_for_human":"下单主流程跑通，截图 2 张", "used_skill_or_mcp":"verify-claims",
+ "artifacts":["shots/order-1.png"], "task_ref":"T3", "write_scope":["web/orders/**"],
+ "feature_ids":["FR-1"], "needs_human_decision":null}
 ```
 
 | 字段 | 要求 |
 |---|---|
-| `stage` / `skill` / `status` | 必填。`status` ∈ `progress` / `waiting` / `ready` / `blocked` / `failed` / `dropped` |
-| `summary_for_human` | 必填，**一句人话**说清发生了什么。写不出来 = 这一步不算做完 |
-| `task_ref` | 改代码时必填，指向认领的任务 |
-| `write_scope` | 改代码时必填，实际改到的目录 |
-| `needs_human_decision` | 需要我拍板时置 `true`，并在 `summary` 里写清选什么 |
+| `iteration_id` | 必填。冷启动固定 `"bootstrap"`；迭代环用 `v1.0` / `v1.1` |
+| `stage` | 必填，canonical id（见 §1）；旧 id 会被归一 |
+| `status` | 必填，`in_progress` / `completed` / `blocked` / `failed` / `dropped` |
+| `summary_for_human` | 必填，一句人话说清发生了什么；写不出来 = 这一步不算做完 |
+| `used_skill_or_mcp` | 记录这一步实际使用的 skill/MCP（如 `tdd-loop`、`frontend-design`、`claude_review`） |
+| `task_ref` / `write_scope` | 改代码时必填（`implementation` 阶段强制） |
+| `feature_ids` | 这条回执对应哪些 PRD 功能（如 `["FR-1"]`），可省略 |
+| `artifacts` | 产物路径（截图、报告、发布清单等） |
+| `needs_human_decision` | 需要我拍板时给决策对象，并在 summary 写清选什么 |
 
 追加写，不修改历史。
 
 ## 4. 什么时候必须停下来问人
 
-出现以下任一情况，**立即停**，写一条 `status: "blocked"` 或 `needs_human_decision: true` 的回执，然后等我：
+出现以下任一情况，**立即停**，写一条 `status: "blocked"` 或 `needs_human_decision` 的回执，然后等我：
 
 - 两种方案都合理，取舍取决于产品判断（不是技术判断）
-- 需要改已冻结的契约
+- 需要改已冻结的契约（架构契约阶段签核过的接口/数据模型）
 - 要删数据、改账本、动 `.trellis/` 结构
 - 连续 2 次尝试失败
 - 预算（轮数/时间）将超出
@@ -56,7 +75,13 @@
 
 同一件事多层都有能力时按此顺序；跨场景例外（如跨进程协作只能用 trellis channel）。**不得自行引入未登记的能力**——若确实需要，先写回执说明，等我决定。
 
-## 6. 不做的事
+## 6. 能力纪律
+
+- 每个阶段有**声明的 Method/Constraint**（如代码开发=`tdd-loop`、测试验证=`verify-claims`、原型设计=`frontend-design`）；按声明使用，并在回执 `used_skill_or_mcp` 里写实际使用的名字。
+- 声明的能力缺失时：优先用 playbook 里的回退方案，并在回执里写明"缺失 + 回退"；不得静默跳过。
+- 没有证据（命令输出/测试报告/截图/审核账本）不得声称完成。
+
+## 7. 不做的事
 
 - 不写伪造的进度数字：读不到就写 `—` 或"未知"，不默认 0
 - 不把"看代码觉得没问题"当作验收通过

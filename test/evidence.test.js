@@ -620,3 +620,22 @@ test('warnings / degraded 元素形状统一 {source,message}；workspace 异常
     assert.equal(evidence.ok, true, '单个数据源坏掉不改变 workspace 结论')
   })
 })
+
+test('旧账本 stage 在 evidence 层投影为 canonical：不算坏行，迭代/进度口径不变', async () => {
+  await withProject(async (project) => {
+    await writeReceipts(project, [
+      receiptLine({ iteration_id: 'bootstrap', stage: 'init', summary_for_human: '初始化' }),
+      receiptLine({ iteration_id: 'v1.0', stage: 'brainstorm', summary_for_human: '需求定了' }),
+      receiptLine({ iteration_id: 'v1.0', stage: 'coding', task_ref: 'T1', write_scope: ['web/**'], summary_for_human: '写完了' }),
+      receiptLine({ iteration_id: 'v1.0', stage: 'verification', summary_for_human: '验过了' }),
+    ])
+    const evidence = await readEvidence(project)
+    assert.equal(evidence.receipts.badLines, 0, '旧阶段名必须不是坏行')
+    assert.deepEqual(
+      evidence.receipts.receipts.map((item) => item.stage),
+      ['bootstrap', 'requirements', 'implementation', 'acceptance'],
+    )
+    assert.equal(evidence.iteration.current, 'v1.0')
+    assert.equal(evidence.degraded.flag, false)
+  })
+})

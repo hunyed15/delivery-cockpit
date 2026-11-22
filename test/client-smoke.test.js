@@ -117,6 +117,36 @@ test('人话词表：旧词清零、新词齐备', () => {
   assert.ok(!source.includes('h(\'th\''), '功能/验收不再用表头表格')
 })
 
+test('STAGE_TEXT：9 个 canonical id 的中文名齐备，旧 id 映射保留', () => {
+  const canonical = {
+    bootstrap: '项目立项',
+    requirements: '需求定义',
+    architecture: '架构契约',
+    prototype: '原型设计',
+    implementation: '代码开发',
+    testing: '测试验证',
+    'code-review': '代码复核',
+    acceptance: '验收确认',
+    release: '部署发布',
+  }
+  for (const [id, name] of Object.entries(canonical)) {
+    const plain = source.includes(`${id}: '${name}'`)
+    const quoted = source.includes(`'${id}': '${name}'`)
+    assert.ok(plain || quoted, `STAGE_TEXT 缺少新 id 映射 ${id} → ${name}`)
+  }
+  const legacy = {
+    init: '初始化',
+    scaffold: '搭骨架',
+    brainstorm: '想清楚',
+    coding: '写代码',
+    code_review: '挑毛病',
+    verification: '验效果',
+  }
+  for (const [id, name] of Object.entries(legacy)) {
+    assert.ok(source.includes(`      ${id}: '${name}'`), `STAGE_TEXT 必须保留旧 id 映射 ${id} → ${name}`)
+  }
+})
+
 test('信息架构：主区四块 + 右栏，footer 已删', () => {
   for (const title of ['现在要做的下一件事', '项目进度', '功能', '验收']) {
     assert.ok(source.includes(`title: '${title}'`), `缺少区标题：${title}`)
@@ -138,7 +168,7 @@ test('header 与摘要条说人话', () => {
 })
 
 test('Hero：Answer-first 动作 + 步骤上下文 + 唯一主按钮', () => {
-  assert.ok(source.includes('第 ${cycleIndex + 1} 步 / 共 ${cycleNodes.length || 6} 步'), 'hero 必须有「第 N 步 / 共 6 步」上下文')
+  assert.ok(source.includes('第 ${cycleIndex + 1} 步 / 共 ${cycleNodes.length || 8} 步'), 'hero 必须有「第 N 步 / 共 8 步」上下文')
   assert.ok(source.includes('stepText') && source.includes('dc-action-eyebrow'), '步骤上下文必须渲染')
   assert.ok(source.includes("'复制给 AI'"), '主按钮必须是「复制给 AI」')
   assert.ok(source.includes("className: 'dc-module-hero'"), 'hero 是唯一 surface')

@@ -5,10 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   BOOTSTRAP_ITERATION,
+  LEGACY_STAGE_ALIASES,
   MAX_RECEIPT_BYTES,
   appendReceipt,
   currentIteration,
   isAuditReceipt,
+  normalizeStage,
   pendingDecision,
   readReceipts,
   readReceiptsFromText,
@@ -18,6 +20,7 @@ import {
   stateDirOf,
   validateReceipt,
 } from '../lib/receipts.js'
+import { deriveDecision } from '../lib/state.js'
 
 const base = { iteration_id: 'v1.0', stage: 'brainstorm', status: 'completed', summary_for_human: '需求定了' }
 
@@ -33,13 +36,41 @@ test('校验：stage / status 必须是枚举值', () => {
   assert.equal(validateReceipt({ ...base, status: 'done' }).ok, false)
 })
 
-test('校验：coding 阶段必须带 task_ref 与 write_scope', () => {
-  const result = validateReceipt({ ...base, stage: 'coding' })
+test('normalizeStage / LEGACY_STAGE_ALIASES：旧 id 归一到 canonical，未知不猜', () => {
+  const expected = {
+    init: 'bootstrap',
+    scaffold: 'bootstrap',
+    brainstorm: 'requirements',
+    prototype: 'prototype',
+    coding: 'implementation',
+    code_review: 'code-review',
+    verification: 'acceptance',
+    release: 'release',
+  }
+  assert.deepEqual(LEGACY_STAGE_ALIASES, expected)
+  for (const [legacy, canonical] of Object.entries(expected)) {
+    assert.equal(normalizeStage(legacy), canonical, `${legacy} 应归一为 ${canonical}`)
+  }
+  for (const canonical of ['bootstrap', 'requirements', 'architecture', 'prototype', 'implementation', 'testing', 'code-review', 'acceptance', 'release']) {
+    assert.equal(normalizeStage(canonical), canonical, 'canonical id 原样返回')
+  }
+  assert.equal(normalizeStage('deploy'), null, '未知 stage 不猜')
+  assert.equal(normalizeStage(null), null)
+  assert.equal(normalizeStage(42), null)
+})
+
+test('校验：implementation 阶段必须带 task_ref 与 write_scope（旧 coding 别名同样）', () => {
+  const result = validateReceipt({ ...base, stage: 'implementation' })
   assert.equal(result.ok, false)
   assert.match(result.error, /task_ref/)
   assert.match(result.error, /write_scope/)
-  const ok = validateReceipt({ ...base, stage: 'coding', task_ref: 'T1', write_scope: ['web/**'] })
+  const ok = validateReceipt({ ...base, stage: 'implementation', task_ref: 'T1', write_scope: ['web/**'] })
   assert.equal(ok.ok, true)
+  assert.equal(ok.value.stage, 'implementation')
+
+  const legacy = validateReceipt({ ...base, stage: 'coding', task_ref: 'T1', write_scope: ['web/**'] })
+  assert.equal(legacy.ok, true, '旧 coding 别名应归一后按 implementation 校验')
+  assert.equal(legacy.value.stage, 'implementation')
 })
 
 test('校验：needs_human_decision 必须有 title', () => {
@@ -141,17 +172,22 @@ test('待人工决策：最新一条且之后没有同迭代回执才算未解�
   assert.equal(pendingDecision(progressAfterAudit), null)
 })
 
-test('阶段状态只取指定迭代的最新值', () => {
+test('阶段状态只取指定迭代的最新值；旧 stage 也落在 canonical 键上', () => {
   const states = stageStates(
     [
       { iteration_id: 'v1.0', stage: 'coding', status: 'in_progress', at: '1' },
       { iteration_id: 'v1.0', stage: 'coding', status: 'completed', at: '2' },
       { iteration_id: 'v1.1', stage: 'coding', status: 'in_progress', at: '3' },
+      { iteration_id: 'v1.0', stage: 'verification', status: 'completed', at: '4' },
     ],
     'v1.0',
   )
-  assert.equal(states.get('coding').status, 'completed')
-  assert.equal(states.size, 1)
+  // 旧 coding 归一为 implementation、旧 verification 归一为 acceptance：不再各占一个新键。
+  assert.equal(states.get('implementation').status, 'completed')
+  assert.equal(states.get('acceptance').status, 'completed')
+  assert.equal(states.has('coding'), false)
+  assert.equal(states.has('verification'), false)
+  assert.equal(states.size, 2)
 })
 
 test('readReceiptsFromText：与 readReceipts 的解析口径完全一致', async () => {
@@ -248,43 +284,58 @@ test('没超限时 truncated=false，读取口径不变', async () => {
   }
 })
 
-test('event：只接受登记过的审计事件；普通回执 event 为 null', () => {
+test('event：只接受登记过的审计事件；普通回执 event 为 null；旧 verification 归一到 acceptance', () => {
   assert.equal(
     validateReceipt({
       iteration_id: 'v1.0',
-      stage: 'verification',
+      stage: 'acceptance',
       status: 'in_progress',
       summary_for_human: 'x',
       event: 'acceptance-stale',
     }).value.event,
     'acceptance-stale',
   )
+  // 旧账本里的 verification 经 normalize 后同样是 acceptance，写入仍兼容。
+  const legacy = validateReceipt({
+    iteration_id: 'v1.0',
+    stage: 'verification',
+    status: 'in_progress',
+    summary_for_human: 'x',
+    event: 'acceptance-stale',
+  })
+  assert.equal(legacy.ok, true)
+  assert.equal(legacy.value.stage, 'acceptance')
   assert.equal(validateReceipt(base).value.event, null)
   assert.equal(validateReceipt({ ...base, event: 'typo-event' }).ok, false)
   assert.equal(validateReceipt({ ...base, event: '' }).ok, false)
   assert.equal(validateReceipt({ ...base, event: 42 }).ok, false)
 })
 
-test('验收复核（acceptance-recheck）：必须 stage=verification / status=completed', () => {
-  const recheck = { iteration_id: 'v1.0', stage: 'verification', status: 'completed', summary_for_human: '复核 A1：仍通过', event: 'acceptance-recheck' }
+test('验收复核（acceptance-recheck）：必须 stage=acceptance / status=completed', () => {
+  const recheck = { iteration_id: 'v1.0', stage: 'acceptance', status: 'completed', summary_for_human: '复核 A1：仍通过', event: 'acceptance-recheck' }
   assert.equal(validateReceipt(recheck).ok, true)
   assert.equal(validateReceipt(recheck).value.event, 'acceptance-recheck')
 
+  // 旧 verification 仍接受，但落盘归一成 acceptance（不制造第二套阶段键）。
+  const legacy = validateReceipt({ ...recheck, stage: 'verification' })
+  assert.equal(legacy.ok, true)
+  assert.equal(legacy.value.stage, 'acceptance')
+
   // 错误组合必须拒绝（防止伪装成别的阶段进度）
-  assert.equal(validateReceipt({ ...recheck, stage: 'coding' }).ok, false)
+  assert.equal(validateReceipt({ ...recheck, stage: 'implementation' }).ok, false)
   assert.equal(validateReceipt({ ...recheck, status: 'in_progress' }).ok, false)
   // 失效留痕的配对也锁死
   assert.equal(validateReceipt({ ...recheck, event: 'acceptance-stale' }).ok, false)
   assert.equal(
     validateReceipt({ ...recheck, status: 'in_progress' }).error,
-    'acceptance-recheck 回执必须是 stage=verification / status=completed',
+    'acceptance-recheck 回执必须是 stage=acceptance / status=completed',
   )
 
   // 审计回执自己也不能挂待决策（写入口拦截 + 判定兜底）
   assert.equal(
     validateReceipt({
       iteration_id: 'v1.0',
-      stage: 'verification',
+      stage: 'acceptance',
       status: 'completed',
       summary_for_human: 'x',
       event: 'acceptance-recheck',
@@ -296,7 +347,7 @@ test('验收复核（acceptance-recheck）：必须 stage=verification / status=
     pendingDecision([
       {
         iteration_id: 'v1.0',
-        stage: 'verification',
+        stage: 'acceptance',
         status: 'completed',
         event: 'acceptance-recheck',
         summary_for_human: '手改账本',
@@ -309,16 +360,68 @@ test('验收复核（acceptance-recheck）：必须 stage=verification / status=
 
 test('审计事件不参与阶段进度投影（stageStates 跳过）', () => {
   const receipts = [
-    { iteration_id: 'v1.0', stage: 'verification', status: 'completed', at: '1' },
-    { iteration_id: 'v1.0', stage: 'verification', status: 'in_progress', at: '2', event: 'acceptance-stale' },
+    { iteration_id: 'v1.0', stage: 'acceptance', status: 'completed', at: '1' },
+    { iteration_id: 'v1.0', stage: 'acceptance', status: 'in_progress', at: '2', event: 'acceptance-stale' },
+    // 旧账本里的 verification 审计回执：归一到 acceptance 后同样必须跳过。
+    { iteration_id: 'v1.0', stage: 'verification', status: 'in_progress', at: '3', event: 'acceptance-stale' },
   ]
   const states = stageStates(receipts, 'v1.0')
-  assert.equal(states.get('verification').status, 'completed', '审计回执不能把阶段打回进行中')
+  assert.equal(states.get('acceptance').status, 'completed', '审计回执不能把阶段打回进行中')
+  assert.equal(states.has('verification'), false, '旧 id 不新建阶段键')
   assert.equal(isAuditReceipt(receipts[1]), true)
   assert.equal(isAuditReceipt(receipts[0]), false)
   // 与写入口共用白名单：手改进来的未知 event 不算审计（validateReceipt 本来也会拒绝写入它）
   assert.equal(isAuditReceipt({ event: 'typo-event' }), false)
   assert.equal(isAuditReceipt({ event: 42 }), false)
+})
+
+test('旧账本兼容：旧 stage 写入/读取都投影为 canonical，released 仍成立', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'readme-legacy-'))
+  try {
+    await mkdir(stateDirOf(dir), { recursive: true })
+    const legacyLines = [
+      { id: 'r-1', at: '2026-11-20T10:00:00.000Z', iteration_id: 'bootstrap', stage: 'init', status: 'completed', summary_for_human: '建好了' },
+      { id: 'r-2', at: '2026-11-20T10:01:00.000Z', iteration_id: 'v1.0', stage: 'coding', status: 'completed', summary_for_human: '写完了', task_ref: 'T1', write_scope: ['web/**'] },
+      { id: 'r-3', at: '2026-11-20T10:02:00.000Z', iteration_id: 'v1.0', stage: 'verification', status: 'completed', summary_for_human: '验过了' },
+      { id: 'r-4', at: '2026-11-20T10:03:00.000Z', iteration_id: 'v1.0', stage: 'release', status: 'completed', summary_for_human: '发了' },
+    ]
+    await writeFile(receiptsPathOf(dir), `${legacyLines.map((line) => JSON.stringify(line)).join('\n')}\n`, 'utf8')
+
+    const read = await readReceipts(dir)
+    assert.equal(read.badLines, 0, '旧阶段名不是坏行')
+    assert.deepEqual(read.receipts.map((item) => item.stage), ['bootstrap', 'implementation', 'acceptance', 'release'])
+
+    const states = stageStates(read.receipts, 'v1.0')
+    assert.equal(states.get('implementation').status, 'completed')
+    assert.equal(states.get('acceptance').status, 'completed')
+
+    // 旧账本喂给状态机：当前迭代已有 release completed ⇒ 仍认作"已发布"。
+    const decision = deriveDecision({
+      iteration: { current: 'v1.0' },
+      receipts: { receipts: read.receipts },
+      trellis: { initialized: true },
+      prd: { found: true },
+      approval: { approved: true },
+      tasks: { available: true, total: 1, open: 0 },
+      review: { available: true, rounds: 1, blocking: 0, fixed: 0 },
+      acceptance: {
+        items: [{ id: 'A1', result: 'pass', evidence: ['shots/a1.png'] }],
+        empty: false,
+        total: 1,
+        withResult: 1,
+        passed: 1,
+        failed: 0,
+        blocked: 0,
+        passWithoutEvidence: 0,
+        stale: 0,
+        appliesToCurrent: true,
+      },
+    })
+    assert.equal(decision.kind, 'next-iteration', 'released() 应仍认旧账本里的 release 回执')
+    assert.equal(decision.stageId, 'release')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })
 
 test('feature_ids：可选，给了必须是字符串数组，落盘统一大写去空格', () => {

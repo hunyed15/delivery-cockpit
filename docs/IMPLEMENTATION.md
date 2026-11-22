@@ -47,12 +47,12 @@
  "task_ref":"T3","write_scope":["web/orders/**"],"needs_human_decision":null}
 ```
 
-- `stage` ∈ `init|scaffold|brainstorm|prototype|coding|code_review|verification|release`
+- `stage` ∈ `bootstrap|requirements|architecture|prototype|implementation|testing|code-review|acceptance|release`（canonical 9 阶段）。**旧账本读取时归一、内部 `appendReceipt` 写入时归一；`cockpit_report` 工具入口只接受 canonical id（schema enum）**，见 §2.7。
 - `event`（可选）：**审计事件**，当前有 `acceptance-stale`（插件写的验收失效留痕）与 `acceptance-recheck`（Agent 主动写的验收复核留痕）。带 `event` 的回执只出现在流水账里，
   **不参与阶段进度/功能状态/待决策投影**（否则会让「验效果」长期停在进行中、功能显示进行中，与状态机自相矛盾）。
 - `status` ∈ `in_progress|completed|blocked|failed|dropped`
 - `iteration_id`：冷启动固定 `"bootstrap"`；迭代环用 `v1.0` / `v1.1` 等
-- `coding` 阶段强制 `task_ref` 非空 + `write_scope` 非空数组
+- `implementation` 阶段强制 `task_ref` 非空 + `write_scope` 非空数组（旧 `coding` 别名归一到它后同样强制）
 - `needs_human_decision` 非空对象 ⇒ 待人工决策（`title` 必填）
 - 坏行：读取时跳过并计入 `badLines`，不抛错
 
@@ -71,26 +71,41 @@
 
 ### 2.3 `.dsh/plugin-state/playbook.json`（项目覆盖）
 
-内置默认在包内 `templates/playbook.json`（8 阶段）。项目覆盖文件的合并规则：
+内置默认在包内 `templates/playbook.json`（version 2，9 阶段）。项目覆盖文件的合并规则：
 
 - 顶层 `missingHints`：按 key 覆盖；
 - `stages`：同名 stage **整体替换**（不做深合并，避免半覆盖产生语义不明的阶段）；未提到的 stage 保留内置；
+- **version 不一致**：项目覆盖的 `version` 与内置不同（如旧 `version: 1` + 8 个中文阶段 key）⇒ **忽略覆盖里的 `stages`**，保留内置 9 阶段，只让 `missingHints` 等非 stage 字段覆盖，并记一条 warning；
 - 非法 JSON / 结构不是对象 / `stages` 不是对象 ⇒ 忽略覆盖 + 一条 warning，回退内置（绝不半信半疑）。
 
-**stage 对应关系（代码常量，写死一次）**：
+**canonical stage 对应关系（代码常量 `STAGE_DEFS`，写死一次）**：
 
-| receipt `stage` | playbook key | 人话阶段名 | 备注 |
+| receipt `stage` | playbook key | 4 字阶段名 | 轨 |
 |---|---|---|---|
-| `init` | 初始化 | 初始化 | 冷启动 |
-| `scaffold` | 搭骨架 | 搭骨架 | 冷启动 |
-| `brainstorm` | 想清楚 | 想清楚 | 迭代环 |
-| `prototype` | 定规格 | 看原型 | 迭代环；"定规格"是 playbook 的写法 |
-| `coding` | 写代码 | 写代码 | 迭代环 |
-| `code_review` | 挑毛病 | 挑毛病 | 迭代环 |
-| `verification` | 验效果 | 验效果 | 迭代环 |
-| `release` | 发出去 | 发出去 | 迭代环 |
+| `bootstrap` | 项目立项 | 项目立项 | 冷启动 |
+| `requirements` | 需求定义 | 需求定义 | 迭代环 |
+| `architecture` | 架构契约 | 架构契约 | 迭代环 |
+| `prototype` | 原型设计 | 原型设计 | 迭代环 |
+| `implementation` | 代码开发 | 代码开发 | 迭代环 |
+| `testing` | 测试验证 | 测试验证 | 迭代环 |
+| `code-review` | 代码复核 | 代码复核 | 迭代环 |
+| `acceptance` | 验收确认 | 验收确认 | 迭代环 |
+| `release` | 部署发布 | 部署发布 | 迭代环 |
 
-playbook 条目若自带 `stageId` 字段则以它为准（给项目覆盖留的口子）。
+**遗留别名（读取归一 + 内部写归一；工具入口只接受 canonical）**：
+
+| 旧 `stage` | 归一为 |
+|---|---|
+| `init` / `scaffold` | `bootstrap` |
+| `brainstorm` | `requirements` |
+| `coding` | `implementation` |
+| `code_review` | `code-review` |
+| `verification` | `acceptance`（旧「验效果」是人工验收，**不是**新 `testing`） |
+| `prototype` / `release` | 同名 |
+
+playbook stage 条目字段：`goal`、`capabilities[]`（旧检测形状 `{kind,name,mode?,optional?,note?}`）、`method`（该阶段唯一方法字符串）、`constraint`（至多一个）、`deliverables`（字符串数组）、`technicalGate`（可空）、`decisionGate`（可空 `{title,approveAction}`）、`promptTemplate` / `exitGate` / `redLines`。本轮只做**声明与透传**，`validate*` 门禁校验器与三校验器下一轮实现。
+
+playbook 条目若自带 `stageId` 字段则以它为准（给项目覆盖留的口子），旧 id 也会先归一。
 
 ### 2.4 `.dsh/plugin-state/approvals.json`（原型批准，按迭代）
 
@@ -133,7 +148,9 @@ playbook 条目若自带 `stageId` 字段则以它为准（给项目覆盖留的
 以 `reference/receipts.js` 为起点搬入，导出保持不变并补充：
 
 ```js
-export const STAGES            // 顺序：init, scaffold, brainstorm, prototype, coding, code_review, verification, release
+export const STAGES            // 顺序：bootstrap, requirements, architecture, prototype, implementation, testing, code-review, acceptance, release
+export const LEGACY_STAGE_ALIASES // init/scaffold→bootstrap, brainstorm→requirements, coding→implementation, code_review→code-review, verification→acceptance
+export function normalizeStage(stage) // 旧 id → canonical；未知返回 null
 export const STATUSES          // in_progress, completed, blocked, failed, dropped
 export const BOOTSTRAP_ITERATION = 'bootstrap'
 export const stateDirOf(projectPath)
@@ -212,21 +229,22 @@ export async function applyInit(projectPath, plan)
 
 ```js
 export const STAGE_DEFS = [
-  { id:'init',         name:'初始化', playbookKey:'初始化', cycle:false },
-  { id:'scaffold',     name:'搭骨架', playbookKey:'搭骨架', cycle:false },
-  { id:'brainstorm',   name:'想清楚', playbookKey:'想清楚', cycle:true },
-  { id:'prototype',    name:'看原型', playbookKey:'定规格', cycle:true },
-  { id:'coding',       name:'写代码', playbookKey:'写代码', cycle:true },
-  { id:'code_review',  name:'挑毛病', playbookKey:'挑毛病', cycle:true },
-  { id:'verification', name:'验效果', playbookKey:'验效果', cycle:true },
-  { id:'release',      name:'发出去', playbookKey:'发出去', cycle:true },
+  { id:'bootstrap',    name:'项目立项', playbookKey:'项目立项', cycle:false },
+  { id:'requirements', name:'需求定义', playbookKey:'需求定义', cycle:true },
+  { id:'architecture', name:'架构契约', playbookKey:'架构契约', cycle:true },
+  { id:'prototype',    name:'原型设计', playbookKey:'原型设计', cycle:true },
+  { id:'implementation', name:'代码开发', playbookKey:'代码开发', cycle:true },
+  { id:'testing',      name:'测试验证', playbookKey:'测试验证', cycle:true },
+  { id:'code-review',  name:'代码复核', playbookKey:'代码复核', cycle:true },
+  { id:'acceptance',   name:'验收确认', playbookKey:'验收确认', cycle:true },
+  { id:'release',      name:'部署发布', playbookKey:'部署发布', cycle:true },
 ]
-export function stageDef(id)          // -> STAGE_DEFS 里那一条 | null
-export function stageName(id)         // -> 人话名（未知则原样）
+export function stageDef(id)          // -> STAGE_DEFS 里那一条 | null（旧 id 先归一）
+export function stageName(id)         // -> 4 字中文名（未知则原样）
 export async function loadPlaybook(projectPath, builtinText)
 // -> { playbook, source:'builtin'|'project', warnings:[{source,message}] }
-export function mergePlaybook(builtin, override)   // 规则见 §2.3，纯函数
-export function entryForStage(playbook, stageId)   // -> playbook.stages[playbookKey] | null
+export function mergePlaybook(builtin, override, warnings?)   // 规则见 §2.3，纯函数；version 不一致时忽略 stages
+export function entryForStage(playbook, stageId)   // -> playbook.stages[playbookKey] | null（旧 id 先归一）
 export async function resolveCapabilities(entry, services)
 // entry 可为 null -> []
 // -> [{kind,name,mode,optional,note,present:'yes'|'no'|'unknown',missingMessage:null|string}]
@@ -297,16 +315,16 @@ export function deriveDecision(evidence) // 纯函数，无 I/O
 |---|---|---|---|
 | 1 | `degraded.flag === true` | `confirm-data` | `null` |
 | 2 | `pendingDecision` 非空（不论 status） | `decide` | 该回执的 stage |
-| 3 | `!trellis.initialized` | `init` | `init` |
-| 4 | `!prd.found` | `brainstorm` | `brainstorm` |
+| 3 | `!trellis.initialized` | `init` | `bootstrap` |
+| 4 | `!prd.found` | `brainstorm` | `requirements` |
 | 5 | `!approval.approved` | `prototype` | `prototype` |
-| 6 | `tasks.open > 0` | `coding` | `coding` |
-| 7 | `tasks.available && tasks.total === 0` | `coding`（拆任务） | `coding` |
-| 8 | `review.blocking > 0` | `fix-blocking` | `code_review` |
-| 9 | `review.fixed > 0` | `recheck` | `code_review` |
-| 10 | `review.available && review.rounds === 0` | `first-review` | `code_review` |
-| 11 | `acceptance.empty` | `acceptance-draft` | `verification` |
-| 12 | `!acceptanceAllPass(evidence)` | `verification` | `verification` |
+| 6 | `tasks.open > 0` | `coding` | `implementation` |
+| 7 | `tasks.available && tasks.total === 0` | `coding`（拆任务） | `implementation` |
+| 8 | `review.blocking > 0` | `fix-blocking` | `code-review` |
+| 9 | `review.fixed > 0` | `recheck` | `code-review` |
+| 10 | `review.available && review.rounds === 0` | `first-review` | `code-review` |
+| 11 | `acceptance.empty` | `acceptance-draft` | `acceptance` |
+| 12 | `!acceptanceAllPass(evidence)` | `verification` | `acceptance` |
 | 13 | `!released(evidence)` | `release` | `release` |
 | 14 | 其余 | `next-iteration` | `release` |
 
@@ -344,10 +362,13 @@ export function buildDetailModel({ evidence, playbook, stageCapabilities, genera
     missing: [{name, kind, message}],
     disabled, disabledReason, notes,
     buttons,                   // ['copy'] / ['init'] / ['copy','init'] …
+    method, constraint,        // 9 阶段元信息：该阶段唯一方法 / 至多一个约束；无条目时 null
+    deliverables,              // string[]；无条目时 []
+    technicalGate, decisionGate, // 门禁声明（decisionGate 为 {title,approveAction}|null）；下一轮接校验器
   },
   progression: {
     coldStart: [{ stageId, name, state:'done'|'current'|'pending', receipt: {status,at,summary}|null }],
-    cycle:     [ 同上 6 条 ],
+    cycle:     [ 同上 8 条 ],
   },
   ledger: {
     receipts: [{ id, at, iterationId, stage, stageName, status, summary, artifacts, usedSkill, needsDecision, taskRef, writeScope, featureIds }],
@@ -365,7 +386,7 @@ export function buildDetailModel({ evidence, playbook, stageCapabilities, genera
 }
 ```
 
-- 阶段进度：某阶段在该迭代有 `completed` 回执 ⇒ `done`；有回执但非 completed ⇒ `current`；没有 ⇒ 看决策 `stageId` 是否等于它 ⇒ `current`，否则 `pending`。冷启动两阶段对 `bootstrap` 迭代；迭代环六阶段对当前迭代。
+- 阶段进度：某阶段在该迭代有 `completed` 回执 ⇒ `done`；有回执但非 completed ⇒ `current`；没有 ⇒ 看决策 `stageId` 是否等于它 ⇒ `current`，否则 `pending`。冷启动阶段（`bootstrap`）对 `bootstrap` 迭代；迭代环 8 阶段对当前迭代。
 - `instruction` 为 `null` 且 `missing.length > 0` ⇒ `disabled:true`，`disabledReason` = 第一条 missing 的 message（design §6.3：不下发注定失败的指令）。
   - 实现补充：**`missing.length > 0` 时 `instruction` 一律置空**（哪怕 playbook 模板存在），否则"复制/发送至对话"会把注定失败的指令发出去。
 - `dataGaps`：审核账本不可用、任务服务不可用、card 未填 `oneLiner` 等"缺数据"提示，与 `warnings`（读取异常）分开。
@@ -418,7 +439,7 @@ export function apply(ctx, config = {})
 
 - 工具（每个都必须有 `output: { schema, render }`）：
   - `cockpit_report` —— design §5.1 逐字（字段/required/枚举/additionalProperties:false），外加两个可选扩展：
-    `feature_ids?: string[]`（回执挂到 PRD 功能）与 `event?: 'acceptance-recheck'`（**验收复核留痕**：stage 必须 `verification`、status 必须 `completed`、summary 写清复核了哪条与结论；这类回执只进流水账，不改验收结果、不参与进度投影）。
+    `feature_ids?: string[]`（回执挂到 PRD 功能）与 `event?: 'acceptance-recheck'`（**验收复核留痕**：stage 必须 `acceptance`、status 必须 `completed`、summary 写清复核了哪条与结论；这类回执只进流水账，不改验收结果、不参与进度投影）。旧账本里的 `verification` 经 `normalizeStage` 归一到 `acceptance`。
   - `cockpit_init` —— `{ cwd?: string, dryRun?: boolean }` → `{ ok, dryRun, applied, projectPath, created[], skipped[], gitignoreHint }`；dryRun 默认 `true`（**不写盘是默认**）。
 - 工具 cwd 解析：`exec.agent` → `ctx.get('workingDirectory').get(agent)` → `exec.agent?.session?.header?.cwd` → `process.cwd()`（同上游 `agentCwd`，取不到不猜目录）。
 - 每个工具 `ctx.effect(() => ctx.tools.register(def))`。
@@ -437,7 +458,7 @@ export function apply(ctx, config = {})
   3. （不注册 `shell.overlay` / `conversation.*`，Phase 1 不做提醒与通栏。）
 - 数据：`fetch('/delivery-cockpit/api/...', { credentials:'same-origin' })`；**不读盘、不碰 DOM 外部、不 appendChild 到 body**。
 - 结构：总览（工作区卡片列表）↔ 详情（一屏四区）。用 `localStorage` 记住上次项目（key `delivery-cockpit:last-project`），点卡片进入详情、返回按钮回总览。
-- 一屏四区（design §4）：① 项目名片 & 迭代头 ② 唯一下一步（title/reason/能力/指令 + 复制 + 初始化按钮 + `kind==='prototype'` 时的「通过原型」按钮）③ 迭代进度（冷启动 2 + 迭代环 6 的进度线）④ 人话账本（最近回执 + 待决策 + 坏行提示）。底部：主会话活跃（Phase 1 不接，显示 `—`）+ 引擎正常（`ok:true`）+ 上次回执相对时间 + 刷新。
+- 一屏四区（design §4）：① 项目名片 & 迭代头 ② 唯一下一步（title/reason/能力/指令 + 复制 + 初始化按钮 + `kind==='prototype'` 时的「通过原型」按钮）③ 迭代进度（冷启动 1 + 迭代环 8 的进度线）④ 人话账本（最近回执 + 待决策 + 坏行提示）。底部：主会话活跃（Phase 1 不接，显示 `—`）+ 引擎正常（`ok:true`）+ 上次回执相对时间 + 刷新。
 - 「通过原型」：`POST /delivery-cockpit/api/approve-prototype`（body `{path, iteration_id: panel.iteration.current}`）；成功后刷新。错误码映射人话：`prototype-missing` → 「先把原型 HTML 放到项目根目录 prototype.html，再点通过」；`iteration-required` → 「当前迭代还没确定」；其余显示原文。
 - 降级：`degraded.flag` ⇒ 顶部横幅列原因 + 主按钮禁用；`ledger.badLines>0` ⇒ 顶部提示"账本存在损坏行（已降级显示）"；`missing.length>0` ⇒ 显示 missing 文案而不是指令。
 - 样式：只引用 host 主题 token `--dsw-alias-*`（别名见上游 `client.js` 顶部），每段 CSS 选择器以 `.dc-` 前缀；字号/间距对齐现有 host 页。
@@ -721,15 +742,15 @@ features: {
 - 清除：人重新点任意结果（通过/失败/阻塞/撤销）⇒ `stale` 清空；**`same` 截图不会把失效冲掉**（变了就是变了）。
 - `new` / `same` / `uncomparable` 不触发失效（无法证明变化，不制造假紧张）。
 - **第五处口径**（独立评审 important）：`lib/features.js` 的按功能 `acceptanceStatsOf` 也必须排除 stale 的 pass，否则会出现"功能账显示已完成、阶段门却拦在验效果"的自相矛盾；功能账同步透出 `acceptance.stale` 计数。
-- **失效留痕**（V1.0.7）：失效时自动追加一条 `cockpit_report` 回执（`stage:'verification'`、`status:'in_progress'`、`event:'acceptance-stale'`、`summary` 写明"截图有变化 x%，验收「标题」已失效，需要你重新确认"、`artifacts` 放本次截图、`feature_ids` 取条目的 `feature_ref`）。配置 `receiptOnInvalidate` 可关；回执写失败只回 `receiptWarning`，**不把截图流程判失败**（截图与失效已落盘，trace 失败要如实说而不是回滚数据）。
-  - **审计事件不投影**（独立评审 important）：`stage:'verification'+status:'in_progress'` 若被当成进度，会让功能显示进行中、进度轨永久卡在验效果。所以带 `event` 的回执在 `stageStates`、进度轨与功能账里一律跳过（`isAuditReceipt`），只保留在流水账；**待决策判定同样跳过**（审计回执不能静默吞掉 `needs_human_decision`）。
+- **失效留痕**（V1.0.7，9 阶段迁移后 stage 改为 `acceptance`）：失效时自动追加一条 `cockpit_report` 回执（`stage:'acceptance'`、`status:'in_progress'`、`event:'acceptance-stale'`、`summary` 写明"截图有变化 x%，验收「标题」已失效，需要你重新确认"、`artifacts` 放本次截图、`feature_ids` 取条目的 `feature_ref`）。配置 `receiptOnInvalidate` 可关；回执写失败只回 `receiptWarning`，**不把截图流程判失败**（截图与失效已落盘，trace 失败要如实说而不是回滚数据）。
+  - **审计事件不投影**（独立评审 important）：`stage:'acceptance'+status:'in_progress'` 若被当成进度，会让功能显示进行中、进度轨永久卡在验收确认。所以带 `event` 的回执在 `stageStates`、进度轨与功能账里一律跳过（`isAuditReceipt`），只保留在流水账；**待决策判定同样跳过**（审计回执不能静默吞掉 `needs_human_decision`）。
 
 **功能账（V1.0.8 补：Agent 主动写验收复核回执）**
 
 - `cockpit_report` 新增可选 `event`，当前只接受 `acceptance-recheck`（验收复核）。工具 schema 的 `enum` 就是白名单；`additionalProperties:false` 不变。
-- 写入口（`validateReceipt`）强制事件与 stage/status 配对：`acceptance-stale` ⇒ verification + in_progress；`acceptance-recheck` ⇒ verification + completed。配错直接抛错，避免"复核"回执伪装成别的阶段进度。
+- 写入口（`validateReceipt`）强制事件与 stage/status 配对：`acceptance-stale` ⇒ acceptance + in_progress；`acceptance-recheck` ⇒ acceptance + completed。配错直接抛错，避免"复核"回执伪装成别的阶段进度（旧 `verification` 先归一为 `acceptance`）。
 - 这类回执是**审计事件**：进流水账、面板账本行显示「验收复核」徽章，但 `stageStates`/进度轨/功能账/待决策全部跳过它；`result` 永远不由回执改，必须人在面板点。
-- 可发现性：`templates/playbook.json` 的「验效果」指令里写明用法（`cockpit_report` + `event:"acceptance-recheck"` + `feature_ids`），出口条件补「没有失效（stale）条目」。
+- 可发现性：`templates/playbook.json` 的「验收确认」指令里写明用法（`cockpit_report` + `event:"acceptance-recheck"` + `stage:"acceptance"` + `feature_ids`），出口条件补「没有失效（stale）条目」。
 - 审计回执**不能携带 `needs_human_decision`**（写入口拒绝；`pendingDecision` 也跳过审计回执），避免"复核留痕"顶出一个来源错误的决策卡。
 
 **接线层**

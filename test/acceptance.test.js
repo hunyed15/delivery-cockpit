@@ -515,7 +515,7 @@ test('失效会追加一条 cockpit_report 回执（可追溯是哪次截图让�
     const receipt = after.receipts[after.receipts.length - 1]
     assert.equal(receipt.id, changed.receiptId)
     assert.equal(receipt.iteration_id, 'v1.0')
-    assert.equal(receipt.stage, 'verification')
+    assert.equal(receipt.stage, 'acceptance')
     assert.equal(receipt.status, 'in_progress')
     assert.match(receipt.summary_for_human, /失效/)
     assert.match(receipt.summary_for_human, /能添加客户/)

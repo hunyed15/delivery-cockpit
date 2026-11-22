@@ -145,7 +145,7 @@ test('待决策与回执 status 无关：五种 status 都给出同一动作', (
     })
     assert.equal(decision.kind, 'decide', `status=${status} 时待决策仍应最高优`)
     assert.equal(decision.priority, 2)
-    assert.equal(decision.stageId, 'brainstorm')
+    assert.equal(decision.stageId, 'requirements')
   }
 })
 
@@ -160,6 +160,19 @@ test('待决策标题过长或带代码记号时收成人话', () => {
   assert.ok(!decision.title.includes('`'))
 })
 
+test('待决策的 stage 也归一：旧 code_review / coding 投影成 canonical id', () => {
+  for (const [legacy, canonical] of [
+    ['code_review', 'code-review'],
+    ['coding', 'implementation'],
+    ['verification', 'acceptance'],
+  ]) {
+    const decision = decide({
+      receipts: { receipts: [receipt({ stage: legacy, needs_human_decision: { title: '要不要继续' } })] },
+    })
+    assert.equal(decision.stageId, canonical, `${legacy} 应投影为 ${canonical}`)
+  }
+})
+
 test('优先级 3：未初始化给初始化；只初始化一半时把原因写进 notes', () => {
   for (const trellis of [
     { exists: false, rules: false, initialized: false, partial: false },
@@ -168,7 +181,7 @@ test('优先级 3：未初始化给初始化；只初始化一半时把原因写
     const decision = decide({ trellis })
     assert.equal(decision.priority, 3)
     assert.equal(decision.kind, 'init')
-    assert.equal(decision.stageId, 'init')
+    assert.equal(decision.stageId, 'bootstrap')
   }
   const partial = decide({ trellis: { initialized: false, partial: true } })
   assert.ok(partial.notes.some((note) => note.includes('只存在其中一个')))
@@ -178,7 +191,7 @@ test('优先级 4：没有 prd 先想清楚', () => {
   const decision = decide({ prd: { found: false, path: null } })
   assert.equal(decision.priority, 4)
   assert.equal(decision.kind, 'brainstorm')
-  assert.equal(decision.stageId, 'brainstorm')
+  assert.equal(decision.stageId, 'requirements')
 })
 
 test('优先级 5：当前迭代没有原型批准，停在看原型', () => {
@@ -192,7 +205,7 @@ test('优先级 6：有未完成任务就继续写代码', () => {
   const decision = decide({ tasks: { available: true, open: 2, total: 2, completed: 0 } })
   assert.equal(decision.priority, 6)
   assert.equal(decision.kind, 'coding')
-  assert.equal(decision.stageId, 'coding')
+  assert.equal(decision.stageId, 'implementation')
   assert.match(decision.reason, /2 个/)
 })
 
@@ -205,7 +218,7 @@ test('优先级 7：有原型但一条任务都没有 ⇒ 先拆任务（不是�
   })
   assert.equal(decision.priority, 7)
   assert.equal(decision.kind, 'coding')
-  assert.equal(decision.stageId, 'coding')
+  assert.equal(decision.stageId, 'implementation')
   assert.match(decision.title, /拆任务/)
 })
 
@@ -213,21 +226,21 @@ test('优先级 8：审核有未处置 blocking ⇒ 先修', () => {
   const decision = decide({ review: { available: true, blocking: 3, fixed: 1, rounds: 2 } })
   assert.equal(decision.priority, 8)
   assert.equal(decision.kind, 'fix-blocking')
-  assert.equal(decision.stageId, 'code_review')
+  assert.equal(decision.stageId, 'code-review')
 })
 
 test('优先级 9：有已修问题待复检 ⇒ 复核', () => {
   const decision = decide({ review: { available: true, blocking: 0, fixed: 2, rounds: 2 } })
   assert.equal(decision.priority, 9)
   assert.equal(decision.kind, 'recheck')
-  assert.equal(decision.stageId, 'code_review')
+  assert.equal(decision.stageId, 'code-review')
 })
 
 test('优先级 10：从未审核 ⇒ 第一次审核', () => {
   const decision = decide({ review: { available: true, rounds: 0, blocking: 0, fixed: 0 } })
   assert.equal(decision.priority, 10)
   assert.equal(decision.kind, 'first-review')
-  assert.equal(decision.stageId, 'code_review')
+  assert.equal(decision.stageId, 'code-review')
 })
 
 test('审核账本不可用：跳过 8/9/10，并留下"跳过"的痕迹', () => {
@@ -263,7 +276,7 @@ test('优先级 11：验收表为空 ⇒ 生成验收清单', () => {
   })
   assert.equal(decision.priority, 11)
   assert.equal(decision.kind, 'acceptance-draft')
-  assert.equal(decision.stageId, 'verification')
+  assert.equal(decision.stageId, 'acceptance')
 })
 
 test('优先级 12：验收表非空未全绿 ⇒ 去验效果', () => {
@@ -282,7 +295,7 @@ test('优先级 12：验收表非空未全绿 ⇒ 去验效果', () => {
   })
   assert.equal(decision.priority, 12)
   assert.equal(decision.kind, 'verification')
-  assert.equal(decision.stageId, 'verification')
+  assert.equal(decision.stageId, 'acceptance')
 
   const failed = decide({
     acceptance: {
@@ -359,7 +372,7 @@ test('优先级 12：截图变化让已通过的验收失效 ⇒ 回到验效果
     },
   })
   assert.equal(decision.kind, 'verification')
-  assert.equal(decision.stageId, 'verification')
+  assert.equal(decision.stageId, 'acceptance')
   assert.match(decision.reason, /截图变化失效/)
 })
 
