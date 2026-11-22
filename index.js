@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url'
 
 import { addAcceptanceEvidence, draftAcceptance, readAcceptanceFile, setAcceptanceResult } from './lib/acceptance.js'
 import { approvePrototype } from './lib/approvals.js'
+import { checkStageCapability } from './lib/capabilities.js'
 import { readEvidence } from './lib/evidence.js'
 import { buildFeatureBoard, extractFeatures, readPrdText } from './lib/features.js'
 import { applyInit, planInit } from './lib/init.js'
@@ -107,6 +108,8 @@ const COCKPIT_REPORT = {
         ok: { type: 'boolean' },
         receiptId: { type: 'string' },
         at: { type: 'string' },
+        // 可选能力阶段用了回退方法时带出来：不阻断写入，只提醒这一阶段不是首选方法。
+        capabilityWarning: { type: 'string' },
       },
       required: ['ok', 'receiptId'],
     },
@@ -220,10 +223,21 @@ export function createToolDefinitions(ctx, options = {}) {
       async execute(args, exec) {
         // 回执没有 cwd 参数：目标永远是会话自己的工作目录，模型无法凭空指定别的目录。
         const projectPath = requireCwd(agentCwd(ctx, exec), 'cockpit_report')
+        // 写入前置校验：本阶段的 method 必须体现在 used_skill_or_mcp 里，否则"声称完成"没有证据。
+        // 校验在 appendReceipt 之前 —— 被拒绝的回执一个字节都不许落盘。
+        const loaded = await loadPlaybook(projectPath, await readBuiltinPlaybook())
+        const check = checkStageCapability(loaded.playbook, args?.stage, args?.used_skill_or_mcp)
+        // 错误码放进文案：调用方/日志要能程序化认出"能力校验失败"，人话说明紧随其后。
+        if (check.ok !== true) throw new Error(`cockpit_report: ${check.message}（${check.error}）`)
         const result = await appendReceipt(projectPath, args)
         // 写失败必须让调用方看见：静默丢数据比报错更糟（面板会显示"没发生过"）。
         if (!result.ok) throw new Error(`cockpit_report: ${result.error}`)
-        return { ok: true, receiptId: result.receipt.id, at: result.receipt.at }
+        return {
+          ok: true,
+          receiptId: result.receipt.id,
+          at: result.receipt.at,
+          ...(typeof check.warning === 'string' && check.warning !== '' ? { capabilityWarning: check.warning } : {}),
+        }
       },
     },
     {

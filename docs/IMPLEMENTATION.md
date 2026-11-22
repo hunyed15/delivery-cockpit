@@ -625,6 +625,30 @@ features: {
 - 配置：`screenshotDiffTolerance`（8）、`screenshotDiffMaxRatio`（0.001）、`screenshotDiffMinChangedPixels`（24）。
 
 
+### 3.18 Lead · `lib/capabilities.js` + `lib/gates.js`（必要能力校验 + 三个技术门）
+
+- `lib/capabilities.js`
+  - `capabilityTokens(value)`：`used_skill_or_mcp` 按 `/[\s,+/|]+/` 切 token、小写去空；非字符串返回空 Set。
+  - `stageCapabilityRequirement(playbook, stageId)`：用 `entryForStage` 取阶段声明；`method` 为方法；`allowed = 去重([method, ...capabilities.filter(substitute===true).map(name)])`——**只有显式 `substitute:true` 的能力可替代 method**（如 `claude_review` 替代 `claude-code-review`、`ui-ux-pro-max` 替代 `frontend-design`）；`optional` 仅表示"方法缺失允许回退"，**证据/辅助能力（playwright、context7）不能静默顶替 method**；constraint 不进 allowed（防止 `ponytail` 冒充 `tdd-loop`）。
+  - `checkStageCapability(playbook, stageId, used)`：method 为空 ⇒ `skipped`；命中 allowed ⇒ `matched`；method 可选（`optional:true`）⇒ `fallback` + warning；否则返回 `stage-capability-required`，message 含 4 字中文名与 allowed。
+  - 接入：`cockpit_report` 在 `appendReceipt` 之前校验；不通过 ⇒ 抛错且**一字节不落盘**；可选回退 ⇒ 回执正常写，output 增带 `capabilityWarning`（schema 可选字段，render 不变）。
+  - 模板对齐：架构契约 `method:null`（不强制 skill，门禁靠契约文件）；`ui-ux-pro-max`（原型）、`claude_review`（复核）标 `optional:true`，可作为方法替代记录。
+- `lib/gates.js`（纯读文件，任何异常只影响自身，不抛）
+  - 统一形状 `{available, ok, gate, missing[], detail?, reason?}`；`available`=主证据文件存在且可读（区分“还没做”与“做了没过”），`ok`=内容满足门禁。
+  - `validateArchitecture(projectPath)`：`docs/architecture.md` 必需小节「组件/数据模型/接口清单/关键决策」+ `docs/api.md` 或 `docs/openapi.json` 非空。
+  - `validateTestReport(projectPath)`：优先 `.dsh/plugin-state/test-report.json`（`command`/`passed`/`failed`/`at` 合法且 `failed===0`）；文件不存在时回退 `.dsh/plugin-state/manual-check.json`（非代码项目：`checks[]` 非空 + `at`，`fail`/`blocked` 均不放行）。test-report 存在时优先，不静默改用回退。
+  - `validateRelease(projectPath)`：`.dsh/plugin-state/release.json`，`version`/`artifacts`（非空，字符串或 `{path}`）/`rollback`/`at` 合法。
+  - `readGateEvidence(projectPath)`：三门并发读取、逐个兜错；文件不存在记 `missing`，**不触发 `degraded`**（阶段未完成不是读取故障）。
+- 接入 `lib/evidence.js`：`readEvidence` 顶部新增 `gates: { architecture, tests, release }`；降级分支同样带 gates 键。
+- 状态机门禁决策（`lib/state.js`，插在既有 1–14 序号之间，保持旧序号不动）：
+  - **4.5**：有 PRD 但架构契约门不过 ⇒ `architecture`「先定架构与契约」（在原型之前）。
+  - **6.5**：任务做完但测试门不过 ⇒ `testing`「补测试证据」（在代码复核之前；失败数>0 的文案带失败数）。
+  - **12.5**：验收全绿但发布清单不完整 ⇒ `release`「准备发布清单」（在发出去之前）。
+  - 证据里**没有 `gates` 字段**（旧数据/手写夹具）⇒ 整段门禁判定跳过，维持旧行为。
+
+测试：`test/capabilities.test.js`（8）、`test/gates.test.js`（14）、`test/state.test.js`（+5 门禁用例）、`test/evidence.test.js`（gates 契约）、`test/tool-contract.test.js`（能力校验/拒绝/回退）、`test/integration.test.js`（真实三门推进）。当前 **393 个用例全绿**。
+
+
 1. `npm test`（= `node --test "test/*.test.js"`）全绿。
 2. `plugin_manager(action:"install_bundle", target:<本目录绝对路径>)` → `application: applied`（不是 failed/restart-required）。
 3. `cordis_inspect_query(platform:"host", provider:"Tool", method:"listTools")` 能看到 `cockpit_report` 与 `cockpit_init`。

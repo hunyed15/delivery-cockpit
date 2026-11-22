@@ -53,6 +53,9 @@ test('cockpit_report 的必填与枚举与账本常量一致', () => {
   assert.deepEqual(report.parameters.properties.event.enum, ['acceptance-recheck'])
   assert.ok(!report.parameters.required.includes('event'), 'event 必须可选，否则普通回执全挂')
   assert.deepEqual(report.output.schema.required, ['ok', 'receiptId'])
+  // 可选能力回退时带 warning；它是可选字段，不影响旧调用与 render
+  assert.equal(report.output.schema.properties.capabilityWarning.type, 'string')
+  assert.ok(!report.output.schema.required.includes('capabilityWarning'))
 })
 
 test('cockpit_report 的 render 把 summary_for_human 作为一行文本返回', () => {
@@ -96,6 +99,7 @@ test('cockpit_report 支持验收复核留痕（event=acceptance-recheck），�
         summary_for_human: '复核 A1「能添加客户」：按步骤重走一遍，仍通过',
         feature_ids: ['FR-1'],
         event: 'acceptance-recheck',
+        used_skill_or_mcp: 'verify-claims',
       },
       execIn(project),
     )
@@ -117,7 +121,13 @@ test('cockpit_report 支持验收复核留痕（event=acceptance-recheck），�
     )
     // 普通回执不带 event 时保持原行为
     await report.execute(
-      { iteration_id: 'v1.0', stage: 'acceptance', status: 'in_progress', summary_for_human: '开始验收' },
+      {
+        iteration_id: 'v1.0',
+        stage: 'acceptance',
+        status: 'in_progress',
+        summary_for_human: '开始验收',
+        used_skill_or_mcp: 'verify-claims',
+      },
       execIn(project),
     )
     const rows = (await readFile(join(project, '.dsh', 'plugin-state', 'receipts.jsonl'), 'utf8')).trim().split(/\r?\n/)
@@ -280,3 +290,207 @@ test('cockpit_acceptance：跨迭代或坏表时明确报错，不写盘', async
     await rm(project, { recursive: true, force: true })
   }
 })
+
+test('cockpit_report 写入前校验阶段能力：implementation 缺 tdd-loop ⇒ 拒绝且不落盘', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'dc-cap-tool-'))
+  try {
+    const report = createToolDefinitions(fakeCtx).find((item) => item.name === 'cockpit_report')
+    await assert.rejects(
+      () =>
+        report.execute(
+          {
+            iteration_id: 'v1.0',
+            stage: 'implementation',
+            status: 'completed',
+            summary_for_human: '任务 T1 做完了',
+            task_ref: 'T1',
+            write_scope: ['src/**'],
+          },
+          execIn(project),
+        ),
+      (error) => {
+        assert.match(error.message, /^cockpit_report: /)
+        assert.match(error.message, /本阶段（代码开发）/)
+        assert.match(error.message, /必须使用 tdd-loop/)
+        assert.match(error.message, /stage-capability-required/)
+        return true
+      },
+    )
+    assert.equal(await exists(join(project, '.dsh', 'plugin-state', 'receipts.jsonl')), false, '被拒绝的回执不能落盘')
+
+    const value = await report.execute(
+      {
+        iteration_id: 'v1.0',
+        stage: 'implementation',
+        status: 'completed',
+        summary_for_human: '任务 T1 做完了',
+        used_skill_or_mcp: 'tdd-loop',
+        task_ref: 'T1',
+        write_scope: ['src/**'],
+      },
+      execIn(project),
+    )
+    assert.equal(value.ok, true)
+    assert.equal(value.capabilityWarning, undefined, '命中 method 时没有 warning')
+    const row = JSON.parse((await readFile(join(project, '.dsh', 'plugin-state', 'receipts.jsonl'), 'utf8')).trim())
+    assert.equal(row.used_skill_or_mcp, 'tdd-loop')
+  } finally {
+    await rm(project, { recursive: true, force: true })
+  }
+})
+
+test('cockpit_report 阶段能力：testing 要 verify-claims；acceptance 不接受 claude_review', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'dc-cap-tool-'))
+  try {
+    const report = createToolDefinitions(fakeCtx).find((item) => item.name === 'cockpit_report')
+    await assert.rejects(
+      () =>
+        report.execute(
+          { iteration_id: 'v1.0', stage: 'testing', status: 'completed', summary_for_human: '测试跑完了' },
+          execIn(project),
+        ),
+      /本阶段（测试验证）必须使用 verify-claims.*stage-capability-required/,
+    )
+    const tested = await report.execute(
+      {
+        iteration_id: 'v1.0',
+        stage: 'testing',
+        status: 'completed',
+        summary_for_human: '测试全绿',
+        used_skill_or_mcp: 'verify-claims',
+      },
+      execIn(project),
+    )
+    assert.equal(tested.ok, true)
+
+    // acceptance 的 method 是 verify-claims；claude_review 属于代码开发，不能拿来冒充
+    await assert.rejects(
+      () =>
+        report.execute(
+          {
+            iteration_id: 'v1.0',
+            stage: 'acceptance',
+            status: 'completed',
+            summary_for_human: '验收过了',
+            used_skill_or_mcp: 'claude_review',
+          },
+          execIn(project),
+        ),
+      /本阶段（验收确认）必须使用 verify-claims.*stage-capability-required/,
+    )
+  } finally {
+    await rm(project, { recursive: true, force: true })
+  }
+})
+
+test('cockpit_report 阶段能力：可选能力阶段（bootstrap）不阻断，但回执带 capabilityWarning', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'dc-cap-tool-'))
+  try {
+    const report = createToolDefinitions(fakeCtx).find((item) => item.name === 'cockpit_report')
+    const value = await report.execute(
+      { iteration_id: 'bootstrap', stage: 'bootstrap', status: 'completed', summary_for_human: '工作区建好了' },
+      execIn(project),
+    )
+    assert.equal(value.ok, true)
+    assert.equal(typeof value.capabilityWarning, 'string')
+    assert.match(value.capabilityWarning, /可选/)
+    assert.match(value.capabilityWarning, /未记录 used_skill_or_mcp/)
+
+    // 明确记了回退能力也别谎报"用了方法"：warning 换成"已按回退能力记录"
+    const fallback = await report.execute(
+      {
+        iteration_id: 'bootstrap',
+        stage: 'bootstrap',
+        status: 'completed',
+        summary_for_human: '用追问模板做完了',
+        used_skill_or_mcp: 'ponytail',
+      },
+      execIn(project),
+    )
+    assert.equal(fallback.ok, true)
+    assert.match(fallback.capabilityWarning, /已按回退能力记录/)
+  } finally {
+    await rm(project, { recursive: true, force: true })
+  }
+})
+
+test('cockpit_report 阶段能力：constraint 不能冒充 method；optional 能力在 allowed 里可命中', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'dc-cap-tool-'))
+  try {
+    const report = createToolDefinitions(fakeCtx).find((item) => item.name === 'cockpit_report')
+    // 代码开发的 constraint=ponytail，method=tdd-loop ⇒ ponytail 不能当方法证据
+    await assert.rejects(
+      () =>
+        report.execute(
+          {
+            iteration_id: 'v1.0',
+            stage: 'implementation',
+            status: 'completed',
+            summary_for_human: '代码写好了',
+            task_ref: 'T1',
+            write_scope: ['src/**'],
+            used_skill_or_mcp: 'ponytail',
+          },
+          execIn(project),
+        ),
+      /本阶段（代码开发）必须使用 tdd-loop.*stage-capability-required/,
+    )
+    // method 命中即可写回执
+    const value = await report.execute(
+      {
+        iteration_id: 'v1.0',
+        stage: 'implementation',
+        status: 'completed',
+        summary_for_human: '代码写好了',
+        task_ref: 'T1',
+        write_scope: ['src/**'],
+        used_skill_or_mcp: 'tdd-loop',
+      },
+      execIn(project),
+    )
+    assert.equal(value.ok, true)
+
+    // 可选能力（prototype 的 ui-ux-pro-max）在 allowed 里：可以作为方法证据
+    const optional = await report.execute(
+      {
+        iteration_id: 'v1.0',
+        stage: 'prototype',
+        status: 'completed',
+        summary_for_human: '原型定稿',
+        used_skill_or_mcp: 'ui-ux-pro-max',
+      },
+      execIn(project),
+    )
+    assert.equal(optional.ok, true)
+
+    // 证据能力（playwright）不能冒充当阶段 method：测试验证必须 verify-claims
+    await assert.rejects(
+      () =>
+        report.execute(
+          {
+            iteration_id: 'v1.0',
+            stage: 'testing',
+            status: 'completed',
+            summary_for_human: '跑过页面了',
+            used_skill_or_mcp: 'playwright',
+          },
+          execIn(project),
+        ),
+      /本阶段（测试验证）必须使用 verify-claims.*stage-capability-required/,
+    )    // 架构契约没有 required method（门禁靠契约文件）：任何 used_skill_or_mcp 都不阻断
+    const architecture = await report.execute(
+      {
+        iteration_id: 'v1.0',
+        stage: 'architecture',
+        status: 'completed',
+        summary_for_human: '契约写好了',
+        used_skill_or_mcp: 'ponytail',
+      },
+      execIn(project),
+    )
+    assert.equal(architecture.ok, true)
+  } finally {
+    await rm(project, { recursive: true, force: true })
+  }
+})
+

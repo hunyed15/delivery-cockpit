@@ -73,6 +73,33 @@ async function decisionOf(projectPath) {
   return { decision, evidence }
 }
 
+/** 9 阶段的技术门证据：架构契约、测试报告、发布清单。 */
+async function writeArchitecture(project) {
+  await mkdir(join(project, 'docs'), { recursive: true })
+  await writeFile(
+    join(project, 'docs', 'architecture.md'),
+    '# 架构\n\n## 组件\nWeb 层 + 存储层\n\n## 数据模型\nCustomer\n\n## 接口清单\nGET /customers\n\n## 关键决策\n- 单体优先\n',
+    'utf8',
+  )
+  await writeFile(join(project, 'docs', 'api.md'), '# API\n\nGET /customers\n', 'utf8')
+}
+
+async function writeTestReport(project) {
+  await writeFile(
+    join(project, '.dsh', 'plugin-state', 'test-report.json'),
+    JSON.stringify({ command: 'node --test', passed: 10, failed: 0, skipped: 0, at: '2026-11-22T00:00:00.000Z' }),
+    'utf8',
+  )
+}
+
+async function writeReleaseManifest(project) {
+  await writeFile(
+    join(project, '.dsh', 'plugin-state', 'release.json'),
+    JSON.stringify({ version: 'v1.0', artifacts: ['dist/app.zip'], rollback: 'git revert v1.0', at: '2026-11-22T00:00:00.000Z' }),
+    'utf8',
+  )
+}
+
 test('从空项目到下一轮迭代：每一步都有唯一动作，且人不被卡住', async () => {
   const project = await makeProject()
   try {
@@ -99,6 +126,7 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
       used_skill_or_mcp: 'trellis-brainstorm',
     })
     await writeFile(join(project, 'prd.md'), '# 客户管理\n\n## 目标用户\n小团队\n', 'utf8')
+    await writeArchitecture(project)
     let evidence = (await decisionOf(project)).evidence
     assert.equal(evidence.iteration.current, 'v1.0')
     assert.equal(evidence.prd.found, true)
@@ -133,6 +161,7 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
       JSON.stringify({ id: 'T1', title: '客户列表', status: 'completed' }),
       'utf8',
     )
+    await writeTestReport(project)
     ;({ decision, evidence } = await decisionOf(project))
     assert.equal(evidence.review.available, false)
     assert.equal(evidence.review.reason, 'no-ledger')
@@ -164,6 +193,7 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
       JSON.stringify({ schemaVersion: 1, iteration_id: 'v1.0', items: [{ id: 'A1', title: '能添加客户', result: 'pass', evidence: ['shots/add.png'] }] }),
       'utf8',
     )
+    await writeReleaseManifest(project)
     ;({ decision } = await decisionOf(project))
     assert.equal(decision.kind, 'release')
 
@@ -243,6 +273,7 @@ test('验收失效联动阶段门：通过 → 截图变化 → 回验效果 →
       summary_for_human: '需求定了',
     })
     await writeFile(join(project, 'prd.md'), '# 客户管理\n\n## 4. 功能需求\n\n### FR-1 客户列表（P0）\n', 'utf8')
+    await writeArchitecture(project)
     await writeFile(
       join(project, '.dsh', 'plugin-state', 'approvals.json'),
       JSON.stringify({ 'v1.0': { prototypeApprovedAt: '2026-11-20T10:00:00.000Z', prototype: 'prototype.html' } }),
@@ -276,6 +307,8 @@ test('验收失效联动阶段门：通过 → 截图变化 → 回验效果 →
     )
 
     // 1) 人点通过：验收全绿 ⇒ 下一步是发出去
+    await writeTestReport(project)
+    await writeReleaseManifest(project)
     const passed = await setAcceptanceResult(project, { item_id: 'A1', result: 'pass', evidence: ['shots/a1.png'] })
     assert.equal(passed.item.stale, false)
     let evidence = await readEvidence(project)

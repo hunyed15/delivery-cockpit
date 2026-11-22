@@ -20,6 +20,7 @@ const CONTRACT_KEYS = [
   'acceptance',
   'tasks',
   'review',
+  'gates',
   'warnings',
   'degraded',
   'generatedAt',
@@ -639,3 +640,47 @@ test('旧账本 stage 在 evidence 层投影为 canonical：不算坏行，迭�
     assert.equal(evidence.degraded.flag, false)
   })
 })
+
+test('技术门证据：readEvidence 返回 gates 三键；缺文件是"阶段还没做"，不算降级', async () => {
+  await withProject(async (project) => {
+    const evidence = await readEvidence(project)
+    assert.deepEqual(Object.keys(evidence.gates).sort(), ['architecture', 'release', 'tests'])
+    for (const gate of [evidence.gates.architecture, evidence.gates.tests, evidence.gates.release]) {
+      assert.equal(gate.ok, false)
+      assert.equal(gate.available, false)
+      assert.equal(gate.reason, 'missing')
+      assert.ok(Array.isArray(gate.missing) && gate.missing.length > 0)
+    }
+    assert.equal(evidence.degraded.flag, false, '文件不存在是阶段未完成，不是读取故障')
+    assert.deepEqual(evidence.warnings, [], '技术门缺文件不产生 warning')
+  })
+})
+
+test('技术门证据：合法 test-report.json ⇒ gates.tests.ok=true，其余门保持各自结论', async () => {
+  await withProject(async (project) => {
+    await writeState(project, 'test-report.json', {
+      command: 'node --test "test/*.test.js"',
+      passed: 364,
+      failed: 0,
+      at: '2026-11-22T20:00:00.000Z',
+    })
+    const evidence = await readEvidence(project)
+    assert.equal(evidence.gates.tests.ok, true)
+    assert.equal(evidence.gates.tests.detail.command, 'node --test "test/*.test.js"')
+    assert.equal(evidence.gates.architecture.ok, false)
+    assert.equal(evidence.gates.release.ok, false)
+    assert.equal(evidence.degraded.flag, false)
+  })
+})
+
+test('技术门证据：门内坏 JSON 只影响该门，不把整份 evidence 拖进降级', async () => {
+  await withProject(async (project) => {
+    await writeStateText(project, 'test-report.json', '{ 坏 JSON')
+    const evidence = await readEvidence(project)
+    assert.equal(evidence.ok, true)
+    assert.equal(evidence.gates.tests.ok, false)
+    assert.equal(evidence.gates.tests.reason, 'bad-json')
+    assert.equal(evidence.degraded.flag, false, '门禁证据坏了≠面板读取故障')
+  })
+})
+

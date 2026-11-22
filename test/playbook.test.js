@@ -102,8 +102,11 @@ test('内置模板：version 2；每阶段有 method/constraint/deliverables/tec
   for (const def of STAGE_DEFS) {
     const entry = entryForStage(builtin, def.id)
     assert.ok(entry, `${def.id} 缺少模板条目`)
-    assert.equal(typeof entry.method, 'string', `${def.id}.method 必须是字符串`)
-    assert.ok(entry.method.length > 0)
+    // method 可以为 null（如架构契约：门禁靠契约文件，不强制 skill）；非 null 时必须是非空字符串。
+    assert.ok(
+      entry.method === null || (typeof entry.method === 'string' && entry.method.length > 0),
+      `${def.id}.method 必须是 null 或非空字符串`,
+    )
     assert.ok(entry.constraint === null || typeof entry.constraint === 'string', `${def.id}.constraint 至多一个`)
     assert.equal(Array.isArray(entry.deliverables), true, `${def.id}.deliverables 必须是数组`)
     assert.ok(entry.deliverables.length > 0)

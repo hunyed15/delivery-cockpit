@@ -51,6 +51,11 @@ function baseEvidence() {
     acceptance: passAcceptance(),
     tasks: { available: true, total: 1, open: 0, completed: 1, items: [{ id: 'T1', title: '客户列表', status: 'completed' }] },
     review: { available: true, reason: null, rounds: 1, blocking: 0, fixed: 0, lastRound: 1, issues: [] },
+    gates: {
+      architecture: { available: true, ok: true, missing: [], gate: 'architecture' },
+      tests: { available: true, ok: true, missing: [], gate: 'tests' },
+      release: { available: true, ok: true, missing: [], gate: 'release' },
+    },
     warnings: [],
     dataGaps: [],
     degraded: { flag: false, reasons: [] },
@@ -420,6 +425,60 @@ test('released 只看当前迭代：别的迭代的 release 不算', () => {
   assert.equal(decision.kind, 'release')
 })
 
+test('优先级 6.5 前置：任务服务不可用 ⇒ 跳过测试门（不拿未知当未完成）', () => {
+  const evidence = baseEvidence()
+  evidence.tasks = { available: false, total: null, open: null, completed: null, items: [] }
+  evidence.gates.tests = { available: false, ok: false, missing: ['.dsh/plugin-state/test-report.json'], gate: 'tests', reason: 'missing' }
+  const decision = deriveDecision(evidence)
+  assert.notEqual(decision.kind, 'testing')
+  assert.equal(decision.kind, 'release', '任务不可用时落到后续可判定环节')
+  assert.ok(decision.notes.some((note) => note.includes('任务服务不可用')))
+})
+test('优先级 4.5：prd 有了但架构契约缺失 ⇒ 先定架构与契约（在原型之前）', () => {
+  const evidence = baseEvidence()
+  evidence.gates.architecture = { available: false, ok: false, missing: ['docs/architecture.md', 'docs/api.md'], gate: 'architecture', reason: 'missing' }
+  const decision = deriveDecision(evidence)
+  assert.equal(decision.kind, 'architecture')
+  assert.equal(decision.stageId, 'architecture')
+  assert.equal(decision.priority, 4.5)
+  assert.match(decision.reason, /架构契约/)
+})
+
+test('优先级 6.5：任务做完但测试报告缺失 ⇒ 先补测试证据（在代码复核之前）', () => {
+  const evidence = baseEvidence()
+  evidence.gates.tests = { available: false, ok: false, missing: ['.dsh/plugin-state/test-report.json'], gate: 'tests', reason: 'missing' }
+  const decision = deriveDecision(evidence)
+  assert.equal(decision.kind, 'testing')
+  assert.equal(decision.stageId, 'testing')
+  assert.equal(decision.priority, 6.5)
+  assert.match(decision.reason, /测试证据|test-report/)
+})
+
+test('优先级 6.5：测试报告有失败 ⇒ 先修失败再复核', () => {
+  const evidence = baseEvidence()
+  evidence.gates.tests = { available: true, ok: false, missing: ['failed>0（2 个失败）'], gate: 'tests', reason: 'wrong-shape', detail: { failed: 2 } }
+  const decision = deriveDecision(evidence)
+  assert.equal(decision.kind, 'testing')
+  assert.match(decision.reason, /2 个失败/)
+})
+
+test('优先级 12.5：验收全绿但发布清单缺失 ⇒ 先准备发布清单（在发出去之前）', () => {
+  const evidence = baseEvidence()
+  evidence.gates.release = { available: false, ok: false, missing: ['.dsh/plugin-state/release.json'], gate: 'release', reason: 'missing' }
+  const decision = deriveDecision(evidence)
+  assert.equal(decision.kind, 'release')
+  assert.equal(decision.stageId, 'release')
+  assert.equal(decision.priority, 12.5)
+  assert.match(decision.reason, /发布清单/)
+})
+
+test('旧证据没有 gates 字段 ⇒ 跳过门禁判定（向后兼容，不阻塞旧项目）', () => {
+  const evidence = baseEvidence()
+  delete evidence.gates
+  const decision = deriveDecision(evidence)
+  assert.equal(decision.kind, 'release', '没有 gates 时维持旧行为：验收全绿 → 发出去')
+  assert.equal(decision.priority, 13)
+})
 test('每条优先级的人话文案都满足长度与无代码约束（汇总核对）', () => {
   const fixtures = [
     { degraded: { flag: true, reasons: [{ source: 'x', message: '读失败' }] } },
