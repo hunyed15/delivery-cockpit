@@ -43,9 +43,23 @@
 
 ## 4. 阶段模型（9 阶段）
 
-每个阶段定义：**Objective / Inputs / Deliverables（路径 + schema）/ Technical Gate / Decision Gate / Definition of Done (DoD)**。
+每个阶段定义：**目标 / 输入 / 交付物（路径 + schema）/ 技术门 / 决策门 / 完成定义**。
 
-### S1 Bootstrap（立项与初始化）
+阶段命名统一为 4 个汉字（界面与文档一致；英文 id 仅用于配置与代码）。原 8 阶段到 9 阶段的映射：
+
+| 原 8 阶段 | 新 9 阶段 |
+|---|---|
+| 初始化 + 搭骨架 | **环境准备** |
+| 想清楚 | **需求定义** |
+| （新增） | **架构契约** |
+| 看原型 | **原型规格** |
+| 写代码 | **编码实现** |
+| （拆分自原「验效果」） | **测试验证** |
+| 挑毛病 | **代码复核** |
+| 验效果 | **验收确认** |
+| 发出去 | **发布观测** |
+
+### S1 环境准备（bootstrap）
 
 - Objective：建立项目状态目录与规则基线。
 - Deliverables：`RULES.md`、`project.json`（project card）、`acceptance.json`（空表）、`playbook.json`（可覆盖）。
@@ -53,7 +67,7 @@
 - Decision Gate：无（自动化）。
 - DoD：`cockpit_init` dry-run 通过后 apply 幂等成功。
 
-### S2 Requirements（需求）
+### S2 需求定义（requirements）
 
 - Objective：把想法收敛为可验收的需求基线。
 - Deliverables：`docs/prd.md`，包含 `## 功能需求` 与 `### FR-N 标题（P0/P1）`；每条 FR 至少一个 acceptance criterion。
@@ -61,7 +75,7 @@
 - Decision Gate：**Scope Sign-off**（甲方确认功能范围与优先级）。
 - DoD：PRD 结构合法 + 甲方确认。
 
-### S3 Architecture & Contract（架构与契约）— 新增，强制门
+### S3 架构契约（architecture）— 强制技术门
 
 - Objective：在写代码前冻结架构决策与接口契约，避免返工。
 - Deliverables：
@@ -71,7 +85,7 @@
 - Decision Gate：**Architecture Sign-off**（甲方确认技术选型与接口契约）。
 - DoD：契约冻结后，后续实现不得偏离（偏离需新增 ADR 并重新签核）。
 
-### S4 Prototype（原型/规格）
+### S4 原型规格（prototype）
 
 - Objective：用静态原型确认交互契约。
 - Deliverables：`prototype.html`（或 `docs/prototype.html`），含假数据。
@@ -79,7 +93,7 @@
 - Decision Gate：**Prototype Approval**（甲方点击"通过原型"，已实现）。
 - DoD：甲方批准记录写入 `approvals.json`。
 
-### S5 Implementation（实现）
+### S5 编码实现（implementation）
 
 - Objective：按任务拆分实现，前后端可并行。
 - Deliverables：任务清单（`.trellis/tasks/*` 或 `.dsh/plugin-state/tasks.json`，含 `id/title/status/acceptance`）；代码；每条任务一条 receipt（`write_scope`）。
@@ -88,7 +102,7 @@
 - DoD：实现完成且 receipt 齐全。
 - 可选子轨道（lane）：`backend` / `frontend` / `integration`，以任务标签区分；由编排层派给子代理。
 
-### S6 Verification（测试）— 新增，强制门
+### S6 测试验证（verification）— 强制技术门
 
 - Objective：用可执行测试证明实现满足契约。
 - Deliverables：`.dsh/plugin-state/test-report.json`，schema：`{command, scope, passed, failed, skipped, durationMs, at}`；可选覆盖率。
@@ -96,7 +110,7 @@
 - Decision Gate：无。
 - DoD：测试通过证据入账；非代码项目（纯文档/设计）允许以 `manual-check.json` 替代并标注。
 
-### S7 Code Review（复核）
+### S7 代码复核（code-review）
 
 - Objective：独立第二视角审查 diff。
 - Deliverables：review ledger（`.dsh/claude-review/ledger` 或 Trellis），blocking findings 全部 resolved。
@@ -104,7 +118,7 @@
 - Decision Gate：无。
 - DoD：gate 通过（复用现有 `claude_review` 引擎）。
 
-### S8 Acceptance（验收）
+### S8 验收确认（acceptance）
 
 - Objective：甲方逐条验收，证据可追溯。
 - Deliverables：`acceptance.json`（result + evidence）、截图/diff（`.dsh/plugin-state/shots/`）。
@@ -112,7 +126,7 @@
 - Decision Gate：**Acceptance Sign-off**（甲方点击通过/失败/阻塞，已实现）。
 - DoD：全部 pass 且无 stale。
 
-### S9 Release & Observe（发布与观测）
+### S9 发布观测（release）
 
 - Objective：发布并观测线上质量。
 - Deliverables：`.dsh/plugin-state/release.json`，schema：`{version, artifacts:[{path, sha256}], url, environment, rollback, changelog, at}`；发布 receipt。
