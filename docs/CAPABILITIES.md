@@ -212,6 +212,60 @@
 - **mattpocock**：`grilling`（S1/S2）、`code-review`（S7）；
 - **本驾驶舱**：9 阶段门禁、验收确认、截图/视觉回归、阶段汇报（S8 唯一方案）；
 - **部署**：平台 MCP/CI + `finishing-a-development-branch`（待补）。
+## 2.8 Skill 编排：角色模型与去重
+
+> 多个 skill 不必然冗余：**角色不同就是互补，角色相同就是冗余**。编排的本质是给每个阶段分配角色，而不是堆 skill。
+
+### 六种角色（每个阶段每角色至多 1 个）
+
+| 角色 | 作用 | 例 |
+|---|---|---|
+| Method（方法） | 规定"这一步怎么做"的流程/纪律 | grilling、TDD、verification-before-completion |
+| Constraint（约束） | 限制怎么做（风格/范围/质量红线） | ponytail（YAGNI）、impeccable（UI 审计底线） |
+| Producer（生产者） | 真正产出交付物的执行者 | Agent / 子代理 / Tool |
+| Verifier（验证者） | 独立检查产出是否达标 | claude_review（独立进程）、门禁校验器 |
+| Evidence（证据源） | 提供可核验的证据 | test 命令、webapp-testing（Playwright 截图/console）、CDP 截图 |
+| Orchestrator（编排者） | 调度顺序与并行 | 根会话 / 子代理 |
+
+**规则**：同一阶段、同一角色只选一个；Method 与 Constraint 各 ≤1；Verifier 必须独立于 Producer（否则是自查）；Evidence 必须能落盘。
+
+### 九阶段角色化编排（精简后）
+
+| 阶段 | Method | Constraint | Producer | Verifier | Evidence |
+|---|---|---|---|---|---|
+| 项目立项 | **grilling** | — | Agent | 本插件（brief 结构 + 立项确认） | brief.md |
+| 需求定义 | **Trellis brainstorm**（或 mattpocock to-spec） | — | Agent | 本插件（FR 解析 + 验收起草）+ 范围签核 | prd.md |
+| 架构契约 | **writing-plans**（或 BMAD Architect / Spec Kit plan） | ponytail（防过度设计） | Agent | 本插件契约校验器 + 架构签核 | architecture.md / api.md |
+| 原型设计 | **frontend-design**（或 ui-ux-pro-max） | impeccable（UI 审计底线） | Agent | **impeccable 审计** + 你点通过 | prototype.html + 截图 |
+| 代码开发 | **test-driven-development** + **executing-plans**（编排） | ponytail | Agent / 子代理 | 测试命令 + 本插件回执校验 | 测试输出 |
+| 测试验证 | **verification-before-completion** | — | Agent | 本插件测试报告校验器 | test-report.json + **webapp-testing**（E2E 截图/console） |
+| 代码复核 | mattpocock **code-review**（检查清单） | — | **claude_review**（独立进程） | 审核账本 blocking=0 | ledger |
+| 验收确认 | verification-before-completion（可选） | — | Agent | **本插件（人工验收 + 视觉回归 + 失效门禁）** | acceptance.json + 截图/diff |
+| 部署发布 | **finishing-a-development-branch** | — | Agent | 本插件发布清单校验器 + 发布批准 | release.json |
+
+### 冗余裁决（这些不要同时加载）
+
+| 重复组 | 裁决 |
+|---|---|
+| frontend-design / anthropic-frontend-design / ui-ux-pro-max | **同一角色（设计方法）**：主选 `frontend-design`（官方、精炼）；`ui-ux-pro-max` 作为设计令牌库按需；`anthropic-frontend-design` 是前两者合体，**不重复装/不重复加载** |
+| impeccable / unslop | **角色不同**：impeccable 是审计/打磨（Verifier），unslop 只在"界面有 AI 味"时作为触发式约束；不要同轮都上 |
+| brainstorming / grilling | **同一角色（需求访谈）**：grilling 更严格（设计树+推荐答案）→ S1/S2 主选 grilling，brainstorming 作回退 |
+| writing-plans / to-spec / Trellis planning / BMAD plan | **产出物不同**：to-spec/Trellis 产 PRD（S2）；writing-plans 产实现计划（S5）；BMAD 产架构文档（S3）。**同一产出物只用一个** |
+| requesting-code-review / receiving-code-review / code-review-and-quality / mattpocock code-review | **交互协议 vs 检查清单 vs 引擎**：引擎 `claude_review` + 一份检查清单（mattpocock）；requesting/receiving 是作者侧协议，仅在收/发评审时用 |
+| TDD / executing-plans / systematic-debugging | **角色不同**：TDD=纪律（Method）、executing-plans=调度（Orchestration）、systematic-debugging=出 bug 时的诊断（按需加载）；可共存，但一次只加载需要的 |
+| verification-before-completion / trellis-check | **Method vs Gate**：前者是"没证据不许声称完成"的纪律；后者是执行 lint/type/test 的门禁命令。二者可共存，Verifier 只算一个 |
+
+### 编排时序（每个阶段统一四步）
+
+```
+1. Prepare：加载 Method（≤1）+ Constraint（≤1），明确交付物与门禁
+2. Execute：Producer 产出交付物（Agent / 子代理 / Tool / MCP）
+3. Verify：Verifier 独立检查 + Evidence 落盘（门禁校验）
+4. Record：写 receipt（used_skill_or_mcp = 实际使用的 Method/Evidence），并进入下一阶段
+```
+
+并行规则：**Skill 是提示词，不能并行执行**；并行只能发生在"任务"层——S5 把任务拆给多个子代理，每个子代理各带 1 个 Method（如各自 TDD），由 Orchestrator 汇总回执。一个代理不要同时加载多个 Method。
+
 ## 3. 当前 profile 探测结果（2026-11-22）
 
 ### 4.1 Skill 分布（实扫，2026-11-22）
