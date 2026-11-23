@@ -848,7 +848,7 @@ features: {
 | `changeFailureRate` | 近 `windowDays`（默认 30）内 `verdict ∈ {fix, reject}` 的行数 / 窗口内 verdict 可判定的行数 | review-history | 窗口内无行 ⇒ `null` |
 | `reviewFixHours` | 对 verdict 为 fix/reject 的轮次，找同轮最早 `status:'fixed'` 处置的 `at`，取（fixed − review）小时数的中位数 | review-history + dispositions | 无配对 ⇒ `null` |
 | `acceptanceRate` | `passed / (passed + failed + blocked + stale)`；stale 有结果但**不算通过** | acceptance | 分母 0 ⇒ `null` |
-| `blockingInventory` | `review.blocking + acceptance.failed + acceptance.blocked`（null 按 0，`sample` 记已知几路） | review + acceptance | 恒为数字 |
+| `blockingInventory` | `review.blocking + acceptance.failed + acceptance.blocked`（已判定路 null 按 0，`sample` 记已知几路） | review + acceptance | 两路都不可知 ⇒ `null`；否则数字（0 合法） |
 
 - **坏数据一律跳过**：`at` 解析失败、`round` 不是整数、fixed 早于 review（时钟回拨）都不参与，绝不拿生成时间兜底。
 - **0 与 null 严格区分**：数据不足是 `null` 并进 `unavailable: [{metric, reason}]`；"近 7 天确实没发布"是 `0`。
@@ -1009,7 +1009,7 @@ features: {
 **交付指标 + 周报（P3）**
 
 - `computeMetrics.windowDays` 只接受 `7 / 30`：`/report` 的 `days=14` 只影响标题日期范围，不改变"返工率 = 近 30 天"的代理口径（不为了让参数看起来有用而偷偷改指标）。
-- `blockingInventory` 在 `metrics.js` 里恒为数字（null 按 0），`model.js` 也把 `value:null` 归一成 0：库存为 0 是合法结论；但 `sample` 如实记"已知几路"，数据全缺时 `unavailable` 仍会写"检查与验收都还没读到"。
+- `blockingInventory` 数据全缺时返回 `null`（不是 0 项）：按 `review.available` / `acceptance.missing` 判已知性，`model.js` 透传 null，面板显示 —；`sample` 记已知几路，`unavailable` 写"检查与验收都还没读到"。
 - `deploymentFrequency7d` 的 `sample` 等于 `value`（都是窗口内的发布回执数）——契约没有更细的样本概念，不造一个没含义的数字。
 - **`Content-Disposition` 中文文件名**：HTTP 头值只能是 ByteString，中文直接进 header 会让 `new Response` 抛 `Cannot convert argument to a ByteString`。因此非 ASCII 项目名用 `filename*=UTF-8''<percent-encoded>`，再给一个纯 ASCII 的 `filename=` 回退；纯 ASCII 项目名时两份一致、与契约逐字相符（`filename="demo-weekly-YYYY-MM-DD.md"`）。
 - `readMetricLedger` 返回 **对象** `{history, dispositions, dirs, badLines, truncated}` 而不是单个数组：`reviewFixHours` 必须按"账本目录 + 轮次"配对（只按 round 会把别的任务的处置算进来），两个数组是配对所需的最小信息。
