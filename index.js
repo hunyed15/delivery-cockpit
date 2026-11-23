@@ -365,13 +365,10 @@ function agentCwd(ctx, exec, explicit) {
   return null
 }
 
-// 内置 playbook 很小，读一次缓存住；读失败按空文本交给 loadPlaybook，它会如实降级。
-let builtinPlaybookPromise
+// 内置 playbook 很小，每次现读：模板可在插件 reload 后生效（不做模块级缓存，
+// 否则 ESM 缓存会让改模板必须重启整个 DSH 才可见）。读失败按空文本交给 loadPlaybook 降级。
 function readBuiltinPlaybook() {
-  if (!builtinPlaybookPromise) {
-    builtinPlaybookPromise = readFile(join(TEMPLATES, 'playbook.json'), 'utf8').catch(() => '')
-  }
-  return builtinPlaybookPromise
+  return readFile(join(TEMPLATES, 'playbook.json'), 'utf8').catch(() => '')
 }
 
 /**

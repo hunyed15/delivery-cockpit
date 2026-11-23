@@ -105,6 +105,7 @@
       "constraint": null,
       "capabilities": [
         { "kind": "skill", "name": "verify-claims", "mode": "full", "note": "无命令输出/报告不得声称通过" },
+        { "kind": "skill", "name": "webapp-testing", "mode": "full", "optional": true, "note": "Playwright 测试决策树（E2E 证据；已装全局）" },
         { "kind": "inline", "name": "test-report", "mode": "inline", "note": "test-report.json schema：{command,scope,passed,failed,skipped,durationMs,at}" },
         { "kind": "mcp", "name": "playwright", "mode": "full", "optional": true, "note": "本机未安装；回退本机命令 + 人工 / CDP 截图" }
       ],
@@ -139,6 +140,7 @@
       "constraint": null,
       "capabilities": [
         { "kind": "skill", "name": "verify-claims", "mode": "full", "note": "没有证据不算通过" },
+        { "kind": "skill", "name": "webapp-testing", "mode": "full", "optional": true, "note": "Playwright 测试决策树（E2E 证据；已装全局）" },
         { "kind": "inline", "name": "acceptance-gate", "mode": "inline", "note": "验收表 + 截图/diff + 失效门禁（本插件核心）" },
         { "kind": "mcp", "name": "playwright", "mode": "full", "optional": true, "note": "本机未安装；回退面板 CDP 截图 + 人工确认" }
       ],

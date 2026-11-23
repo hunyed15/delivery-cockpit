@@ -318,7 +318,7 @@ DSH 的 skill 作用域 = **全局（`DSH_HOME/skills` + `~/.agents/skills`）+ 
 
 | 位置 | 数量 | 代表 skill |
 |---|---|---|
-| `D:\Users\Admin\.dsh\skills`（DSH_HOME，全局） | 21 | 基础 7（claude-code-review、ponytail、frontend-design、impeccable、ui-ux-pro-max、tdd-loop、verify-claims）+ **Trellis 12**（start/continue/finish-work/brainstorm/spec-bootstrap/before-dev/update-spec/check/break-loop/channel/meta/session-insight）+ **grilling 2**（grill-me 触发 → grilling） |
+| `D:\Users\Admin\.dsh\skills`（DSH_HOME，全局） | 22 | 基础 8（claude-code-review、ponytail、frontend-design、impeccable、ui-ux-pro-max、tdd-loop、verify-claims、**webapp-testing**）+ **Trellis 12**（start/continue/finish-work/brainstorm/spec-bootstrap/before-dev/update-spec/check/break-loop/channel/meta/session-insight）+ **grilling 2**（grill-me 触发 → grilling） |
 | `D:\Users\Admin\.agents\skills`（全局 agents 生态） | 11 | clawhub 包、comet*、ponytail、impeccable、anthropic-frontend-design |
 | `D:\Coding\XinHuo\.dsh\skills`（项目级示例） | 14 | **grill-me / grilling**、comet*、trellis-start / continue / finish-work、unslop、code-review-and-quality |
 | 旧插件包（claude-code-review 仓库的 `.claude/.agents/.cursor/.dsh/skills`） | 11 + 7 | trellis-start / brainstorm / spec-bootstrap / before-dev / check / finish-work / break-loop / channel / meta / session-insight / update-spec；ui-ux-pro-max 的 design / brand / design-system / slides / ui-styling / banner-design |
@@ -328,9 +328,9 @@ DSH 的 skill 作用域 = **全局（`DSH_HOME/skills` + `~/.agents/skills`）+ 
 
 ### 4.2 当前能力状态
 
-- **全局可用 Skills**：上表 DSH_HOME 的 **21 个**（本会话 skill catalog 可见；Trellis 12 + grilling 已于 2026-11-23 装入）。
+- **全局可用 Skills**：上表 DSH_HOME 的 **22 个**（本会话 skill catalog 可见；Trellis 12 + grilling 2 + webapp-testing 已于 2026-11-23 装入）。
 - **grill 已装到全局**（2026-11-23）：`grill-me` 触发 → `grilling` 设计树追问；所有项目可用。
-- **旧插件 trellis 系列**：存在于插件包，未进 DSH 加载路径 → 视为"可选 + 回退"。
+- **Trellis 12 已装全局**（2026-11-23）：旧插件包里的 `.claude/.agents` 副本不再需要；DSH 直接加载全局版本。
 - **MCP**：`playwright` 缺失、`context7` 缺失、无部署平台 MCP → 全部走回退，并给安装指引。
 - **Tools**：`cockpit_*`（本插件）、`claude_review*`（旧插件）可用。
 

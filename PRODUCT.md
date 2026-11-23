@@ -53,7 +53,7 @@ web
 
 ## Evidence on Hand
 
-- `docs/design.md`（产品设计规范定稿）、`docs/IMPLEMENTATION.md`（实现契约与偏差）。
+- `docs/archive/design-8stage-v0.md`（8 阶段旧稿，已归档）、`docs/IMPLEMENTATION.md`（实现契约与偏差）。
 - `tools/preview/` 下的真实 React 预览与截图（mock 数据覆盖正常/降级/窄屏）。
 - 已实现功能：总览/详情、功能账、验收清单（结果/截图/视觉回归/失效）、执行回执、审核账本。
 - 无真实用户访谈与品牌资产；视觉方向由本轮设计决定。
