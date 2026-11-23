@@ -463,3 +463,36 @@ test('claude_review_install_hook 真实安装：写入 pre-commit；已存在时
     await rm(project, { recursive: true, force: true })
   }
 })
+
+test('写授权：显式 cwd/taskDir/enginePath 未登记时拒绝（fail-closed）', async () => {
+  const deny = async () => {
+    throw new Error('拒绝写盘：不在任何 DSH 已登记工作区内')
+  }
+  const tools = createReviewToolDefinitions(fakeCtx(), { authorizeWrite: deny })
+  const exec = execIn('C:\\\\outside\\\\demo', 'session-x')
+
+  await assert.rejects(
+    () => getTool(tools, 'claude_review').execute({ mode: 'full', cwd: 'C:\\\\outside\\\\demo', dryRun: true }, exec),
+    /拒绝写盘/,
+  )
+  await assert.rejects(
+    () =>
+      getTool(tools, 'claude_review_disposition').execute(
+        { cwd: 'C:\\\\outside\\\\demo', entries: [{ round: 1, key: 'abc', status: 'fixed', note: 'x' }] },
+        exec,
+      ),
+    /拒绝写盘/,
+  )
+  await assert.rejects(
+    () => getTool(tools, 'claude_review_install_hook').execute({ cwd: 'C:\\\\outside\\\\demo' }, exec),
+    /拒绝写盘/,
+  )
+  await assert.rejects(
+    () =>
+      getTool(tools, 'claude_review_install_hook').execute(
+        { cwd: 'C:\\\\outside\\\\demo', enginePath: 'C:\\\\outside\\\\evil.ps1' },
+        exec,
+      ),
+    /拒绝写盘/,
+  )
+})

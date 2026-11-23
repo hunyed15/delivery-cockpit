@@ -810,7 +810,7 @@ features: {
 
 #### ④ cwd 与 subprocess（本插件的新约束）
 
-- `claude_review` / `install_hook` 的 cwd 解析与旧插件一致：显式 `cwd`（相对 cwd 解析）→ `workingDirectory.get(agent)` → `agent.session.header.cwd` → `process.cwd()`。评审是只读的，**不做写授权**（旧行为；与本插件 `cockpit_init` 的显式 cwd 写授权不同）。
+- `claude_review` / `install_hook` 的 cwd 解析顺序与旧插件一致：显式 `cwd`（相对 cwd 解析）→ `workingDirectory.get(agent)` → `agent.session.header.cwd` → `process.cwd()`。**但写路径必须授权**：`claude_review` 写账本、`claude_review_disposition` 写 dispositions、`claude_review_install_hook` 写 `.git/hooks`，三者的显式 `cwd` 与显式 `taskDir`/`enginePath` 都过同一个 `authorizeWrite`（未登记工作区 fail-closed）；会话自身工作目录不校验。评审工具"不改代码"不等于"不写盘"。
 - `inject` 仍然只有 `['tools']`：`subprocess` 在精简 profile 里可能不存在，硬依赖会让整个插件不激活。工具执行时用 `ctx.get('subprocess')` **可选获取**，缺失/不可用 ⇒ 明确报「缺少 subprocess 服务」，其余工具照常可用。
 
 #### ⑤ 账本与 disposition

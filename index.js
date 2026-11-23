@@ -321,7 +321,7 @@ export function createToolDefinitions(ctx, options = {}) {
   ]
   // 评审三件套（claude_review / disposition / install_hook）与驾驶舱工具一起注册：
   // 只装本插件就能拿到旧 @hunyed15/project-cockpit 的评审能力，会话里的调用方式不变。
-  return [...cockpitTools, ...createReviewToolDefinitions(ctx, { settings: options.reviewSettings ?? {} })]
+  return [...cockpitTools, ...createReviewToolDefinitions(ctx, { settings: options.reviewSettings ?? {}, authorizeWrite })]
 }
 
 // 供 test/tool-contract.test.js 断言形状；execute 不在这里调用，ctx 传 undefined 是安全的。
