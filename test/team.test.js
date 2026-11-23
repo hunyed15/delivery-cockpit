@@ -222,3 +222,14 @@ test('非在线会话照样显示（running=false），不因离线就隐藏', a
   assert.equal(team.agents[0].running, true)
   assert.equal(team.agents[1].running, false)
 })
+
+test('子目录里的会话也算这个项目（worktree 仍是独立路径）', async () => {
+  const ctx = fakeCtx({
+    agentIds: ['s2'],
+    headers: [header({ id: 's2', cwd: PROJECT + '\\\\web' })],
+  })
+  const team = await readTeam(ctx, PROJECT)
+  assert.equal(team.available, true)
+  assert.equal(team.agents.length, 1)
+  assert.equal(team.agents[0].id, 's2')
+})

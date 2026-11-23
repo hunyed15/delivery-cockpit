@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -86,7 +87,7 @@ test('架构门：docs/openapi.json 可替代 api.md；空 api.md 不算数', as
   await withProject(async (project) => {
     await writeText(project, 'docs/architecture.md', COMPLETE_ARCH)
     await writeText(project, 'docs/api.md', '   \n')
-    await writeJson(project, 'docs/openapi.json', { openapi: '3.0.0', paths: {} })
+    await writeJson(project, 'docs/openapi.json', { openapi: '3.0.0', paths: { '/customers': { get: {} } } })
     const gate = await validateArchitecture(project)
     assert.equal(gate.ok, true)
     assert.equal(gate.detail.api, 'docs/openapi.json')
@@ -210,11 +211,20 @@ test('发布门：缺文件 / 坏 JSON / 缺字段三种不通过形态', async 
   })
 })
 
-test('发布门：artifacts 同时支持路径字符串与 {path}，url 可选；形状合法即通过', async () => {
+test('发布门：artifacts 必须 {path, sha256}、文件存在且哈希匹配；url 可选', async () => {
   await withProject(async (project) => {
+    const js = 'console.log(1)'
+    const css = 'body{}'
+    await writeText(project, 'dist/app.js', js)
+    await writeText(project, 'dist/app.css', css)
+    const sha = (text) => createHash('sha256').update(text).digest('hex')
+    const artifacts = [
+      { path: 'dist/app.js', sha256: sha(js) },
+      { path: 'dist/app.css', sha256: sha(css) },
+    ]
     await writeJson(project, '.dsh/plugin-state/release.json', {
       version: '1.0.0',
-      artifacts: ['dist/app.js', { path: 'dist/app.css', sha256: 'abc' }],
+      artifacts,
       rollback: 'git revert 上一个 tag',
       at: '2026-11-22T20:00:00.000Z',
     })
@@ -222,20 +232,30 @@ test('发布门：artifacts 同时支持路径字符串与 {path}，url 可选�
     assert.equal(gate.ok, true)
     assert.equal(gate.available, true)
     assert.equal(gate.detail.version, '1.0.0')
-    assert.equal(gate.detail.rollback, 'git revert 上一个 tag')
+    assert.equal(gate.detail.artifacts.length, 2)
     assert.equal(gate.detail.url, null)
 
-    // url 存在时原样带出
+    // 缺文件 / 哈希不对 / 越界路径都必须拦下
+    await rm(join(project, 'dist', 'app.css'))
+    const missingFile = await validateRelease(project)
+    assert.equal(missingFile.ok, false)
+    assert.ok(missingFile.missing.some((item) => item.includes('文件不存在')))
+
+    await writeText(project, 'dist/app.css', 'tampered')
+    const badHash = await validateRelease(project)
+    assert.equal(badHash.ok, false)
+    assert.deepEqual(badHash.missing, ['artifacts[1].sha256'])
+
     await writeJson(project, '.dsh/plugin-state/release.json', {
       version: '1.0.1',
-      artifacts: [{ path: 'dist/app.js' }],
-      rollback: '回滚到 1.0.0',
+      artifacts: [{ path: '../outside.txt', sha256: 'a'.repeat(64) }],
+      rollback: '回滚',
       at: '2026-11-22T21:00:00.000Z',
       url: 'https://example.com',
     })
-    const withUrl = await validateRelease(project)
-    assert.equal(withUrl.ok, true)
-    assert.equal(withUrl.detail.url, 'https://example.com')
+    const outside = await validateRelease(project)
+    assert.equal(outside.ok, false)
+    assert.ok(outside.missing.some((item) => item.includes('越界')))
   })
 })
 
@@ -342,5 +362,32 @@ test('tests 门：test-report.json 存在时优先于 manual-check.json（不静
     assert.equal(gate.ok, false)
     assert.equal(gate.detail.source, '.dsh/plugin-state/test-report.json')
     assert.match(gate.missing.join(' '), /failed>0（2 个失败）/)
+  })
+})
+
+test('架构门：关键决策标题下没内容 / api 文件没有 endpoint 都不通过', async () => {
+  await withProject(async (project) => {
+    await writeText(
+      project,
+      'docs/architecture.md',
+      ['# 架构', '## 组件', 'Web', '## 数据模型', 'Customer', '## 接口清单', 'GET /x', '## 关键决策', ''].join('\n'),
+    )
+    await writeText(project, 'docs/api.md', '# API\n\n这个文件没有方法行\n')
+    const gate = await validateArchitecture(project)
+    assert.equal(gate.ok, false)
+    assert.ok(gate.missing.some((item) => item.includes('关键决策（无内容）')))
+    assert.ok(gate.missing.some((item) => item.includes('api.md#endpoint')))
+  })
+})
+test('架构门：api.md 用 Markdown 表格写 endpoint 也认', async () => {
+  await withProject(async (project) => {
+    await writeText(
+      project,
+      'docs/architecture.md',
+      ['# 架构', '## 组件', 'Web', '## 数据模型', 'Customer', '## 接口清单', '## 关键决策', '- 单体优先'].join('\n'),
+    )
+    await writeText(project, 'docs/api.md', ['# API', '', '| 方法 | 路径 |', '| --- | --- |', '| GET | /customers |'].join('\n'))
+    const gate = await validateArchitecture(project)
+    assert.equal(gate.ok, true)
   })
 })

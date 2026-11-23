@@ -19,7 +19,7 @@
         ".dsh/plugin-state/playbook.json",
         ".dsh/plugin-state/acceptance.json"
       ],
-      "technicalGate": "validateBootstrap",
+      "technicalGate": null,
       "decisionGate": null,
       "promptTemplate": "用 {capabilities} 把想法问清楚，产出一页 `docs/brief.md`：目标用户、场景、价值、约束、初步范围、不做什么。然后调用 `cockpit_init`（`dryRun:false`）释放 RULES.md / project.json / playbook.json / acceptance.json，确认 `.trellis/` 与 `.dsh/plugin-state/RULES.md` 都存在，最后写一条执行回执。",
       "exitGate": "`.trellis/` 与四个状态文件存在且 schema 合法；brief 写清目标用户与不做什么",
@@ -35,7 +35,7 @@
         { "kind": "tool", "name": "cockpit_acceptance", "mode": "full", "note": "按 FR 起草验收条目（只追加，不改已有 result / evidence）" }
       ],
       "deliverables": ["docs/prd.md", ".dsh/plugin-state/acceptance.json"],
-      "technicalGate": "validateRequirements",
+      "technicalGate": null,
       "decisionGate": { "title": "范围签核", "approveAction": "approve-scope" },
       "promptTemplate": "用 {capabilities} 把 brief 收敛成 `docs/prd.md`：`## 功能需求` 下每条用 `### FR-N 标题（P0/P1）`，每条至少一个验收标准；再用 `cockpit_acceptance` 按 FR 起草验收条目（result 留空）。范围与优先级确认后写回执。",
       "exitGate": "`docs/prd.md` 解析出 ≥1 个 FR，且每个 FR 至少关联 1 条验收条目；甲方确认范围",
@@ -70,7 +70,7 @@
         { "kind": "mcp", "name": "playwright", "mode": "full", "optional": true, "note": "本机未安装；回退本机 Chrome CDP 截图 + 人工确认" }
       ],
       "deliverables": ["prototype.html"],
-      "technicalGate": "validatePrototype",
+      "technicalGate": null,
       "decisionGate": { "title": "原型通过", "approveAction": "approve-prototype" },
       "promptTemplate": "用 {capabilities} 生成项目根目录 `prototype.html`（纯静态、假数据），覆盖本轮核心流程；用 impeccable 做一次界面审计。产出后请人点「通过原型」，批准记录写入 `approvals.json` 才进代码开发。",
       "exitGate": "`prototype.html` 可打开且非空；甲方在面板点「通过原型」",
@@ -92,7 +92,7 @@
         "代码",
         ".dsh/plugin-state/receipts.jsonl（每条任务一条 implementation 回执，含 write_scope）"
       ],
-      "technicalGate": "validateImplementation",
+      "technicalGate": null,
       "decisionGate": null,
       "promptTemplate": "按 `.trellis/tasks/` 里的任务逐个推进，用 {capabilities}。一次只做一个任务：先认领，写失败测试 → 最小实现 → 测试通过 → 重构；完成后跑 `claude_review(mode:\"range\", base=<本任务起始>)`，通过后写一条回执（`stage:\"implementation\"`、带 `task_ref` 与 `write_scope`）再下一个。",
       "exitGate": "任务全部 completed；每条任务有 implementation 回执且 write_scope 与任务声明一致；每条任务通过一次 range 审核",
@@ -127,7 +127,7 @@
         { "kind": "inline", "name": "review-ledger", "mode": "inline", "note": "账本：.dsh/claude-review/ledger；blocking=0" }
       ],
       "deliverables": [".dsh/claude-review/ledger"],
-      "technicalGate": "validateReview",
+      "technicalGate": null,
       "decisionGate": null,
       "promptTemplate": "用 {capabilities} 对当前改动做独立复核：`claude_review(mode:\"gate\")` 出结论，只修有证据的问题，修完用 `claude_review_disposition` 标记处置再复核。复核必须独立于实现者，账本里 blocking 清零才算过。",
       "exitGate": "审核账本 blocking=0，且每轮 review 可追溯（含 disposition）",
@@ -145,7 +145,7 @@
         { "kind": "mcp", "name": "playwright", "mode": "full", "optional": true, "note": "本机未安装；回退面板 CDP 截图 + 人工确认" }
       ],
       "deliverables": [".dsh/plugin-state/acceptance.json", ".dsh/plugin-state/shots/"],
-      "technicalGate": "validateAcceptance",
+      "technicalGate": null,
       "decisionGate": { "title": "验收签核", "approveAction": "approve-acceptance" },
       "promptTemplate": "按 `acceptance.json` 逐条执行，用 {capabilities}：每条填 `result`（pass/fail/blocked），pass 必须附证据（截图存 `.dsh/plugin-state/shots/`），最后写一条执行回执。验收表为空时先按 `prd.md` 起草条目给我确认。复核某条验收（比如我提出疑问、或截图变了要我再看）时，用 `cockpit_report` 带 `event:\"acceptance-recheck\"` 留痕：`stage:\"acceptance\"`、`status:\"completed\"`、`feature_ids` 填对应功能、`summary_for_human` 写清复核了哪条和结论；它只进流水账，改 `result` 仍由我在面板点。",
       "exitGate": "`items` 非空、每条 result 非 null、每条 pass 都有 evidence、没有失效（stale）条目；甲方签核",

@@ -91,7 +91,7 @@ DSH 插件 **交付驾驶舱**：把项目的真实状态收拢成一屏——**
 - [x] **评审引擎合并（0.2.0）**：旧 `@hunyed15/project-cockpit` 的独立评审引擎（`scripts/` 原样）与 `claude_review` / `claude_review_disposition` / `claude_review_install_hook` 三个工具并入本插件；账本路径与配置键沿用，面板「代码检查」读同一份账本，旧插件可禁用/卸载（旧面板路由与 cockpit 总览不迁移）
 - [x] **交付指标 + 周报导出（P3）**：主区「交付指标」模块（交付周期 / 近 7 天发布 / 返工率 / 验收通过率 + 修复时长 / 待修问题），全部标注代理口径与数据缺口；header「导出周报」走 `GET /report` 下载 Markdown（`days=7/14/30`，默认 7，配置键 `reportDays`）
 
-**测试**：`npm test` = `node --test "test/*.test.js"`，当前 **513 个用例全绿**。全局 skill 已装 22 个（Trellis 12 + grilling 2 + webapp-testing 等）；本机 MCP 已接 Playwright + Context7。（含端到端状态机推进、人工签核四门与前置失败、功能账三路证据与自动归属、验收起草/结果写入/失效联动与留痕、截图引擎与 PNG 对比/CRC 边界、技能可见性、能力建议映射、团队泳道读取、写授权 fail-closed 专项；合并进来的评审三工具：schema/render、命令行拼装、结论归一、dryRun 真实干跑、处置账本写入、hook 安装；以及 P3：指标口径/0 与 null/窗口边界/坏行与 2000 行上限、周报排版与管道符转义、`/report` 授权与下载头）。
+**测试**：`npm test` = `node --test "test/*.test.js"`，当前 **518 个用例全绿**。全局 skill 已装 22 个（Trellis 12 + grilling 2 + webapp-testing 等）；本机 MCP 已接 Playwright + Context7。（含端到端状态机推进、人工签核四门与前置失败、功能账三路证据与自动归属、验收起草/结果写入/失效联动与留痕、截图引擎与 PNG 对比/CRC 边界、技能可见性、能力建议映射、团队泳道读取、写授权 fail-closed 专项；合并进来的评审三工具：schema/render、命令行拼装、结论归一、dryRun 真实干跑、处置账本写入、hook 安装；以及 P3：指标口径/0 与 null/窗口边界/坏行与 2000 行上限、周报排版与管道符转义、`/report` 授权与下载头）。
 
 > 勾选只在**实现并通过验收**之后做。`node --test test/`（目录形式）在本机 Node 24 不支持，请用上面的 glob 形式或 `npm test`。
 

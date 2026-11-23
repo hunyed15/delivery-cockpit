@@ -659,7 +659,7 @@ features: {
   - 统一形状 `{available, ok, gate, missing[], detail?, reason?}`；`available`=主证据文件存在且可读（区分“还没做”与“做了没过”），`ok`=内容满足门禁。
   - `validateArchitecture(projectPath)`：`docs/architecture.md` 必需小节「组件/数据模型/接口清单/关键决策」+ `docs/api.md` 或 `docs/openapi.json` 非空。
   - `validateTestReport(projectPath)`：优先 `.dsh/plugin-state/test-report.json`（`command`/`passed`/`failed`/`at` 合法且 `failed===0`）；文件不存在时回退 `.dsh/plugin-state/manual-check.json`（非代码项目：`checks[]` 非空 + `at`，`fail`/`blocked` 均不放行）。test-report 存在时优先，不静默改用回退。
-  - `validateRelease(projectPath)`：`.dsh/plugin-state/release.json`，`version`/`artifacts`（非空，字符串或 `{path}`）/`rollback`/`at` 合法。
+  - `validateRelease(projectPath)`：`.dsh/plugin-state/release.json`，`version`/`artifacts:[{path, sha256}]`/`rollback`/`at` 合法；每个产物必须解析到项目内、文件存在、sha256 匹配（越界/缺文件/哈希不符都会列进 missing）。
   - `readGateEvidence(projectPath)`：三门并发读取、逐个兜错；文件不存在记 `missing`，**不触发 `degraded`**（阶段未完成不是读取故障）。
 - 接入 `lib/evidence.js`：`readEvidence` 顶部新增 `gates: { architecture, tests, release }`；降级分支同样带 gates 键。- 接入面板：`lib/model.js` 的 `gatesSection` 把三门只读投影给 `detail.gates`；hero 的「阶段检查」块显示 已通过/未通过/未就绪 + 方法/约束/交付物（`client.js`，token-only 样式）。- 阶段只读切换：`detail.stages` 投影 9 阶段的元信息/门禁/能力/最近 3 条记录；进度节点是按钮（`data-stage`/`aria-pressed`），点击在客户端展开只读详情，Esc 或「回到当前」关闭，**不写盘、不改状态机**。
 - 状态机门禁决策（`lib/state.js`，插在既有 1–14 序号之间，保持旧序号不动）：

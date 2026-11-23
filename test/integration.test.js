@@ -8,6 +8,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile, mkdir, readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -93,9 +94,19 @@ async function writeTestReport(project) {
 }
 
 async function writeReleaseManifest(project) {
+  const artifact = join(project, 'dist', 'app.zip')
+  await mkdir(join(project, 'dist'), { recursive: true })
+  const content = 'build artifact'
+  await writeFile(artifact, content, 'utf8')
+  const sha256 = createHash('sha256').update(content).digest('hex')
   await writeFile(
     join(project, '.dsh', 'plugin-state', 'release.json'),
-    JSON.stringify({ version: 'v1.0', artifacts: ['dist/app.zip'], rollback: 'git revert v1.0', at: '2026-11-22T00:00:00.000Z' }),
+    JSON.stringify({
+      version: 'v1.0',
+      artifacts: [{ path: 'dist/app.zip', sha256 }],
+      rollback: 'git revert v1.0',
+      at: '2026-11-22T00:00:00.000Z',
+    }),
     'utf8',
   )
 }
@@ -206,6 +217,8 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
       JSON.stringify({ schemaVersion: 1, iteration_id: 'v1.0', items: [{ id: 'A1', title: '能添加客户', result: 'pass', evidence: ['shots/add.png'] }] }),
       'utf8',
     )
+    await mkdir(join(project, 'shots'), { recursive: true })
+    await writeFile(join(project, 'shots', 'add.png'), 'png', 'utf8')
     ;({ decision } = await decisionOf(project))
     assert.equal(decision.kind, 'acceptance-approval')
     assert.equal(decision.stageId, 'acceptance')

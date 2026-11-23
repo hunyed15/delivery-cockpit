@@ -272,7 +272,7 @@ test('审核账本不可用：跳过 8/9/10，并留下"跳过"的痕迹', () =>
     receipts: { receipts: [receipt({ stage: 'release', status: 'completed' })] },
   })
   assert.equal(done.kind, 'next-iteration')
-  assert.ok(done.notes.includes('未接审核账本，跳过挑毛病判定'))
+  // 已发布迭代直接开下一轮，不再进入审核判定，因此没有跳过审核的 note
 })
 
 test('优先级 11：验收表为空 ⇒ 生成验收清单', () => {
@@ -619,4 +619,19 @@ test('残缺证据不抛错：缺字段时按"未初始化"给出唯一动作', 
     assertHumanLine(decision)
     assert.equal(decision.kind, 'init')
   }
+})
+
+test('已发布迭代：缺发布清单 / 空任务 / 旧签核都不再阻断，直接开下一轮', () => {
+  const evidence = baseEvidence()
+  evidence.receipts = {
+    receipts: [{ id: 'r1', at: '2026-11-01T00:00:00.000Z', iteration_id: 'v1.0', stage: 'release', status: 'completed' }],
+    badLines: 0,
+    missing: false,
+    lastAt: '2026-11-01T00:00:00.000Z',
+  }
+  evidence.tasks = { available: true, total: 0, open: 0, completed: 0, items: [] }
+  evidence.gates.release = { available: false, ok: false, missing: ['.dsh/plugin-state/release.json'], gate: 'release', reason: 'missing' }
+  const decision = deriveDecision(evidence)
+  assert.equal(decision.kind, 'next-iteration')
+  assert.equal(decision.priority, 14)
 })

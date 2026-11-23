@@ -1,8 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile, readFile, access, mkdir } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
   approvalFor,
   approvalsPathOf,
@@ -55,6 +56,15 @@ async function writeArchitecture(project) {
 
 async function writeAcceptance(project, items) {
   await mkdir(join(project, '.dsh', 'plugin-state'), { recursive: true })
+  // 证据文件必须真实存在：测试夹具顺手建出这些文件（URL 证据不建）。
+  for (const item of items) {
+    for (const entry of Array.isArray(item?.evidence) ? item.evidence : []) {
+      if (typeof entry !== 'string' || entry.trim() === '' || /^https?:\/\//i.test(entry.trim())) continue
+      const target = join(project, entry.trim())
+      await mkdir(dirname(target), { recursive: true })
+      await writeFile(target, 'evidence', 'utf8')
+    }
+  }
   await writeFile(
     join(project, '.dsh', 'plugin-state', 'acceptance.json'),
     JSON.stringify({ schemaVersion: 1, iteration_id: 'v1.0', items }),
@@ -66,9 +76,19 @@ const passItems = () => [{ id: 'A1', title: '能添加客户', result: 'pass', e
 
 async function writeRelease(project) {
   await mkdir(join(project, '.dsh', 'plugin-state'), { recursive: true })
+  const artifact = join(project, 'dist', 'app.zip')
+  await mkdir(dirname(artifact), { recursive: true })
+  const content = 'artifact'
+  await writeFile(artifact, content, 'utf8')
+  const sha256 = createHash('sha256').update(content).digest('hex')
   await writeFile(
     join(project, '.dsh', 'plugin-state', 'release.json'),
-    JSON.stringify({ version: 'v1.0', artifacts: ['dist/app.zip'], rollback: 'git revert v1.0', at: '2026-11-22T00:00:00.000Z' }),
+    JSON.stringify({
+      version: 'v1.0',
+      artifacts: [{ path: 'dist/app.zip', sha256 }],
+      rollback: 'git revert v1.0',
+      at: '2026-11-22T00:00:00.000Z',
+    }),
     'utf8',
   )
 }
@@ -414,5 +434,30 @@ test('并发签核：原型 + 四门同时写，锁串行化后一个都不丢',
       assert.equal(typeof entry[field], 'string', '并发写丢了 ' + field)
       assert.ok(entry[field].length > 0)
     }
+  })
+})
+test('验收签核：证据文件不存在时拒绝，补上文件后才允许', async () => {
+  await withProject(async (project) => {
+    await writePrd(project)
+    await writeArchitecture(project)
+    await mkdir(join(project, '.dsh', 'plugin-state'), { recursive: true })
+    await writeFile(
+      join(project, '.dsh', 'plugin-state', 'acceptance.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        iteration_id: 'v1.0',
+        items: [{ id: 'A1', title: '能添加客户', result: 'pass', evidence: ['shots/missing.png'] }],
+      }),
+      'utf8',
+    )
+    const rejected = await approveDecision(project, 'v1.0', 'acceptance')
+    assert.equal(rejected.ok, false)
+    assert.equal(rejected.error, 'acceptance-not-passing')
+    assert.ok(rejected.missing[0].includes('证据文件不存在'))
+
+    await mkdir(join(project, 'shots'), { recursive: true })
+    await writeFile(join(project, 'shots', 'missing.png'), 'png', 'utf8')
+    const accepted = await approveDecision(project, 'v1.0', 'acceptance')
+    assert.equal(accepted.ok, true)
   })
 })
