@@ -899,8 +899,12 @@ features: {
 - **MCP 可用性**：`readMcpNames` 排除 `mcpManager` 中 `status.state` 为 `failed/disabled/closed` 的 server（reconnecting 仍算已配置），避免面板对断连的 MCP 下发注定失败的指令。
 - **周报窗口**：`/report?days=7|14|30` 的 days 现在同时作为 `computeMetrics.windowDays`（7/14/30），不再只改标题；部署频率仍是近 7 天。
 - **团队泳道**：项目子目录里的会话也算该项目（worktree 仍是独立路径）。
+- **D4 测试门结构校验**：command 非占位（拒绝 <...>/todo/tbd/n-a）、t 可解析、passed+failed ≥1；可选 xitCode 必须 0、durationMs 必须非负。插件不代执行测试命令。
+- **D5 FR 验收覆盖**：验收签核时若 PRD 能提取出 FR，则每条 FR 必须有带 eature_ref 的验收条目，缺失列进 missing；PRD 没有 FR 结构时跳过（不猜）。
+- **D7 requireArchitectureGate**：配置默认 true；false 时跳过架构契约技术门（范围/架构签核也可由轻量模式跳过）。
+- **D9 playbook 迁移**：版本不一致时不再整份忽略 stages，而是把旧中文 key（初始化/搭骨架/想清楚/定规格/写代码/挑毛病/验效果/发出去）映射到 9 阶段并合并字段，无法映射的 key 单独 warning。
 
-测试：**524 passed / 0 failed**。
+测试：**529 passed / 0 failed**。
 
 ## 5. 实现偏差记录（实现期确认，均已在测试中固化）
 

@@ -391,3 +391,47 @@ test('架构门：api.md 用 Markdown 表格写 endpoint 也认', async () => {
     assert.equal(gate.ok, true)
   })
 })
+test('测试门：命令占位 / 非法时间 / 0 条结果 / 非 0 exitCode 都不算可复现', async () => {
+  await withProject(async (project) => {
+    await writeJson(project, '.dsh/plugin-state/test-report.json', {
+      command: 'todo',
+      passed: 0,
+      failed: 0,
+      at: 'not-a-date',
+      exitCode: 1,
+    })
+    const gate = await validateTestReport(project)
+    assert.equal(gate.ok, false)
+    assert.ok(gate.missing.includes('command（占位不可复现）'))
+    assert.ok(gate.missing.includes('at（非法时间）'))
+    assert.ok(gate.missing.includes('passed+failed（至少一条结果）'))
+    assert.ok(gate.missing.includes('exitCode'))
+  })
+})
+test('测试门：合法重定向/输入重定向命令不被占位正则误伤；真占位仍拒绝', async () => {
+  await withProject(async (project) => {
+    await writeJson(project, '.dsh/plugin-state/test-report.json', {
+      command: 'npm test > /dev/null 2>&1',
+      passed: 2,
+      failed: 0,
+      at: '2026-11-22T20:00:00.000Z',
+    })
+    assert.equal((await validateTestReport(project)).ok, true)
+
+    await writeJson(project, '.dsh/plugin-state/test-report.json', {
+      command: 'node t.js < fixture.txt',
+      passed: 1,
+      failed: 0,
+      at: '2026-11-22T20:00:00.000Z',
+    })
+    assert.equal((await validateTestReport(project)).ok, true)
+
+    await writeJson(project, '.dsh/plugin-state/test-report.json', {
+      command: '<command>',
+      passed: 1,
+      failed: 0,
+      at: '2026-11-22T20:00:00.000Z',
+    })
+    assert.ok((await validateTestReport(project)).missing.includes('command（占位不可复现）'))
+  })
+})

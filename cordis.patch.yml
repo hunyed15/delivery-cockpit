@@ -12,6 +12,8 @@
         reviewStorage: auto
         # 周报导出的默认窗口（天）：只接受 7 / 14 / 30；面板「导出周报」固定带 days=7。
         reportDays: 7
+        # 架构契约技术门是否强制（VISION §12）；false 时只保留架构签核门。
+        requireArchitectureGate: true
         # ---- 独立评审引擎（原 @hunyed15/project-cockpit 已并入本插件）----
         # 引擎路径：留空自动探测 <项目>/tools/claude-review → <项目>/.dsh/claude-review → 插件自带 scripts/。
         enginePath: ''

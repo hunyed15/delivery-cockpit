@@ -461,3 +461,43 @@ test('验收签核：证据文件不存在时拒绝，补上文件后才允许',
     assert.equal(accepted.ok, true)
   })
 })
+test('验收签核：PRD 每条 FR 至少一条验收；缺 FR 的验收拒绝', async () => {
+  await withProject(async (project) => {
+    await writeFile(
+      join(project, 'prd.md'),
+      '# 客户管理\n\n## 功能需求\n\n### FR-1 新增客户（P0）\n\n### FR-2 导出客户（P1）\n',
+      'utf8',
+    )
+    await writeArchitecture(project)
+    await mkdir(join(project, 'shots'), { recursive: true })
+    await writeFile(join(project, 'shots', 'fr1.png'), 'png', 'utf8')
+    await mkdir(join(project, '.dsh', 'plugin-state'), { recursive: true })
+    await writeFile(
+      join(project, '.dsh', 'plugin-state', 'acceptance.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        iteration_id: 'v1.0',
+        items: [{ id: 'A1', title: '新增客户', feature_ref: 'FR-1', result: 'pass', evidence: ['shots/fr1.png'] }],
+      }),
+      'utf8',
+    )
+    const rejected = await approveDecision(project, 'v1.0', 'acceptance')
+    assert.equal(rejected.ok, false)
+    assert.ok(rejected.missing.some((item) => item.includes('FR-2 无验收')))
+
+    await writeFile(
+      join(project, '.dsh', 'plugin-state', 'acceptance.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        iteration_id: 'v1.0',
+        items: [
+          { id: 'A1', title: '新增客户', feature_ref: 'FR-1', result: 'pass', evidence: ['shots/fr1.png'] },
+          { id: 'A2', title: '导出客户', feature_ref: 'FR-2', result: 'pass', evidence: ['https://example.com/fr2.png'] },
+        ],
+      }),
+      'utf8',
+    )
+    const accepted = await approveDecision(project, 'v1.0', 'acceptance')
+    assert.equal(accepted.ok, true)
+  })
+})

@@ -69,6 +69,8 @@ const DEFAULT_CONFIG = {
   allowBundledFallback: REVIEW_DEFAULT_CONFIG.allowBundledFallback,
   // 周报默认窗口（天）：只接受 7/14/30，面板「导出周报」固定带 days=7，可在这里改默认值。
   reportDays: 7,
+  // 架构契约技术门是否强制（VISION §12 的 requireArchitectureGate）；false 时只保留签核门。
+  requireArchitectureGate: true,
 }
 
 // 与账本常量共用一份枚举：9 阶段迁移后不再手写第二份，避免工具 schema 与 lib 漂移。
@@ -719,7 +721,10 @@ export function apply(ctx, config = {}) {
    * 返回对象只在 Host 内部消费；HTTP 层仍只下发 buildDetailModel 的产物。
    */
   const readDetailWithEvidence = async (projectPath, options = {}) => {
-    const evidence = await readEvidence(projectPath, { reviewStorage: settings.reviewStorage })
+    const evidence = await readEvidence(projectPath, {
+      reviewStorage: settings.reviewStorage,
+      requireArchitectureGate: settings.requireArchitectureGate !== false,
+    })
     const loaded = await loadPlaybook(projectPath, await readBuiltinPlaybook())
     // 覆盖文件坏了也要让人看见：合并进 evidence 的 warnings，由模型统一上报。
     for (const warning of loaded.warnings ?? []) {
@@ -813,7 +818,10 @@ export function apply(ctx, config = {}) {
     const projects = await Promise.all(
       workspaces.map(async (workspace) => {
         try {
-          const evidence = await readEvidence(workspace.path, { reviewStorage: settings.reviewStorage })
+          const evidence = await readEvidence(workspace.path, {
+            reviewStorage: settings.reviewStorage,
+            requireArchitectureGate: settings.requireArchitectureGate !== false,
+          })
           return buildOverviewRow({ ...workspace, evidence, generatedAt })
         } catch (error) {
           // 一个项目读挂了不能拖垮整张总览：给它一行明说"读不到"的降级行。

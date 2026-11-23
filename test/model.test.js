@@ -1135,3 +1135,19 @@ test('交付指标（P3）：metrics 透传；缺省为 null；0 与 null 严格
   assert.equal(partial.metrics.metrics.leadTimeHours, null)
   assert.deepEqual(partial.metrics.unavailable, [{ metric: 'blockingInventory', reason: '检查与验收都还没读到' }])
 })
+
+test('总览行也尊重 workflow.requireArchitectureGate=false（不能详情跳过、总览还挡）', () => {
+  const ev = evidence({
+    workflow: { requireArchitectureGate: false },
+    gates: {
+      architecture: { available: false, ok: false, missing: ['docs/architecture.md'], gate: 'architecture', reason: 'missing' },
+      tests: { available: true, ok: true, missing: [], gate: 'tests' },
+      release: { available: false, ok: false, missing: ['.dsh/plugin-state/release.json'], gate: 'release', reason: 'missing' },
+    },
+    tasks: { available: true, total: 1, open: 0, completed: 1, items: [{ id: 'T1', title: 'x', status: 'completed' }] },
+    review: { available: false, reason: 'no-ledger', rounds: null, blocking: null, fixed: null, lastRound: null, issues: [] },
+    acceptance: { items: [], empty: true, total: 0, withResult: 0, passed: 0, failed: 0, blocked: 0, stale: 0, passWithoutEvidence: 0, appliesToCurrent: true },
+  })
+  const row = buildOverviewRow({ id: 'w', title: 'demo', path: 'C:/demo', evidence: ev })
+  assert.notEqual(row.nextKind, 'architecture')
+})

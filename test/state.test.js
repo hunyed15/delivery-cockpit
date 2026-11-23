@@ -672,3 +672,13 @@ test('轻量模式：project.json workflow=light 跳过架构契约与范围/架
   assert.equal(decision.kind, 'acceptance-draft')
   assert.ok(decision.notes.some((note) => note.includes('轻量模式')))
 })
+test('requireArchitectureGate=false：架构门缺文件也不挡路', () => {
+  const evidence = baseEvidence()
+  evidence.workflow = { requireArchitectureGate: false }
+  evidence.gates.architecture = { available: false, ok: false, missing: ['docs/architecture.md'], gate: 'architecture', reason: 'missing' }
+  evidence.tasks = { available: true, total: 1, open: 0, completed: 1, items: [] }
+  evidence.review = { available: false, reason: 'no-ledger', rounds: null, blocking: null, fixed: null }
+  evidence.acceptance = { items: [], empty: true, total: 0, withResult: 0, passed: 0, failed: 0, blocked: 0, stale: 0, passWithoutEvidence: 0, appliesToCurrent: true }
+  const decision = deriveDecision(evidence)
+  assert.equal(decision.kind, 'acceptance-draft')
+})

@@ -48,6 +48,8 @@
 > **兼容模式**：
 > - 升级前的老项目（当前迭代仍有旧 stage 回执、且没有 approvals.json）本轮按 legacyProject.active 跳过新增门禁，下一轮自动启用 9 阶段门禁；
 > - 小改动可把 .dsh/plugin-state/project.json 的 workflow 设为 light，跳过架构契约与范围/架构签核（仍保留原型、测试、验收、发布门）。
+> - 测试报告做结构校验（非占位命令 / 合法时间 / 至少一条结果）；验收签核要求每条可识别 FR 都有带 feature_ref 的验收。
+> - requireArchitectureGate 默认 true；旧 playbook 覆盖按阶段 key 迁移合并，不再整份忽略。
 
 
 每个阶段定义：**目标 / 输入 / 交付物（路径 + schema）/ 技术门 / 决策门 / 完成定义**。
@@ -113,7 +115,7 @@
 
 - Objective：用可执行测试证明实现满足契约。
 - Deliverables：`.dsh/plugin-state/test-report.json`，schema：`{command, scope, passed, failed, skipped, durationMs, at}`；可选覆盖率。
-- Technical Gate：存在 ≥1 条 report，`failed=0`，`command` 可复现；验收（S8）前必须满足。
+- Technical Gate：存在 ≥1 条 report，`failed=0`，`command` 非占位且可执行、`at` 合法、`passed+failed ≥1`（结构校验；插件不代执行）；验收（S8）前必须满足。
 - Decision Gate：无。
 - DoD：测试通过证据入账；非代码项目（纯文档/设计）允许以 `manual-check.json` 替代并标注。
 

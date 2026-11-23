@@ -279,15 +279,26 @@ test('mergePlaybook：覆盖 version 与内置不一致 ⇒ 忽略 stages，保�
     await writeOverride(project, override)
     const loaded = await loadPlaybook(project, builtinText)
     assert.equal(loaded.source, 'project')
-    assert.equal(loaded.warnings.length, 1, '版本不一致必须有且只有一条 warning')
-    assert.equal(loaded.warnings[0].source, '.dsh/plugin-state/playbook.json')
-    assert.match(loaded.warnings[0].message, /版本不一致/)
-    assert.match(loaded.warnings[0].message, /v1/)
-    assert.match(loaded.warnings[0].message, /v2/)
-    // 保留内置 9 阶段，不能被旧 8 个中文 key 合并出 17 个阶段。
-    assert.deepEqual(loaded.playbook.stages, builtin.stages)
+    const versionWarning = loaded.warnings.find((warning) => /版本不一致/.test(warning.message))
+    assert.ok(versionWarning, '版本不一致必须有 warning')
+    assert.equal(versionWarning.source, '.dsh/plugin-state/playbook.json')
+    assert.match(versionWarning.message, /v1/)
+    assert.match(versionWarning.message, /v2/)
+    // 旧 8 个中文 key 按映射迁移，不合并出 17 个阶段。
     assert.equal(Object.keys(loaded.playbook.stages).length, 9)
     for (const key of Object.keys(legacyStages)) assert.equal(key in loaded.playbook.stages, false, `旧 key 不应出现：${key}`)
+    // 可映射的字段被保留（初始化/搭骨架都映射到项目立项，后者覆盖前者）
+    assert.equal(loaded.playbook.stages['项目立项'].goal, '旧搭骨架')
+    assert.equal(loaded.playbook.stages['需求定义'].goal, '旧想清楚')
+    assert.equal(loaded.playbook.stages['原型设计'].goal, '旧定规格')
+    assert.equal(loaded.playbook.stages['代码开发'].goal, '旧写代码')
+    assert.equal(loaded.playbook.stages['代码复核'].goal, '旧挑毛病')
+    assert.equal(loaded.playbook.stages['验收确认'].goal, '旧验效果')
+    assert.equal(loaded.playbook.stages['部署发布'].goal, '旧发出去')
+    // 新阶段（架构/测试）没有旧覆盖，保持内置
+    assert.equal(loaded.playbook.stages['架构契约'].goal, builtin.stages['架构契约'].goal)
+    assert.equal(loaded.playbook.stages['测试验证'].goal, builtin.stages['测试验证'].goal)
+    assert.ok(loaded.warnings.some((warning) => /已迁移阶段覆盖/.test(warning.message)))
     // 非 stages 字段仍可覆盖
     assert.equal(loaded.playbook.missingHints.skill, '旧版本提示 {name}')
     assert.equal(loaded.playbook.missingHints.mcp, builtin.missingHints.mcp)
