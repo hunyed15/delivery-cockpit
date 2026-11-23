@@ -238,9 +238,10 @@ test('computeMetrics：空输入不抛错，形状固定，generatedAt 用传入
     assert.ok(typeof value.source === 'string')
     assert.ok(Number.isInteger(value.sample))
   }
-  // windowDays 只接受 7/30，其它一律回默认 30。
-  assert.equal(computeMetrics({ now: NOW, windowDays: 14 }).windowDays, 30)
+  // windowDays 只接受 7/14/30，其它一律回默认 30。
+  assert.equal(computeMetrics({ now: NOW, windowDays: 14 }).windowDays, 14)
   assert.equal(computeMetrics({ now: NOW, windowDays: 7 }).windowDays, 7)
+  assert.equal(computeMetrics({ now: NOW, windowDays: 99 }).windowDays, 30)
 })
 
 // ---------------- readMetricLedger：真实临时目录 ----------------

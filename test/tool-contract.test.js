@@ -494,3 +494,51 @@ test('cockpit_report 阶段能力：constraint 不能冒充 method；optional �
   }
 })
 
+
+test('cockpit_init trellisInit:true 在无 subprocess 的 profile 里安全跳过，不阻断 init', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'dc-init-trellis-'))
+  try {
+    const init = createToolDefinitions(fakeCtx).find((item) => item.name === 'cockpit_init')
+    const result = await init.execute({ cwd: project, dryRun: false, trellisInit: true }, execIn(project))
+    assert.equal(result.ok, true)
+    assert.equal(result.applied, true)
+    assert.equal(result.trellisInit.status, 'skipped')
+    assert.equal(result.trellisInit.reason, 'subprocess-missing')
+  } finally {
+    await rm(project, { recursive: true, force: true })
+  }
+})
+test('cockpit_init trellisInit:true 对已初始化项目也生效（applied=false 不阻断升级）', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'dc-init-trellis-main-'))
+  const spawnCalls = []
+  const subprocess = {
+    async resolveExecutable(name) {
+      if (name === 'pwsh') return 'pwsh'
+      return 'trellis.cmd'
+    },
+    spawn(spec) {
+      spawnCalls.push(spec)
+      return {
+        done: Promise.resolve({ exitCode: 0 }),
+        collected: {
+          stdout: { readFrom: () => ({ text: '' }) },
+          stderr: { readFrom: () => ({ text: '' }) },
+        },
+      }
+    },
+  }
+  try {
+    const ctx = { get: (name) => (name === 'subprocess' ? subprocess : undefined), logger: { warn() {} } }
+    const init = createToolDefinitions(ctx).find((item) => item.name === 'cockpit_init')
+    const first = await init.execute({ cwd: project, dryRun: false }, execIn(project))
+    assert.equal(first.applied, true)
+
+    const upgraded = await init.execute({ cwd: project, dryRun: false, trellisInit: true }, execIn(project))
+    assert.equal(upgraded.applied, false, '第二次 init 本身不再创建文件')
+    assert.equal(upgraded.trellisInit.status, 'done')
+    assert.equal(spawnCalls.length, 1, 'even when applied=false, trellis init must run')
+    assert.ok(spawnCalls[0].argv.includes('--dsh'))
+  } finally {
+    await rm(project, { recursive: true, force: true })
+  }
+})

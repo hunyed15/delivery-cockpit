@@ -755,3 +755,26 @@ test('大文件读取：超过 2 MiB 只读前缀并告警（不先整文件读�
     assert.equal(evidence.ok, true)
   })
 })
+test('历史项目识别：旧 stage 回执 + 无 approvals ⇒ legacyProject.active；canonical 回执不算', async () => {
+  await withProject(async (project) => {
+    await mkdir(join(project, '.trellis'), { recursive: true })
+    await writeText(project, '.dsh/plugin-state/RULES.md', '# rules\n')
+    await writeText(project, 'prd.md', '# 旧项目\n\n## 功能需求\n\n### FR-1 旧功能\n')
+    await writeStateText(
+      project,
+      'receipts.jsonl',
+      JSON.stringify({ at: '2026-11-01T00:00:00.000Z', iteration_id: 'v1.0', stage: 'coding', status: 'completed' }) + '\n',
+    )
+    const legacy = await readEvidence(project)
+    assert.equal(legacy.legacyProject.active, true)
+    assert.equal(legacy.legacyProject.reason, 'old-receipts-without-approvals')
+
+    await writeStateText(
+      project,
+      'receipts.jsonl',
+      JSON.stringify({ at: '2026-11-01T00:00:00.000Z', iteration_id: 'v1.0', stage: 'implementation', status: 'completed' }) + '\n',
+    )
+    const modern = await readEvidence(project)
+    assert.equal(modern.legacyProject.active, false)
+  })
+})

@@ -43,3 +43,18 @@ test('readMcpNames：manager 抛错时仍用工具名兜底；两个服务存在
   const none = fakeCtx({ mcpManager: { list: () => [] }, tools: { definitions: () => [{ name: 'x' }] } })
   assert.deepEqual([...readMcpNames(none)], [])
 })
+
+test('readMcpNames：manager 里 failed/disabled/closed 的 server 不算可用', () => {
+  const ctx = fakeCtx({
+    mcpManager: {
+      list: () => [
+        { name: 'connected', status: { state: 'connected' } },
+        { name: 'failed', status: { state: 'failed' } },
+        { name: 'disabled', status: { state: 'disabled' } },
+        { name: 'closed', status: { state: 'closed' } },
+        { name: 'reconnecting', status: { state: 'reconnecting' } },
+      ],
+    },
+  })
+  assert.deepEqual([...readMcpNames(ctx)].sort(), ['connected', 'reconnecting'])
+})

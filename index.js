@@ -147,6 +147,10 @@ const COCKPIT_INIT = {
     properties: {
       cwd: { type: 'string', description: '项目根目录，默认当前会话工作目录' },
       dryRun: { type: 'boolean', description: '默认 true；显式传 false 才真的写盘' },
+      trellisInit: {
+        type: 'boolean',
+        description: '可选：显式要求把空 .trellis 升级为完整 Trellis 工程（运行 trellis init --dsh -y）；默认 false',
+      },
     },
     additionalProperties: false,
   },
@@ -162,24 +166,90 @@ const COCKPIT_INIT = {
         skipped: { type: 'array', items: { type: 'string' } },
         errors: { type: 'array', items: { type: 'string' } },
         gitignoreHint: { type: 'string' },
+        trellisInit: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            reason: { type: 'string' },
+            exitCode: { type: 'integer' },
+          },
+          required: ['status'],
+        },
       },
       required: ['ok', 'dryRun', 'projectPath'],
     },
     render(_args, value) {
       const verb = value?.dryRun ? '将创建' : value?.applied ? '已创建' : '已存在'
       const names = Array.isArray(value?.created) && value.created.length > 0 ? value.created.join('、') : '无'
-      return [{ type: 'text', text: `${verb}：${names}${value?.dryRun ? '（dry-run，未写盘）' : ''}` }]
+      const trellis = value?.trellisInit
+      const suffix =
+        trellis?.status === 'done'
+          ? '；Trellis 工程已初始化'
+          : trellis?.status === 'failed'
+            ? '；Trellis 初始化失败（未影响驾驶舱状态）'
+            : ''
+      return [{ type: 'text', text: `${verb}：${names}${value?.dryRun ? '（dry-run，未写盘）' : ''}${suffix}` }]
     },
   },
 }
 
 /**
- * 工具定义与 ctx 绑定：形状常量保持纯数据（契约测试直接断言 schema/render），
- * execute 在工厂里闭包 ctx，避免模块级执行体引用一个不存在的 ctx。
- *
- * options.authorizeWrite：显式路径的写授权（与 HTTP 层共用同一口径）。默认原样放行，
- * 仅供契约测试使用；真正注册时由 apply 注入"必须是 DSH 已登记工作区"的实现。
+ * 可选：把项目从"空 .trellis"升级成 Trellis 工程（写入 .trellis/scripts 等）。
+ * 只在 cockpit_init 显式传 trellisInit:true 时运行；失败不阻断 init，只如实返回。
  */
+async function maybeTrellisInit(ctx, projectPath, exec) {
+  const script = join(projectPath, '.trellis', 'scripts', 'get_context.py')
+  const already = await stat(script).then((info) => info.isFile()).catch(() => false)
+  if (already) return { status: 'already-initialized' }
+
+  const subprocess = attempt(() => ctx.get('subprocess'))
+  if (!subprocess || typeof subprocess.spawn !== 'function' || typeof subprocess.resolveExecutable !== 'function') {
+    return { status: 'skipped', reason: 'subprocess-missing' }
+  }
+  let executable = null
+  for (const candidate of process.platform === 'win32' ? ['trellis.cmd', 'trellis'] : ['trellis']) {
+    try {
+      executable = await subprocess.resolveExecutable(candidate)
+      if (typeof executable === 'string' && executable.trim() !== '') break
+    } catch {
+      executable = null
+    }
+  }
+  if (executable === null) return { status: 'skipped', reason: 'cli-missing' }
+
+  const username = process.env.USERNAME || process.env.USER || 'ai'
+  let argv = [executable, 'init', '--dsh', '-y', '-s', '-u', username]
+  if (/\.ps1$/i.test(executable)) {
+    let pwsh = null
+    try {
+      pwsh = await subprocess.resolveExecutable('pwsh')
+    } catch {
+      pwsh = null
+    }
+    if (pwsh === null) return { status: 'skipped', reason: 'pwsh-missing' }
+    argv = [pwsh, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', executable, 'init', '--dsh', '-y', '-s', '-u', username]
+  }
+
+  try {
+    const handle = subprocess.spawn({
+      argv,
+      cwd: projectPath,
+      stdio: {
+        stdin: 'ignore',
+        stdout: { maxBytes: 1024 * 1024 },
+        stderr: { maxBytes: 256 * 1024 },
+      },
+      graceMs: 5000,
+      signal: exec?.signal,
+    })
+    const outcome = await Promise.resolve(handle.done)
+    const exitCode = typeof outcome?.exitCode === 'number' ? outcome.exitCode : -1
+    return { status: exitCode === 0 ? 'done' : 'failed', exitCode }
+  } catch (error) {
+    return { status: 'failed', reason: String(error?.message ?? error) }
+  }
+}
+
 const COCKPIT_ACCEPTANCE = {
   name: 'cockpit_acceptance',
   description:
@@ -283,6 +353,9 @@ export function createToolDefinitions(ctx, options = {}) {
           }
         }
         const applied = await applyInit(projectPath, plan)
+        // 与 applied 无关：已有项目第二次 init 时 applied=false，但"空 .trellis 升级 Trellis"
+        // 恰恰发生在这种项目上；maybeTrellisInit 内部用 get_context.py 做幂等守卫。
+        const trellisInit = options.trellisInit === true ? await maybeTrellisInit(ctx, projectPath, exec) : null
         return {
           ok: (applied.errors ?? []).length === 0,
           dryRun: false,
@@ -292,6 +365,7 @@ export function createToolDefinitions(ctx, options = {}) {
           skipped: applied.skipped ?? [],
           errors: applied.errors ?? [],
           gitignoreHint: applied.gitignoreHint ?? '',
+          ...(trellisInit !== null ? { trellisInit } : {}),
         }
       },
     },
@@ -478,7 +552,11 @@ export function readMcpNames(ctx) {
     try {
       for (const server of manager.list()) {
         const name = String(server?.name ?? '')
-        if (name !== '') names.add(name)
+        if (name === '') continue
+        // 配置了但连接失败/被禁用/已关闭的 server 不算“可用”：面板不该给出注定失败的指令。
+        const state = String(server?.status?.state ?? '')
+        if (state === 'failed' || state === 'disabled' || state === 'closed') continue
+        names.add(name)
       }
       known = true
     } catch {
@@ -640,7 +718,7 @@ export function apply(ctx, config = {}) {
    * 详情 + 证据 + 指标：面板与周报共用同一条读盘链（避免周报再读一遍整棵树）。
    * 返回对象只在 Host 内部消费；HTTP 层仍只下发 buildDetailModel 的产物。
    */
-  const readDetailWithEvidence = async (projectPath) => {
+  const readDetailWithEvidence = async (projectPath, options = {}) => {
     const evidence = await readEvidence(projectPath, { reviewStorage: settings.reviewStorage })
     const loaded = await loadPlaybook(projectPath, await readBuiltinPlaybook())
     // 覆盖文件坏了也要让人看见：合并进 evidence 的 warnings，由模型统一上报。
@@ -692,6 +770,7 @@ export function apply(ctx, config = {}) {
       history: metricLedger.history,
       dispositions: metricLedger.dispositions,
       now: generatedAt,
+      windowDays: Number.isInteger(options.windowDays) ? options.windowDays : undefined,
     })
     // 团队泳道是附加信息：readTeam 内部兜住所有服务异常，读不到只影响右栏那一条。
     // 这里再兜一层，是为了任何意外都别把整个详情页打挂。
@@ -716,7 +795,7 @@ export function apply(ctx, config = {}) {
       : REPORT_DAYS.includes(configuredDays)
         ? configuredDays
         : 7
-    const { detail, metrics } = await readDetailWithEvidence(projectPath)
+    const { detail, metrics } = await readDetailWithEvidence(projectPath, { windowDays: days })
     const now = new Date()
     const markdown = buildWeeklyReport({ detail, metrics, days, now })
     const projectName =

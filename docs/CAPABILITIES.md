@@ -382,4 +382,4 @@ DSH 的 skill 作用域 = **全局（`DSH_HOME/skills` + `~/.agents/skills`）+ 
   全部是**代理口径**（项目本地的执行回执 + 审核账本 + 验收表），没有 CI / 发布系统 / 线上监控数据：数据不足显示 `—` 并在 tooltip 说明原因，绝不补 0；指标定义短句随数据一起下发。
 - **周报导出**：`GET /delivery-cockpit/api/report?path=…&days=7|14|30` 返回 Markdown（概览 / 交付指标 / 功能进度 / 验收 / 代码检查 / 最近动态 / 下一步），表后列**数据缺口**与代理口径脚注；header「导出周报」一键下载，默认 7 天（配置键 `reportDays`）。
 - 口径与数据源写在 `docs/IMPLEMENTATION.md` §3.22；**这张表不代表线上 DORA**，只用于看本地交付趋势与数据缺口。
-- 测试：**518 个用例全绿**（新增 `test/metrics.test.js`、`test/report.test.js`，以及 route / model / client-smoke 的增量断言）。
+- 测试：**524 个用例全绿**（新增 `test/metrics.test.js`、`test/report.test.js`，以及 route / model / client-smoke 的增量断言）。

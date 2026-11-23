@@ -45,6 +45,9 @@
 
 > **自动技术门范围**：当前只实现 **S3 架构契约、S6 测试验证、S9 部署发布** 三道（由 lib/gates.js 校验并存进 evidence.gates）。
 > S1/S2/S4/S5/S7/S8 的完成判定由状态机规则、执行回执与人工决策门承担，不再在 playbook 里声明不存在的 technicalGate。
+> **兼容模式**：
+> - 升级前的老项目（当前迭代仍有旧 stage 回执、且没有 approvals.json）本轮按 legacyProject.active 跳过新增门禁，下一轮自动启用 9 阶段门禁；
+> - 小改动可把 .dsh/plugin-state/project.json 的 workflow 设为 light，跳过架构契约与范围/架构签核（仍保留原型、测试、验收、发布门）。
 
 
 每个阶段定义：**目标 / 输入 / 交付物（路径 + schema）/ 技术门 / 决策门 / 完成定义**。

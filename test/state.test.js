@@ -635,3 +635,40 @@ test('已发布迭代：缺发布清单 / 空任务 / 旧签核都不再阻断�
   assert.equal(decision.kind, 'next-iteration')
   assert.equal(decision.priority, 14)
 })
+test('历史项目：legacyProject.active 跳过新门禁/签核/空任务，不把老项目拉回补材料', () => {
+  const evidence = baseEvidence()
+  evidence.legacyProject = { active: true, reason: 'old-receipts-without-approvals' }
+  evidence.prd = { found: true, path: 'prd.md' }
+  evidence.approval = { approved: false, at: null, file: null, decisions: null }
+  evidence.gates.architecture = { available: false, ok: false, missing: ['docs/architecture.md'], gate: 'architecture', reason: 'missing' }
+  evidence.tasks = { available: true, total: 0, open: 0, completed: 0, items: [] }
+  evidence.review = { available: false, reason: 'no-ledger', rounds: null, blocking: null, fixed: null }
+  evidence.acceptance = { items: [], empty: true, total: 0, withResult: 0, passed: 0, failed: 0, blocked: 0, stale: 0, passWithoutEvidence: 0, appliesToCurrent: true }
+  const decision = deriveDecision(evidence)
+  assert.equal(decision.kind, 'acceptance-draft')
+  assert.ok(decision.notes.some((note) => note.includes('历史项目')))
+})
+
+test('轻量模式：project.json workflow=light 跳过架构契约与范围/架构签核，但仍走验收', () => {
+  const evidence = baseEvidence()
+  evidence.card = { card: { workflow: 'light' }, status: 'filled', broken: false, missing: false }
+  evidence.prd = { found: true, path: 'prd.md' }
+  evidence.approval = {
+    approved: true,
+    at: '2026-11-01T00:00:00.000Z',
+    file: 'prototype.html',
+    decisions: {
+      scope: { approved: false, at: null },
+      architecture: { approved: false, at: null },
+      acceptance: { approved: false, at: null },
+      release: { approved: false, at: null },
+    },
+  }
+  evidence.gates.architecture = { available: false, ok: false, missing: ['docs/architecture.md'], gate: 'architecture', reason: 'missing' }
+  evidence.tasks = { available: true, total: 1, open: 0, completed: 1, items: [] }
+  evidence.review = { available: false, reason: 'no-ledger', rounds: null, blocking: null, fixed: null }
+  evidence.acceptance = { items: [], empty: true, total: 0, withResult: 0, passed: 0, failed: 0, blocked: 0, stale: 0, passWithoutEvidence: 0, appliesToCurrent: true }
+  const decision = deriveDecision(evidence)
+  assert.equal(decision.kind, 'acceptance-draft')
+  assert.ok(decision.notes.some((note) => note.includes('轻量模式')))
+})

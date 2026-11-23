@@ -891,6 +891,17 @@ features: {
 
 测试：`test/metrics.test.js`（12 条：中位数/窗口边界/0 vs null/坏时间/跨账本配对/验收 stale/库存 sample/真实临时目录的本地与 Trellis 账本读取、坏行、2000 行上限）、`test/report.test.js`（8 条：七区块/日期范围/null 与 0/缺口脚注/空数据不补 0/管道符转义/截断/文件名）、`test/route.test.js` +6（/report 授权、下载头、days=14、days=3 ⇒ 400、中文名 RFC 5987、读失败 500）、`test/model.test.js` +1（metrics 透传与 null/0）、`test/client-smoke.test.js` +3（指标模块文案/顺序/导出入口）。全量 `node --test "test/*.test.js"` = **505 个用例全绿**。
 
+### 3.23 P1 兼容与轻量（2026-11-23）
+
+- **老项目 grandfather**：`lib/receipts.js` 读取时保留 `legacyStage`（raw stage ≠ canonical 时）；`evidence.legacyProject.active` = 当前迭代有旧 stage 回执且没有 `approvals.json`。状态机在该迭代跳过范围/架构/验收/发布签核、架构/测试/发布技术门与"空任务先拆任务"，但保留审核/验收/发布动作；一旦开新一轮（canonical 回执）自动恢复 9 阶段门禁。
+- **轻量模式**：`.dsh/plugin-state/project.json` 的 `workflow: "light"` 会跳过架构契约门与范围/架构签核（面板 notes 注明），用于小改动；原型、测试、验收、发布门照旧。`buildDefaultCard` 默认写 `workflow: "full"`。
+- **Trellis 初始化**：`cockpit_init` 新增可选参数 `trellisInit: true`；显式开启时若 `.trellis/scripts/get_context.py` 不存在且 subprocess/Trellis CLI 可用，执行 `trellis init --dsh -y -s -u <系统用户名>`；缺服务/CLI 时安全跳过并在返回值 `trellisInit.status/reason` 说明，失败不阻断 init。
+- **MCP 可用性**：`readMcpNames` 排除 `mcpManager` 中 `status.state` 为 `failed/disabled/closed` 的 server（reconnecting 仍算已配置），避免面板对断连的 MCP 下发注定失败的指令。
+- **周报窗口**：`/report?days=7|14|30` 的 days 现在同时作为 `computeMetrics.windowDays`（7/14/30），不再只改标题；部署频率仍是近 7 天。
+- **团队泳道**：项目子目录里的会话也算该项目（worktree 仍是独立路径）。
+
+测试：**524 passed / 0 failed**。
+
 ## 5. 实现偏差记录（实现期确认，均已在测试中固化）
 
 写在这里是为了让下一个人知道"为什么与契约字面不同"，而不是当成漏做。
