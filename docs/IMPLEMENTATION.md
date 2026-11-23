@@ -358,8 +358,9 @@ export function deriveDecision(evidence) // 纯函数，无 I/O
 export function buildOverviewRow({ id, title, path, evidence, generatedAt })
 // -> { id, title, path, initialized, stageId, stageName, nextKind, nextTitle, degraded, hasDecision, updatedAt }
 
-export function buildDetailModel({ evidence, playbook, stageCapabilities, generatedAt })
+export function buildDetailModel({ evidence, playbook, stageCapabilities, generatedAt, features, team })
 // stageCapabilities: { [stageId]: resolved[] }  由调用方先 await resolveCapabilities 得到
+// team: readTeam() 的结果（§3.20）；缺省时投影为 {available:false,reason:'not-read',agents:[]}
 ```
 
 `buildDetailModel` 返回：
@@ -374,13 +375,13 @@ export function buildDetailModel({ evidence, playbook, stageCapabilities, genera
   nextAction: {
     priority, kind, stageId, stageName, title, reason,
     instruction,               // renderPrompt 结果；缺失阻断能力时为 null
-    capabilities: resolved,    // 本阶段能力（含 present 状态）
+    capabilities: resolved,    // 本阶段能力（含 present 状态与 advice；advice 为 null 表示没有建议）
     missing: [{name, kind, message}],
     disabled, disabledReason, notes,
     buttons,                   // ['copy'] / ['init'] / ['copy','init'] …
     method, constraint,        // 9 阶段元信息：该阶段唯一方法 / 至多一个约束；无条目时 null
     deliverables,              // string[]；无条目时 []
-    technicalGate, decisionGate, // 门禁声明（decisionGate 为 {title,approveAction}|null）；下一轮接校验器
+    technicalGate, decisionGate, // 门禁声明（decisionGate 为 {title,approveAction,approved,at}|null）；下一轮接校验器
   },
   progression: {
     coldStart: [{ stageId, name, state:'done'|'current'|'pending', receipt: {status,at,summary}|null }],
@@ -396,6 +397,7 @@ export function buildDetailModel({ evidence, playbook, stageCapabilities, genera
               shotDiffs: [{ at, verdict, baseline, diffFile, ratio, changedPixels, totalPixels, width, height, reason }] }] },  // items ≤ 100；shotDiffs ≤ 5
   review: { available, reason, rounds, blocking, fixed, issues },  // issues 最多 3
   tasks: { available, total, open, completed, items },             // items 最多 20
+  team: { available, reason, agents: [{ id, name, parentName, depth, preset, origin, createdAt, running }], truncated }, // §3.20；无输入时 {available:false,reason:'not-read',agents:[]}
   warnings: [{source,message}],   // 最多 20
   dataGaps: [{source,message}],
   degraded: { flag, reasons },
@@ -689,6 +691,59 @@ features: {
 
 测试：`test/approvals.test.js`（决策门 + 前置 + 兼容/原子写）、`test/evidence.test.js`（decisions 透传）、`test/state.test.js`（4.2/4.6/12.2/12.8 + 顺序 + 向后兼容）、`test/model.test.js`（四个按钮 token）、`test/route.test.js`（/approve 200/400/409/403/405）、`test/integration.test.js`（范围→架构→原型→…→验收→发布四签核推进）、`test/client-smoke.test.js`（按钮/接口/错误映射/a11y）。当前 **438 个用例全绿**。
 
+
+### 3.20 P1 收尾 · 签核状态 / 能力建议 / 团队泳道
+
+#### ① 阶段详情显示签核状态
+
+- `lib/model.js`：`decisionGateRow(evidence, gate)` 统一输出 `{ title, approveAction, approved, at }`；`nextAction.decisionGate` 与 `stages[].decisionGate` 共用同一份 `decisionStatusOf`：
+  - `approveAction`（也接受直接写 gate 名）→ `scope|architecture|acceptance|release`，读 `evidence.approval.decisions[gate]`；
+  - `prototype` 读 `evidence.approval.approved/at`（原型批准从 P0 起就不在 decisions 里）；
+  - 读不到 / `decisions` 缺失 / 没签 ⇒ `approved:false, at:null`，**不把"没读到"显示成"已签"**。
+- `client.js` StageDetail：「需要你确认」一行 = `decisionGate.title` + 状态 Chip（`已签核` success / `未签核` warn）+ 已签核时间（`formatRelative`；`title` 给完整本地时间）。「签核」在人话词表内，禁用词（门禁/回执/阻塞…）不出现。
+
+#### ② 缺失能力给「替代 / 安装指引」
+
+- 新模块 `lib/recommend.js`（纯函数、无 I/O）：
+  - `adviceFor(capability) → { fallback?, install?: [{label, command?, url?}], note? } | null`
+  - 只对 `present !== 'yes'` 或 `optional === true` 的能力给建议；`present==='yes'` 且必需 ⇒ `null`；未知能力 ⇒ `null`（**不编造**）。
+  - 没有安装信息时只给 `fallback` + `note`（如 `claude_review`），绝不硬凑 URL/命令。
+  - 能力名大小写不敏感；`trellis-` 前缀全部命中同一份建议。映射：
+
+| 能力 | fallback | install（label / command / url） |
+|---|---|---|
+| `playwright` | 面板内置 CDP 截图（不需要 MCP） | Playwright MCP / — / https://github.com/microsoft/playwright-mcp |
+| `context7` | web_search / dsh-doc 查文档 | Context7 MCP / — / https://github.com/upstash/context7 |
+| `grilling`、`grill-me` | 内置追问模板，产出 docs/brief.md | mattpocock/skills（含 grilling） / — / https://github.com/mattpocock/skills |
+| `trellis-*` | 内置模板 / 原生 git 收尾 | Trellis / `npm i -g @mindfoldhq/trellis` / https://github.com/mindfold-ai/Trellis |
+| `webapp-testing` | 本机 Chrome + CDP 截图 | anthropics/skills（webapp-testing） / — / https://github.com/anthropics/skills |
+| `claude_review` | 启用 claude-code-review 插件 | @hunyed15/project-cockpit（review 引擎） / — / — |
+| `ui-ux-pro-max`、`frontend-design`、`impeccable`、`ponytail`、`tdd-loop`、`verify-claims` | 按 CAPABILITIES.md 现状给替代/说明（已装的可略） | 只有已知来源的才给（如 frontend-design → anthropics/skills） |
+
+- `lib/model.js`：`nextAction.capabilities[]` 与 `stages[].capabilities[]` 每项附 `advice`（`null` 保留，界面据此判断"没有建议"）。
+- `client.js`：`CapabilityAdvice` 组件；hero「推荐能力」chips 下方与阶段详情「能力」行展示 `替代：…`、`安装：label`：
+  - 有 `url` ⇒ `<a target="_blank" rel="noreferrer">`（可读文本 = 安装项名字）；
+  - 有 `command` ⇒ `<code>` 展示可复制命令；
+  - **只展示，不执行、不自动安装**（建议块里没有按钮 / onClick）。
+
+#### ③ 团队泳道（子代理可见）
+
+- 新模块 `lib/team.js`：`readTeam(ctx, projectPath) → { available, reason, agents, truncated? }`（异步，**永不抛**）：
+  - 取 `ctx.get('agents')` / `ctx.get('sessions')`（必需）与 `ctx.get('subagents')`（可选）；
+  - `agents` / `sessions` 任一缺失或 `list` 不可用 ⇒ `{available:false, reason:'service-missing', agents:[]}`；`list()` 抛错或返回非数组 ⇒ `read-error`；
+  - **按项目 cwd 过滤**（面板路由是 root scope，拿不到"当前会话"）：只留 `session.header.cwd` 规范化后等于项目路径的会话（Windows 大小写不敏感）；
+  - 行：`{id, name, parentName, depth, preset, origin, createdAt, running}`：
+    - `name` 优先 `subagents.namesOf(agent).self`；失败回退 `lead`（无 `parentSession`）或 `subagent-<id 后 6 位>`；
+    - `parentName` 取 `namesOf.parent`，否则用父会话行的名字；`running` = id 出现在 `agents.list()` 里；
+  - 排序 depth 升序 + createdAt 升序（缺时间排最后）；最多 20 行 + `truncated`。
+- `index.js` 的 `readDetail` 在 `buildDetailModel` 前 `await readTeam(ctx, projectPath)`，并把结果作为 `team` 传入。
+- `lib/model.js`：`teamSection(team)` 投影上述形状（数组再截断到 20）；入参缺失时 `{available:false, reason:'not-read', agents:[]}`。
+- `client.js` 右栏新增「团队」模块（与代码检查/项目动态同一栏，排在代码检查之后）：
+  - 有数据：每行「名字 + 角色/层级（`preset`，否则主会话 / 子代理 · 第 N 层）+ 在线/空闲」，子代理按 depth 缩进（最多 4 层）；
+  - 无数据：「没有正在运行的子代理」；服务缺失：「当前 DSH 没有暴露会话信息」；
+  - 只读、无按钮；token-only 样式；窄屏 `min-width:0` + 截断，不溢出。
+
+测试：`test/recommend.test.js`（映射 / 未知能力 null / present=yes 不给建议 / 输出不共享引用）、`test/team.test.js`（正常 / cwd 过滤 / 服务缺失 / list 读失败 / namesOf 回退 / 排序 / 截断 / 离线可见）、`test/model.test.js`（签核状态、capabilities.advice、team 投影）、`test/client-smoke.test.js`（签核 Chip、替代/安装静态断言、团队文案/只读/360）。当前 **459 个用例全绿**。
 
 1. `npm test`（= `node --test "test/*.test.js"`）全绿。
 2. `plugin_manager(action:"install_bundle", target:<本目录绝对路径>)` → `application: applied`（不是 failed/restart-required）。

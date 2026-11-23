@@ -23,6 +23,7 @@ import { readProjectCard } from './lib/project-card.js'
 import { appendReceipt, STAGES } from './lib/receipts.js'
 import { createAcceptanceResultHandler, createAcceptanceScreenshotHandler, createApproveHandler, createDecisionHandler, createInitHandler, createRoutes } from './lib/route.js'
 import { captureScreenshot, writeScreenshot } from './lib/screenshot.js'
+import { readTeam } from './lib/team.js'
 import { compareScreenshots, pickBaselineEvidence, renderDiffPng } from './lib/visual-diff.js'
 
 export const name = 'delivery-cockpit'
@@ -624,7 +625,10 @@ export function apply(ctx, config = {}) {
     }
 
     const generatedAt = new Date().toISOString()
-    return buildDetailModel({ evidence, playbook: loaded.playbook, stageCapabilities, generatedAt, features })
+    // 团队泳道是附加信息：readTeam 内部兜住所有服务异常，读不到只影响右栏那一条。
+    // 这里再兜一层，是为了任何意外都别把整个详情页打挂。
+    const team = await readTeam(ctx, projectPath).catch(() => ({ available: false, reason: 'read-error', agents: [] }))
+    return buildDetailModel({ evidence, playbook: loaded.playbook, stageCapabilities, generatedAt, features, team })
   }
 
   const readOverview = async () => {

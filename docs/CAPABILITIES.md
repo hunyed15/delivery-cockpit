@@ -368,3 +368,10 @@ DSH 的 skill 作用域 = **全局（`DSH_HOME/skills` + `~/.agents/skills`）+ 
 3. **缺口优先级**：⓪ **grill skill（S1/S2 的想法澄清）——本机存在于 XinHuo 项目级（`grill-me` / `grilling`，mattpocock 系），只需复制/软链到全局或当前项目即可用，不必自建**；① 架构模板（S3，可先做提示词模板，不必新 skill）；② 部署 MCP 推荐与指引（S9）；③ Playwright 安装指引（S4/S6/S8，已有 CDP 回退）；④ 回执/任务板（S5）。
 4. **人工门共 5 个**：范围签核、架构签核、原型通过、验收签核、发布批准。
 5. **探测即规划**：矩阵写进 playbook 后，面板直接显示每阶段的"必需能力 / 可选能力 / 缺失 / 回退方案"，不需要人记。
+
+### 5.1 P1 收尾落地（2026-11-23）
+
+- **缺失能力不再只报缺失**：面板对 `present !== 'yes'` 或 `optional` 的能力直接给「替代：…」与「安装：…」。已知映射覆盖 playwright（CDP 截图回退 + Playwright MCP）、context7（web_search / dsh-doc）、grilling / grill-me、trellis-*（Trellis CLI）、webapp-testing、claude_review（启用 claude-code-review 插件），以及 ui-ux-pro-max / frontend-design / impeccable / ponytail / tdd-loop / verify-claims 的替代说明。**未知能力一律不编造**；命令只展示为可复制文本，不自动安装、不执行。
+- **签核状态可见**：阶段详情直接显示「需要你确认」的已签核 / 未签核与时间（数据来自 `approvals.json` 的 decisions；读不到按未签处理），不用回头翻文件。
+- **团队泳道可见**：右栏「团队」按项目 cwd 列出会话与子代理（名字 / 角色 / 层级 / 在线或空闲），子代理按层级缩进；只读，Host 未暴露 sessions / agents 时显示「读不到」，不伪装成 0 人。
+- 测试：**459 个用例全绿**（新增 `test/recommend.test.js`、`test/team.test.js` 与 model / client-smoke 静态断言）。

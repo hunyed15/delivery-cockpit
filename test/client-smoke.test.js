@@ -590,3 +590,54 @@ test('阶段只读详情：节点可点击（data-stage / aria-pressed），详�
   assert.ok(source.includes('const [selectedId, setSelectedId] = React.useState'), '选中态只在客户端')
   assert.ok(css.includes('.dc-stage-detail {') && css.includes('.dc-stage-row-label {'), '详情样式存在')
 })
+
+test('阶段详情显示签核状态：已签核 / 未签核 + 时间', () => {
+  assert.ok(source.includes("'需要你确认'"), '决策门仍在「需要你确认」一行')
+  assert.ok(source.includes("'已签核'") && source.includes("'未签核'"), '签核状态必须是人话 Chip')
+  assert.ok(source.includes("stage.decisionGate.approved === true ? 'success' : 'warn'"), '已签核 success、未签核 warn')
+  assert.ok(source.includes('stage.decisionGate.title'), '必须显示签核标题')
+  assert.ok(source.includes('formatRelative(stage.decisionGate.at)'), '已签核必须显示时间')
+  assert.ok(source.includes('dc-stage-row-when'), '时间有独立样式锚点')
+  assert.ok(css.includes('.dc-chip-success'), 'success chip 样式存在（与 ok 同色）')
+  assert.ok(!source.includes('已完成签核') && !source.includes('未完成签核'), '签核文案保持两态，不造第三态')
+})
+
+test('缺失能力给替代 / 安装指引：只展示，不执行、不自动安装', () => {
+  assert.ok(source.includes('function CapabilityAdvice'), '建议必须是可复用组件')
+  assert.ok(source.includes('缺失能力的替代与安装'), '建议块有可读 aria-label')
+  for (const text of ['替代：', '安装：', 'dc-advice-list', 'dc-advice-fallback']) {
+    assert.ok(source.includes(text), `建议块缺少：${text}`)
+  }
+  assert.ok(source.includes('target: \'_blank\'') && source.includes("rel: 'noreferrer'"), '安装链接新窗口打开且 noopener')
+  assert.ok(source.includes("h('code', { className: 'dc-advice-cmd' }"), '安装命令必须用 <code> 展示可复制文本')
+  assert.ok(!source.includes('navigator.clipboard.writeText(target.command)'), '不得提供命令自动执行 / 复制注入')
+  assert.ok(source.includes('advice.fallback'), '替代文案来自 Host 下发的 advice')
+  assert.ok(source.includes('h(CapabilityAdvice, { items: caps })'), 'hero 与阶段详情都渲染建议')
+  assert.ok(css.includes('.dc-advice-list {') && css.includes('.dc-advice-link'), '建议块样式存在')
+  // 建议块里不出现按钮：替代/安装只能看，不能点着执行。
+  const adviceBlock = sliceBetween('function CapabilityAdvice', 'function NextActionSection')
+  assert.ok(!adviceBlock.includes("h('button'"), '建议块不得有按钮')
+  assert.ok(!adviceBlock.includes('onClick'), '建议块不得挂点击执行')
+})
+
+test('团队泳道：右栏模块 / 名字 + 角色 + 在线空闲 / 空态 / 只读', () => {
+  assert.ok(source.includes('function TeamRail'), '团队模块必须存在')
+  assert.ok(source.includes("title: '团队'") && source.includes('team: panel.team'), '右栏消费 panel.team')
+  assert.ok(source.includes('h(TeamRail, { team: props.team })'), '团队模块挂在右栏')
+  for (const text of ["'在线'", "'空闲'", 'dc-team-name', 'dc-team-role']) {
+    assert.ok(source.includes(text), `团队模块缺少：${text}`)
+  }
+  assert.ok(css.includes('.dc-team-list {') && css.includes('.dc-team-row {'), '团队列表样式存在')
+  assert.ok(source.includes('没有正在运行的子代理'), '空态文案')
+  assert.ok(source.includes('当前 DSH 没有暴露会话信息'), '服务缺失文案')
+  const teamBlock = sliceBetween('function TeamRail', 'function SidebarRail')
+  assert.ok(!teamBlock.includes("h('button'"), '团队模块只读，不给按钮')
+  assert.ok(!teamBlock.includes('onClick'), '团队模块不挂点击')
+})
+
+test('团队泳道在 360 窄屏不溢出（可换行 + min-width:0）', () => {
+  assert.ok(/\.dc-team-name \{[^}]*min-width:0/.test(css), '名字必须允许收缩')
+  assert.ok(/\.dc-team-role \{[^}]*overflow:hidden/.test(css), '角色过长要截断')
+  assert.ok(/\.dc-team-row \{[^}]*min-width:0/.test(css), '行容器必须 min-width:0')
+  assert.ok(/\.dc-advice \{[^}]*overflow-wrap:anywhere/.test(css), '建议长文本必须换行')
+})

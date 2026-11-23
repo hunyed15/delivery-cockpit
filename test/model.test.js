@@ -9,7 +9,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { buildDetailModel, buildOverviewRow } from '../lib/model.js'
+import { buildDetailModel, buildOverviewRow, teamSection } from '../lib/model.js'
 import { STAGE_DEFS } from '../lib/playbook.js'
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -30,6 +30,7 @@ const DETAIL_KEYS = [
   'review',
   'stages',
   'tasks',
+  'team',
   'trellis',
   'warnings',
 ]
@@ -160,6 +161,7 @@ function build(ev, options = {}) {
     stageCapabilities: options.stageCapabilities ?? makeStageCapabilities(),
     generatedAt: '2026-11-20T12:00:00.000Z',
     features: options.features,
+    team: options.team,
   })
 }
 
@@ -678,7 +680,16 @@ test('nextAction 能力来自 stageCapabilities，指令由 playbook 模板渲�
 
   assert.equal(model.nextAction.kind, 'release')
   assert.equal(model.nextAction.stageName, '部署发布')
-  assert.deepEqual(model.nextAction.capabilities, stageCapabilities.release)
+  // 每项在原能力字段之外多一个 advice（不覆盖原字段）；可用的必需能力 advice 为 null。
+  assert.equal(model.nextAction.capabilities.length, 2)
+  for (const [index, capability] of model.nextAction.capabilities.entries()) {
+    const { advice, ...rest } = capability
+    assert.deepEqual(rest, stageCapabilities.release[index])
+    assert.ok('advice' in capability)
+  }
+  assert.equal(model.nextAction.capabilities[0].advice, null, 'trellis-finish-work 是 trellis-*，但 present=yes 且必需 ⇒ 不硬凑建议')
+  assert.ok(model.nextAction.capabilities[1].advice, 'present=unknown 属于"不是 yes"，要给建议')
+  assert.match(model.nextAction.capabilities[1].advice.fallback, /web_search/)
   assert.deepEqual(model.nextAction.missing, [], 'unknown 与 present=yes 都不算阻断')
   assert.match(model.nextAction.instruction, /trellis-finish-work/)
   assert.doesNotMatch(model.nextAction.instruction, /context7/, 'present=unknown 不进指令')
@@ -708,7 +719,13 @@ test('nextAction 原样透传 9 阶段元信息：method / constraint / delivera
   assert.equal(model.nextAction.constraint, 'ponytail')
   assert.deepEqual(model.nextAction.deliverables, ['.dsh/plugin-state/release.json', 'dist/'])
   assert.equal(model.nextAction.technicalGate, 'validateRelease')
-  assert.deepEqual(model.nextAction.decisionGate, { title: '发布批准', approveAction: 'approve-release' })
+  // 决策门不只透传声明，还带签核状态：没有 decisions 时 approved=false / at=null（不冒充已签）。
+  assert.deepEqual(model.nextAction.decisionGate, {
+    title: '发布批准',
+    approveAction: 'approve-release',
+    approved: false,
+    at: null,
+  })
 
   // 没有阶段/条目的动作：元信息为 null / []，不编造。
   const degraded = build(evidence({ degraded: { flag: true, reasons: [{ source: 'card', message: '坏了' }] } }))
@@ -911,6 +928,8 @@ test('stages：9 阶段只读详情（元信息/门禁/能力/最近记录），
   assert.equal(architecture.gate.ok, false)
   assert.deepEqual(architecture.gate.missing, ['docs/architecture.md'])
   assert.equal(architecture.decisionGate.title, '架构签核')
+  assert.equal(architecture.decisionGate.approved, false, '没有 decisions 时按未签处理')
+  assert.equal(architecture.decisionGate.at, null)
 
   const testing = model.stages.find((stage) => stage.id === 'testing')
   assert.equal(testing.gate.ok, true)
@@ -922,6 +941,144 @@ test('stages：9 阶段只读详情（元信息/门禁/能力/最近记录），
   const bootstrap = model.stages.find((stage) => stage.id === 'bootstrap')
   assert.equal(bootstrap.cycle, false)
   assert.equal(bootstrap.capabilities[0].present, 'yes')
+  // 合成能力 present=yes 且非 optional：不给建议（advice=null），不硬凑安装指路。
+  assert.equal(bootstrap.capabilities[0].advice, null)
   assert.equal(model.stages.find((stage) => stage.id === 'implementation').capabilities[0].present, 'yes')
   // 能力存在性透传 yes/no/unknown，不能折成 unknown
+})
+
+test('签核状态：阶段详情与 hero 的 decisionGate 带 approved/at（来源 decisions / 原型批准）', () => {
+  const playbook = {
+    version: 2,
+    stages: {
+      需求定义: { decisionGate: { title: '范围签核', approveAction: 'approve-scope' } },
+      架构契约: { decisionGate: { title: '架构签核', approveAction: 'approve-architecture' } },
+      原型设计: { decisionGate: { title: '原型通过', approveAction: 'approve-prototype' } },
+      验收确认: { decisionGate: { title: '验收签核', approveAction: 'approve-acceptance' } },
+      部署发布: { decisionGate: { title: '发布批准', approveAction: 'approve-release' } },
+    },
+    missingHints: {},
+  }
+  const decisions = {
+    scope: { approved: true, at: '2026-11-20T22:20:00+08:00' },
+    architecture: { approved: true, at: '2026-11-20T22:30:00+08:00' },
+    acceptance: { approved: true, at: '2026-11-21T10:00:00+08:00' },
+    release: { approved: true, at: '2026-11-21T18:00:00+08:00' },
+  }
+  const ev = evidence({
+    approval: { approved: true, at: '2026-11-20T22:10:00+08:00', file: 'prototype.html', decisions },
+    receipts: { receipts: [receipt({ stage: 'release', status: 'completed', summary_for_human: '发布完成' })] },
+  })
+  const model = build(ev, { playbook })
+  const stage = (id) => model.stages.find((item) => item.id === id)
+
+  assert.deepEqual(stage('requirements').decisionGate, {
+    title: '范围签核',
+    approveAction: 'approve-scope',
+    approved: true,
+    at: '2026-11-20T22:20:00+08:00',
+  })
+  // 原型批准不在 decisions 里：必须读 approval 自身，不能因为 decisions 没 prototype 键就报"未签"。
+  assert.deepEqual(stage('prototype').decisionGate, {
+    title: '原型通过',
+    approveAction: 'approve-prototype',
+    approved: true,
+    at: '2026-11-20T22:10:00+08:00',
+  })
+  assert.equal(stage('architecture').decisionGate.approved, true)
+  assert.equal(stage('architecture').decisionGate.at, '2026-11-20T22:30:00+08:00')
+  assert.equal(stage('acceptance').decisionGate.at, '2026-11-21T10:00:00+08:00')
+
+  // decisions 明确说这一门没签：不能被"条目存在"冒充成已签。
+  const unsignedArchitecture = build(
+    evidence({ approval: { decisions: { ...decisions, architecture: { approved: false, at: null } } } }),
+    { playbook },
+  )
+  assert.equal(unsignedArchitecture.stages.find((item) => item.id === 'architecture').decisionGate.approved, false)
+
+  // 整轮已发布：hero 停在部署发布，此时发布门已签 ⇒ hero 的 decisionGate 也是已签。
+  assert.equal(model.nextAction.stageId, 'release')
+  assert.equal(model.nextAction.decisionGate.approved, true)
+  assert.equal(model.nextAction.decisionGate.at, '2026-11-21T18:00:00+08:00')
+
+  // decisions 整体缺失（旧数据 / 手写夹具）：每门 approved=false、at=null，不冒充已签。
+  const legacy = build(evidence({ approval: { decisions: null } }), { playbook })
+  assert.deepEqual(legacy.stages.find((item) => item.id === 'requirements').decisionGate, {
+    title: '范围签核',
+    approveAction: 'approve-scope',
+    approved: false,
+    at: null,
+  })
+})
+
+test('stages：能力附 advice（缺失/可选才给，未知能力不编造）', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const builtin = JSON.parse(await readFile(new URL('../templates/playbook.json', import.meta.url), 'utf8'))
+  const stageCapabilities = makeStageCapabilities({
+    architecture: [
+      resolved('ponytail'),
+      resolved('context7', { kind: 'mcp', optional: true, present: 'no' }),
+    ],
+    prototype: [
+      resolved('frontend-design', { present: 'no' }),
+      resolved('playwright', { kind: 'mcp', optional: true, present: 'yes' }),
+      resolved('mystery-skill', { present: 'no' }),
+    ],
+  })
+  const model = build(evidence(), { playbook: builtin, stageCapabilities })
+
+  const architecture = model.stages.find((stage) => stage.id === 'architecture')
+  assert.equal(architecture.capabilities[0].advice, null, '已装且必需：不需要建议')
+  assert.match(architecture.capabilities[1].advice.fallback, /web_search/)
+  assert.deepEqual(architecture.capabilities[1].advice.install, [
+    { label: 'Context7 MCP', url: 'https://github.com/upstash/context7' },
+  ])
+
+  const prototype = model.stages.find((stage) => stage.id === 'prototype')
+  assert.ok(prototype.capabilities[0].advice.install, '缺失的已知能力给安装建议')
+  assert.ok(prototype.capabilities[1].advice, 'optional 即便 present=yes 也给替代/说明')
+  assert.equal(prototype.capabilities[2].advice, null, '未知能力不编造')
+})
+
+test('team：只读投影（无输入 not-read / 服务缺失 / 正常 / 截断）', () => {
+  assert.deepEqual(teamSection(), { available: false, reason: 'not-read', agents: [] })
+  assert.deepEqual(teamSection(null), { available: false, reason: 'not-read', agents: [] })
+  assert.deepEqual(teamSection({ available: false, reason: 'service-missing', agents: [] }), {
+    available: false,
+    reason: 'service-missing',
+    agents: [],
+  })
+
+  const model = build(evidence(), {
+    team: {
+      available: true,
+      reason: null,
+      truncated: false,
+      agents: [
+        { id: 's1', name: 'lead', parentName: null, depth: 0, preset: null, origin: 'root', createdAt: '2026-11-20T10:00:00.000Z', running: true },
+        { id: 's2', name: 'reviewer', parentName: 'lead', depth: 1, preset: 'review', origin: 'subagent', createdAt: '2026-11-20T10:01:00.000Z', running: false, extra: 'x' },
+      ],
+    },
+  })
+  assert.deepEqual(model.team, {
+    available: true,
+    reason: null,
+    truncated: false,
+    agents: [
+      { id: 's1', name: 'lead', parentName: null, depth: 0, preset: null, origin: 'root', createdAt: '2026-11-20T10:00:00.000Z', running: true },
+      { id: 's2', name: 'reviewer', parentName: 'lead', depth: 1, preset: 'review', origin: 'subagent', createdAt: '2026-11-20T10:01:00.000Z', running: false },
+    ],
+  })
+
+  // 没传 team（旧 Host / 服务没接线）：详情里是 not-read，不崩。
+  assert.deepEqual(build(evidence()).team, { available: false, reason: 'not-read', agents: [] })
+
+  const many = {
+    available: true,
+    reason: null,
+    agents: Array.from({ length: 25 }, (_, index) => ({ id: `s${index}`, name: `n${index}`, depth: 0, running: false })),
+  }
+  const capped = teamSection(many)
+  assert.equal(capped.agents.length, 20)
+  assert.equal(capped.truncated, true)
 })

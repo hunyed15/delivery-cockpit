@@ -559,6 +559,8 @@ h1.dc-title { margin:0; font-size:15px; line-height:1.35; font-weight:600; lette
 }
 .dc-chip::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; flex:none; }
 .dc-chip-ok { color:var(--dsw-alias-state-success-primary); border-color:color-mix(in srgb, var(--dsw-alias-state-success-primary) 32%, transparent); background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 8%, transparent); }
+/* success ≡ ok：新模块按语义命名，旧 chip 的 ok 保留兼容。 */
+.dc-chip-success { color:var(--dsw-alias-state-success-primary); border-color:color-mix(in srgb, var(--dsw-alias-state-success-primary) 32%, transparent); background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 8%, transparent); }
 .dc-chip-warn { color:var(--dsw-alias-state-warn-primary); border-color:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 32%, transparent); background:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 8%, transparent); }
 .dc-chip-bad { color:var(--dsw-alias-state-error-primary); border-color:color-mix(in srgb, var(--dsw-alias-state-error-primary) 32%, transparent); background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent); }
 .dc-chip-brand { color:var(--dsw-alias-brand-primary); border-color:color-mix(in srgb, var(--dsw-alias-brand-primary) 32%, transparent); background:color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent); }
@@ -1067,6 +1069,27 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:600; letter-
 .dc-rail-group, .dc-rail-details { border:0; margin:0; padding:0; }
 .dc-rail-note { font-size:12px; font-weight:400; color:var(--dsw-alias-label-secondary); margin:0; }
 
+/* 团队泳道：名字 + 角色/层级 + 在线状态，只读 */
+.dc-team-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; min-width:0; }
+.dc-team-row { display:flex; align-items:baseline; gap:8px; min-width:0; font-size:12px; }
+.dc-team-name { font-weight:600; color:var(--dsw-alias-label-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+.dc-team-role { font-size:11px; color:var(--dsw-alias-label-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+.dc-team-row .dc-chip { margin-left:auto; height:18px; padding:0 6px; font-size:10.5px; border:0; background:transparent; }
+.dc-team-row .dc-chip::before { width:5px; height:5px; }
+
+/* 能力建议：替代 / 安装（只展示链接与可复制命令，不执行、不自动安装） */
+.dc-advice-list { list-style:none; margin:8px 0 0; padding:0; display:flex; flex-direction:column; gap:6px; min-width:0; }
+.dc-advice { display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; min-width:0; font-size:11.5px; color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere; }
+.dc-advice-name { color:var(--dsw-alias-label-primary); font-weight:600; }
+.dc-advice-install { display:inline-flex; align-items:baseline; gap:6px; flex-wrap:wrap; min-width:0; }
+.dc-advice-target { display:inline-flex; align-items:baseline; gap:6px; flex-wrap:wrap; min-width:0; }
+.dc-advice-link { color:var(--dsw-alias-brand-primary); text-decoration:underline; text-underline-offset:2px; }
+.dc-advice-link:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; border-radius:3px; }
+.dc-advice-cmd { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:11px; padding:1px 5px; border-radius:4px;
+  background:var(--dsw-alias-bg-layer-1); border:1px solid var(--dsw-alias-border-l1); overflow-wrap:anywhere; }
+.dc-advice-note { font-size:11px; color:var(--dsw-alias-label-secondary); }
+.dc-stage-row-when { font-size:11px; color:var(--dsw-alias-label-secondary); font-variant-numeric:tabular-nums; }
+
 /* 展开细节 / 代码 / 空态：比模块卡更浅一层 */
 .dc-feature-detail, .dc-more-body, .dc-instruction, .dc-code-block, .dc-plan {
   background:var(--dsw-alias-bg-layer-1);
@@ -1322,6 +1345,12 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         receipts: [
           h('circle', { key: 'a', cx: 8, cy: 8, r: 5.5 }),
           h('path', { key: 'b', d: 'M8 4.8V8l2.2 1.3' }),
+        ],
+        team: [
+          h('circle', { key: 'a', cx: 6, cy: 5.6, r: 2 }),
+          h('path', { key: 'b', d: 'M2.6 12.8c.4-2 1.8-3.1 3.4-3.1s3 1.1 3.4 3.1' }),
+          h('circle', { key: 'c', cx: 11.5, cy: 6, r: 1.6 }),
+          h('path', { key: 'd', d: 'M9.9 10.6c1.6-.3 3 .7 3.4 2.2' }),
         ],
         info: [
           h('circle', { key: 'a', cx: 8, cy: 8, r: 5.5 }),
@@ -2112,6 +2141,56 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       )
     }
 
+    // 缺失 / 可选能力的「替代 / 安装」建议：只展示链接与可复制命令，不执行、不自动安装。
+    // 只有 Host 给了 advice（已知能力）才渲染；未知能力不猜，不出现这一块。
+    function CapabilityAdvice(props) {
+      const items = asArray(props.items).filter((item) => item && item.advice)
+      if (items.length === 0) return null
+      return h(
+        'ul',
+        { className: 'dc-advice-list', 'aria-label': '缺失能力的替代与安装' },
+        items.map((item, index) => {
+          const advice = item.advice || {}
+          const install = asArray(advice.install)
+          return h(
+            'li',
+            { key: `advice${index}`, className: 'dc-advice' },
+            h('span', { className: 'dc-advice-name' }, item.name || '未命名能力'),
+            advice.fallback ? h('span', { className: 'dc-advice-fallback' }, `替代：${advice.fallback}`) : null,
+            install.length > 0
+              ? h(
+                  'span',
+                  { className: 'dc-advice-install' },
+                  h('span', null, '安装：'),
+                  install.map((target, targetIndex) =>
+                    h(
+                      'span',
+                      { key: `install${targetIndex}`, className: 'dc-advice-target' },
+                      // 有链接才给 <a>，可读文本就是安装项名字；没有链接就只显示名字，不编地址。
+                      target.url
+                        ? h(
+                            'a',
+                            {
+                              className: 'dc-advice-link',
+                              href: target.url,
+                              target: '_blank',
+                              rel: 'noreferrer',
+                            },
+                            target.label || target.url,
+                          )
+                        : h('span', null, target.label || '按文档安装'),
+                      // 命令只渲染成可复制文本，不提供执行入口。
+                      target.command ? h('code', { className: 'dc-advice-cmd' }, target.command) : null,
+                    ),
+                  ),
+                )
+              : null,
+            advice.note ? h('span', { className: 'dc-advice-note' }, advice.note) : null,
+          )
+        }),
+      )
+    }
+
     function NextActionSection(props) {
       const action = props.action || {}
       const iteration = props.iteration || {}
@@ -2235,6 +2314,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
               ),
             )
           : null,
+        caps.length > 0 ? h(CapabilityAdvice, { items: caps }) : null,
         missingBlocks
           ? h(
               'div',
@@ -2415,7 +2495,34 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         gate
           ? row('阶段检查', gate.missing.length > 0 ? `${gateText} · 缺：${gate.missing.join('、')}` : gateText)
           : null,
-        stage.decisionGate && stage.decisionGate.title ? row('需要你确认', stage.decisionGate.title) : null,
+        stage.decisionGate && stage.decisionGate.title
+          ? h(
+              'div',
+              { className: 'dc-stage-row' },
+              h('span', { className: 'dc-stage-row-label' }, '需要你确认'),
+              h(
+                'span',
+                { className: 'dc-stage-row-value' },
+                stage.decisionGate.title,
+                ' ',
+                h(
+                  Chip,
+                  { tone: stage.decisionGate.approved === true ? 'success' : 'warn' },
+                  stage.decisionGate.approved === true ? '已签核' : '未签核',
+                ),
+                stage.decisionGate.approved === true
+                  ? h(
+                      'span',
+                      {
+                        className: 'dc-stage-row-when',
+                        title: stage.decisionGate.at ? new Date(stage.decisionGate.at).toLocaleString() : '',
+                      },
+                      ` · ${stage.decisionGate.at ? formatRelative(stage.decisionGate.at) : '—'}`,
+                    )
+                  : null,
+              ),
+            )
+          : null,
         caps.length > 0
           ? h(
               'div',
@@ -2434,6 +2541,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                   )
                 }),
               ),
+              h(CapabilityAdvice, { items: caps }),
             )
           : null,
         h(
@@ -3722,6 +3830,71 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       )
     }
 
+    // 团队泳道：这个项目里正在跑的会话 / 子代理。只读，不提供任何按钮或跳转。
+    // 服务缺失（旧版 DSH 没暴露 sessions/agents）与"真的没人"是两件事，文案必须分开。
+    function TeamRail(props) {
+      const team = props.team || {}
+      const agents = asArray(team.agents)
+      if (team.available !== true) {
+        return h(
+          Module,
+          { title: '团队', icon: 'team', tone: 'idle', level: 3, meta: '读不到' },
+          h(
+            'p',
+            { className: 'dc-rail-note' },
+            team.reason === 'service-missing'
+              ? '当前 DSH 没有暴露会话信息'
+              : '这次没读到团队信息，刷新再试。',
+          ),
+        )
+      }
+      if (agents.length === 0) {
+        return h(
+          Module,
+          { title: '团队', icon: 'team', tone: 'idle', level: 3, meta: '0 人' },
+          h('p', { className: 'dc-rail-note' }, '没有正在运行的子代理'),
+        )
+      }
+      return h(
+        Module,
+        {
+          title: '团队',
+          icon: 'team',
+          tone: 'brand',
+          level: 3,
+          meta: `${agents.length} 人${team.truncated ? '+' : ''}`,
+        },
+        h(
+          'ul',
+          { className: 'dc-team-list' },
+          agents.map((agent, index) => {
+            const depth = Number.isInteger(agent && agent.depth) ? agent.depth : 0
+            const running = Boolean(agent && agent.running)
+            // 层级用缩进表达（最多 4 层，避免窄栏里挤成一条竖线），角色优先用 Host 给的 preset。
+            const role = agent && agent.preset
+              ? `${agent.preset}${depth > 0 ? ` · 第 ${depth} 层` : ''}`
+              : depth > 0
+                ? `子代理 · 第 ${depth} 层`
+                : '主会话'
+            const hint = agent && agent.parentName ? `上级：${agent.parentName}` : ''
+            return h(
+              'li',
+              {
+                key: (agent && agent.id) || `agent${index}`,
+                className: 'dc-team-row',
+                style: depth > 0 ? { paddingLeft: `${Math.min(depth, 4) * 12}px` } : undefined,
+                title: hint || undefined,
+              },
+              h('span', { className: 'dc-team-name' }, (agent && agent.name) || '未命名'),
+              h('span', { className: 'dc-team-role' }, role),
+              h(Chip, { tone: running ? 'success' : 'idle' }, running ? '在线' : '空闲'),
+            )
+          }),
+        ),
+        team.truncated ? h('p', { className: 'dc-rail-note' }, '只显示前 20 个会话') : null,
+      )
+    }
+
     function SidebarRail(props) {
       const ledger = props.ledger || {}
       const receipts = asArray(ledger.receipts)
@@ -3752,6 +3925,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
             )
           : null,
         h(ReviewRail, { review: props.review, features: props.features }),
+        h(TeamRail, { team: props.team }),
         h(ReceiptsTimeline, { ledger }),
         gapCount > 0
           ? h(
@@ -4019,6 +4193,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
               ledger,
               review: panel.review,
               features: panel.features,
+              team: panel.team,
               warnings: panel.warnings,
               dataGaps: panel.dataGaps,
             }),
