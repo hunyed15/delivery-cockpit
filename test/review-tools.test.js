@@ -496,3 +496,33 @@ test('写授权：显式 cwd/taskDir/enginePath 未登记时拒绝（fail-closed
     /拒绝写盘/,
   )
 })
+test('写授权：显式 taskDir / enginePath 单独触发授权分支（cwd 用会话目录）', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'dc-review-auth-'))
+  try {
+    await mkdir(join(project, 'review', 'review'), { recursive: true })
+    const deny = async () => {
+      throw new Error('拒绝写盘：不在任何 DSH 已登记工作区内')
+    }
+    const tools = createReviewToolDefinitions(fakeCtx(), { authorizeWrite: deny })
+    const exec = execIn(project, 'session-auth')
+
+    await assert.rejects(
+      () =>
+        getTool(tools, 'claude_review_disposition').execute(
+          { taskDir: join(project, 'review'), entries: [{ round: 1, key: 'abc', status: 'fixed', note: 'x' }] },
+          exec,
+        ),
+      /拒绝写盘/,
+    )
+    await assert.rejects(
+      () =>
+        getTool(tools, 'claude_review_install_hook').execute(
+          { enginePath: join(project, 'evil-engine.ps1') },
+          exec,
+        ),
+      /拒绝写盘/,
+    )
+  } finally {
+    await rm(project, { recursive: true, force: true })
+  }
+})
