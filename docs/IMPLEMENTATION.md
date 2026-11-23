@@ -747,7 +747,7 @@ features: {
 
 1. `npm test`（= `node --test "test/*.test.js"`）全绿。
 2. `plugin_manager(action:"install_bundle", target:<本目录绝对路径>)` → `application: applied`（不是 failed/restart-required）。
-3. `cordis_inspect_query(platform:"host", provider:"Tool", method:"listTools")` 能看到 `cockpit_report` 与 `cockpit_init`。
+3. `cordis_inspect_query(platform:"host", provider:"Tool", method:"listTools")` 能看到 `cockpit_report` / `cockpit_init` / `cockpit_acceptance` / `claude_review` / `claude_review_disposition` / `claude_review_install_hook` 六个工具。
 4. 路由：`/delivery-cockpit/api/workspaces`、`/panel?path=<已登记工作区>` 返回 200；未登记路径 403；缺 path 400；`prototype-missing` 409。
 5. 面板页面：侧栏出现「交付」入口，点击进入总览 → 详情；一屏四区内容来自真实 `.dsh/plugin-state/`。
 6. 视觉：`tools/preview` 截图核对四区、窄屏不溢出、degraded 横幅一致。
@@ -773,6 +773,65 @@ features: {
 - **V1.0.6 live 实测**（临时夹具，验完已清理）：起点验收全绿 ⇒ `next=release`；第 1 次截图（`new`，建立基线）⇒ 仍 `release`；改页面再截 ⇒ `comparison=changed`、`invalidated=true`，面板 `next=verification`、`reason=「有 1 条验收因截图变化失效，重新确认后再放行」`、`passed=0 / stale=1`、条目 `result` 仍是 `pass`（历史保留）；人重新点「通过」⇒ `next=release`、`passed=1 / stale=0`。
 - 第 5 条的 **页面内点击** 属人工确认项（agent 打不开带鉴权的 GUI）；视觉由 `tools/preview` 的真实 React + CDP 截图覆盖：`features.png`（功能账主视图）/ `features-prd-missing.png` / `features-no-fr.png` / `degraded.png` / `overview.png` / `features-360.png`（360px 无横向溢出）。
 - 改动 Host 代码后需要**重载插件**（disable→enable 或重启 DSH）才生效；只改 `client.js` 需要**刷新页面**。
+
+### 3.21 Lead · 评审引擎合并（原 `@hunyed15/project-cockpit` v3.0.0）
+
+> 目标：**只装 `@hunyed15/delivery-cockpit` 一个插件**，就能拿到旧插件的「独立评审引擎 + 三个工具 + 账本」。
+
+#### ① 随包发布的引擎（`scripts/`，旧仓库原样复制）
+
+| 文件 | 作用 |
+|---|---|
+| `Invoke-ClaudeReview.ps1` | 审核引擎（git 快照 / diff 范围 / prompt / 报告 / 退出码 0/1/2），文件头带 `# claude-review-api: 3` |
+| `acp-review.mjs` | ACP 传输桥（优先）；依赖随插件安装，用户无需单独配置 ACP |
+| `review-schema.json` | 结构化审核输出 schema |
+| `reviewer-role.md` | 内置只读审核员角色 |
+| `config.json` | 引擎自己的参数：`reviewerRoleFile` / `failOn` / `maxRounds` / `maxDiffChars` / `excludePathspecs` … |
+| `install-git-hook.ps1` + `git-hooks/pre-commit` | 提交门禁 hook 安装器与模板 |
+
+- 接口握手：插件要求引擎 API **v3**；目标仓库里的旧引擎（无标记或版本低）会被跳过并回退到自带副本，`result.engineWarning` 说明回退原因。
+- 项目级审核员角色文件默认 `<项目>/.trellis/agents/review.md`（引擎 `config.json` 的 `reviewerRoleFile`），不是插件配置键。
+
+#### ② 三个工具（名字 / 参数 / output schema / 错误语义与旧插件一致）
+
+- `claude_review`：参数 `mode`(incremental|full|gate|range) / `base` / `head` / `profile`(quick|deep) / `description` / `checks[]` / `paths[]` / `focus` / `taskDir` / `cwd` / `dryRun`；output 必填 `ok/mode/verdict/exitCode`，可选 `critical/important/minor/summary/reportPath/markdownPath/storage/base/head/profile/transport/roleMode/transportWarning/truncated/scopeWarning/cached/costUsd/costKnown/dryRun/escalated/note/enginePath/engineSource/engineWarning`。
+  - exit 2 ⇒ **抛错**「审核未完成（exit 2）：<error|stderr 首行>」；exit 非 0/1 且无信封 ⇒ 抛错；`fix`/`reject`/exit 1 ⇒ `ok:false`（门禁不能靠 note 文字绕过）；`gate` 阻断 ⇒ `verdict:'gate-blocked'`；`dryRun` ⇒ `verdict:'dry-run'`；`nothing-to-review` 明确不是 pass。
+- `claude_review_disposition`：批量 `entries[]` 或单条 `round/key/index/status/note/evidence`；写 `<taskDir>/review/dispositions.jsonl`。参数在写盘前校验（status ∈ fixed/counter-evidence/deferred、round 是数字、key|index 至少一个），**被拒绝的批次一个字节都不落盘**。
+- `claude_review_install_hook`：`cwd` / `force` / `enginePath` / `taskDir`；`-File` 调 `install-git-hook.ps1`；已存在 `pre-commit` 且未 `force` ⇒ 安装器拒绝、工具报「安装失败（exit 1）：…」，原文件不动；`force` ⇒ 先备份 `pre-commit.bak-<yyyyMMdd-HHmmss>`。
+
+#### ③ 启动逻辑（`lib/review/engine.js`）
+
+- 引擎路径：`enginePath`（绝对或相对 cwd）→ `<cwd>/tools/claude-review/` → `<cwd>/.dsh/claude-review/` → 自带 `scripts/`；`allowBundledFallback:false` 时不允许最后一项。
+- 命令行：`pwsh -NoProfile -ExecutionPolicy Bypass -Command "<UTF-8 前置段>; & '<engine>' -Mode '…' -Storage '…' -Cwd '…' -Json -TimeoutSec N …"`；参数名裸写、值单引号（`'` → `''`）、数组拼成 `-Checks 'a','b'`（PowerShell 不允许同一命名参数出现多次）。
+- 超时：`-TimeoutSec = timeoutSec`（默认 1500s）；工具级 `timeoutMs = min(max(timeoutSec*1000 + 120s, 30min), 60min)`，保证插件不会先掐掉引擎。
+- 输出归一：取 stdout 最后一个可解析 JSON 行；出现 U+FFFD ⇒ 大声失败（编码损坏不当作审核结论）。
+- 单飞：`isConcurrencySafe() === false`（同一仓库的审核与快照不能并发）。
+- **已知引擎语义**：干净工作区会在 `-DryRun` 分支之前被判成 `nothing-to-review` 并写一轮历史；要验证 dryRun 的组装语义，工作区里必须有一处未提交改动（`test/review-tools.test.js` 的临时仓库就是这样造的）。
+
+#### ④ cwd 与 subprocess（本插件的新约束）
+
+- `claude_review` / `install_hook` 的 cwd 解析与旧插件一致：显式 `cwd`（相对 cwd 解析）→ `workingDirectory.get(agent)` → `agent.session.header.cwd` → `process.cwd()`。评审是只读的，**不做写授权**（旧行为；与本插件 `cockpit_init` 的显式 cwd 写授权不同）。
+- `inject` 仍然只有 `['tools']`：`subprocess` 在精简 profile 里可能不存在，硬依赖会让整个插件不激活。工具执行时用 `ctx.get('subprocess')` **可选获取**，缺失/不可用 ⇒ 明确报「缺少 subprocess 服务」，其余工具照常可用。
+
+#### ⑤ 账本与 disposition
+
+- 只迁写入侧纯逻辑（`lib/review/ledger.js` 的 `resolveTaskDir` / `appendDispositions`），**不迁**旧 `panel.js` 的面板投影（loadPanel / derive* / 匹配算法）——驾驶舱的「代码检查」模块已用本插件 `lib/evidence.js` 读同一份账本，再迁一套只会变成第二套口径。
+- 账本位置不变：Trellis `<项目>/.trellis/tasks/<task>/review/`，本地 `<项目>/.dsh/claude-review/ledger/review/`；`reviewStorage: auto|trellis|local` 同时供驾驶舱读账本与引擎 `-Storage`，两边不会错位。
+- Trellis 下 disposition **必须显式 taskDir**，不按 history/in_progress 猜任务；本地模式要求账本已存在（先跑一次 `claude_review`）。
+
+#### ⑥ 配置（`cordis.patch.yml` 与 `DEFAULT_CONFIG` 新增，旧键名）
+
+`reviewStorage`（沿用，默认 auto）、`enginePath: ''`、`timeoutSec: 1500`、`transport: 'auto'`、`allowBundledFallback: true`。旧插件的 `storage` 键不再使用（它是独立包，配置块不共享）；`reviewerRoleFile` 等属于引擎 `scripts/config.json`。
+
+#### ⑦ 不迁移
+
+旧 `/claude-review/api` 协同面板路由、`/project-cockpit` 驾驶舱路由、旧 `client.js` / `panel.js`、旧 cockpit 总览均不迁移；本插件路由仍只有 `/delivery-cockpit/api/*`，三个工具本身不需要 HTTP。
+
+#### ⑧ 依赖
+
+`package.json` 的 `dependencies`：`@agentclientprotocol/claude-agent-acp ^0.106.0`、`@agentclientprotocol/sdk ^2.6.0`；`files` 增加 `scripts`。`acp-review.mjs` 按包名解析这两个依赖，所以本地源码安装前要在插件目录执行 `npm install`（装好后 `node_modules/@agentclientprotocol/*` 存在）。
+
+测试：`test/review-tools.test.js`（14 条：schema/render、命令行拼装、结论归一、旧引擎回退、subprocess 缺失、dryRun 真实干跑（临时 git 仓库，确认不落 history/state/报告）、处置账本、hook 安装与备份）。当前 **473 个用例全绿**。
 
 ## 5. 实现偏差记录（实现期确认，均已在测试中固化）
 

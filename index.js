@@ -21,6 +21,7 @@ import { buildDetailModel, buildOverviewRow } from './lib/model.js'
 import { entryForStage, loadPlaybook, resolveCapabilities, STAGE_DEFS } from './lib/playbook.js'
 import { readProjectCard } from './lib/project-card.js'
 import { appendReceipt, STAGES } from './lib/receipts.js'
+import { REVIEW_DEFAULT_CONFIG, createReviewToolDefinitions } from './lib/review/index.js'
 import { createAcceptanceResultHandler, createAcceptanceScreenshotHandler, createApproveHandler, createDecisionHandler, createInitHandler, createRoutes } from './lib/route.js'
 import { captureScreenshot, writeScreenshot } from './lib/screenshot.js'
 import { readTeam } from './lib/team.js'
@@ -30,6 +31,7 @@ export const name = 'delivery-cockpit'
 
 // 只有 tools 是硬依赖：面板路由、技能探测、MCP 探测在非 Web / 精简 profile 里都可能不存在，
 // 声明成硬依赖会让插件在那些 profile 里直接不激活，连 cockpit_report 都丢。
+// subprocess 同理不硬依赖：claude_review 执行时才用 ctx.get('subprocess')，缺了只让该工具报明确错误。
 export const inject = ['tools']
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -54,6 +56,15 @@ const DEFAULT_CONFIG = {
   invalidateOnVisualChange: true,
   // 失效时往执行回执账本追加一条（可追溯是哪次截图让哪条验收失效）。
   receiptOnInvalidate: true,
+  // ---- 独立评审引擎（原 @hunyed15/project-cockpit 的能力，随本插件一起发布）----
+  // 引擎路径：留空自动探测 <cwd>/tools/claude-review → <cwd>/.dsh/claude-review → 插件自带 scripts/。
+  enginePath: REVIEW_DEFAULT_CONFIG.enginePath,
+  // 单次审核超时（秒），会作为 -TimeoutSec 传给引擎，并决定工具级超时（引擎超时 + 120s 余量）。
+  timeoutSec: REVIEW_DEFAULT_CONFIG.timeoutSec,
+  // 审核传输：auto = 优先内置 ACP（依赖随插件安装），不可用回退现有 CLI；也可强制 acp/cli。
+  transport: REVIEW_DEFAULT_CONFIG.transport,
+  // 目标仓库里的引擎接口过旧时，是否允许回退到插件自带的引擎副本。
+  allowBundledFallback: REVIEW_DEFAULT_CONFIG.allowBundledFallback,
 }
 
 // 与账本常量共用一份枚举：9 阶段迁移后不再手写第二份，避免工具 schema 与 lib 漂移。
@@ -218,7 +229,7 @@ const COCKPIT_ACCEPTANCE = {
 
 export function createToolDefinitions(ctx, options = {}) {
   const authorizeWrite = typeof options.authorizeWrite === 'function' ? options.authorizeWrite : async (path) => path
-  return [
+  const cockpitTools = [
     {
       ...COCKPIT_REPORT,
       async execute(args, exec) {
@@ -308,6 +319,9 @@ export function createToolDefinitions(ctx, options = {}) {
       },
     },
   ]
+  // 评审三件套（claude_review / disposition / install_hook）与驾驶舱工具一起注册：
+  // 只装本插件就能拿到旧 @hunyed15/project-cockpit 的评审能力，会话里的调用方式不变。
+  return [...cockpitTools, ...createReviewToolDefinitions(ctx, { settings: options.reviewSettings ?? {} })]
 }
 
 // 供 test/tool-contract.test.js 断言形状；execute 不在这里调用，ctx 传 undefined 是安全的。
@@ -662,7 +676,7 @@ export function apply(ctx, config = {}) {
   }
 
   // ---- 工具 ----
-  for (const definition of createToolDefinitions(ctx, { authorizeWrite })) {
+  for (const definition of createToolDefinitions(ctx, { authorizeWrite, reviewSettings: settings })) {
     ctx.effect(() => ctx.tools.register(definition))
   }
 

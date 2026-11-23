@@ -5,6 +5,15 @@ DSH 插件 **交付驾驶舱**：把项目的真实状态收拢成一屏——**
 它**接线**：把现成的 agent loop、现成的 skills/MCP、现成的会话与 worktree 连起来，把人需要知道的信息抄到仪表上。
 **不复制 agent 的判断**：插件决定"干什么、什么时候、干完没有"，agent 决定"怎么干、用哪个技能、失败怎么办"。
 
+## 合并说明（只需安装本插件）
+
+从 **v0.2.0** 起，旧的 `@hunyed15/project-cockpit`（v3.0.0）的 **独立评审引擎 + 工具 + 账本**已并入本插件：
+
+- 引擎 `scripts/Invoke-ClaudeReview.ps1`（含 `acp-review.mjs` / `review-schema.json` / `reviewer-role.md` / `config.json` / hook 安装器）随本插件发布；
+- 三个工具现由本插件提供：`claude_review`、`claude_review_disposition`、`claude_review_install_hook`，参数与输出契约不变；
+- 审核账本位置不变：`.trellis/tasks/<task>/review/` 或 `.dsh/claude-review/ledger/`，面板「代码检查」模块读的就是同一份账本；
+- **不再需要同时装两个插件**：装好本插件后，旧 `@hunyed15/project-cockpit` 可禁用或卸载（它的旧面板路由 `/claude-review/api`、`/project-cockpit` 与旧 cockpit 总览不随本插件迁移）。
+
 ## 功能账（面板的核心）
 
 功能清单只来自 `prd.md` 的**受控结构**（不解析自由文本）：
@@ -71,8 +80,9 @@ DSH 插件 **交付驾驶舱**：把项目的真实状态收拢成一屏——**
 - [x] **模块化工作台（V1.2.0）**：画布/卡片/模块头三层表面 + 8 个 inline SVG 图标 + 字重阶梯（22/700 仅 hero、正文 400），主区与右栏全部模块化，彻底告别"白底粗字列表"
 - [x] **可用性四件事（V1.1.1）**：空态给下一步动作、功能行展开能看到该功能的验收并可「去验收」跳转高亮、项目动态按今天/本周/更早分组、舒适/紧凑密度切换 + j/k/Enter/Esc 键盘导航（输入框内不劫持）
 - [x] **人话化 + 两栏看板（V1.1.0）**：界面按「给人读状态」重做——header 一句人话摘要、摘要条带完整标签、功能/验收改成 Linear 式列表行（技术细节折叠）、右栏「需要你决定/代码检查/项目动态」；内部词全部换成人话（卡点/待修问题/需要重新确认/没通过…），`docs/DESIGN.md` 记录视觉与文案系统
+- [x] **评审引擎合并（0.2.0）**：旧 `@hunyed15/project-cockpit` 的独立评审引擎（`scripts/` 原样）与 `claude_review` / `claude_review_disposition` / `claude_review_install_hook` 三个工具并入本插件；账本路径与配置键沿用，面板「代码检查」读同一份账本，旧插件可禁用/卸载（旧面板路由与 cockpit 总览不迁移）
 
-**测试**：`npm test` = `node --test "test/*.test.js"`，当前 **459 个用例全绿**（含端到端状态机推进、人工签核四门与前置失败、功能账三路证据与自动归属、验收起草/结果写入/失效联动与留痕、截图引擎与 PNG 对比/CRC 边界、技能可见性、能力建议映射、团队泳道读取、写授权 fail-closed 专项）。
+**测试**：`npm test` = `node --test "test/*.test.js"`，当前 **473 个用例全绿**（含端到端状态机推进、人工签核四门与前置失败、功能账三路证据与自动归属、验收起草/结果写入/失效联动与留痕、截图引擎与 PNG 对比/CRC 边界、技能可见性、能力建议映射、团队泳道读取、写授权 fail-closed 专项；以及合并进来的评审三工具：schema/render、命令行拼装、结论归一、dryRun 真实干跑、处置账本写入、hook 安装）。
 
 > 勾选只在**实现并通过验收**之后做。`node --test test/`（目录形式）在本机 Node 24 不支持，请用上面的 glob 形式或 `npm test`。
 
@@ -85,7 +95,7 @@ DSH 插件 **交付驾驶舱**：把项目的真实状态收拢成一屏——**
 ## 仓库布局
 
 ```
-index.js            Host 半：两个工具 + 面板路由 + 能力探测
+index.js            Host 半：六个工具 + 面板路由 + 能力探测
 client.js           Client 半：main / sidebar.panellist 两处注册，一屏四区
 lib/receipts.js     回执账本（校验 / 追加写 / 容错读 / 迭代与待决策推导）
 lib/detect.js       技术栈探测（只读文件，不猜）
@@ -100,6 +110,8 @@ lib/evidence.js     只读证据聚合（trellis / prd / 回执 / 批准 / 验�
 lib/state.js        状态机：唯一动作
 lib/model.js        面板模型（总览行 + 详情一屏四区）
 lib/route.js        HTTP 路由（授权 / 读写接口）
+lib/review/         评审引擎合并层：engine（定位/命令行/归一）、tools（三个工具）、ledger（处置账本）、settings
+scripts/            随包发布的评审引擎（Invoke-ClaudeReview.ps1 / acp-review.mjs / schema / role / hook 安装器）
 templates/          释放到项目的 RULES.md / playbook.json / acceptance.json
 test/               node --test 单测与契约断言
 tools/preview/      本机预览 + 截图（真实 React + 真实 CSS，用于看不到 GUI 时的视觉验收）
@@ -109,7 +121,8 @@ tools/preview/      本机预览 + 截图（真实 React + 真实 CSS，用于�
 
 ```powershell
 cd D:\Coding\dsh-plugins\dsh-project-cockpit
-node --test test/                      # 全部单测
+npm install                            # 拉评审引擎的 ACP 依赖（claude-agent-acp / acp sdk）
+node --test "test/*.test.js"           # 全部单测
 node tools/preview/server.mjs          # 本机预览面板（默认 http://127.0.0.1:4711）
 ```
 
@@ -121,7 +134,9 @@ node tools/preview/server.mjs          # 本机预览面板（默认 http://127.
 plugin_manager(action: "install_bundle", target: "D:\\Coding\\dsh-plugins\\dsh-project-cockpit")
 ```
 
-需要 DSH `>=0.2.2-rc.3 <0.3.0`。与已装的 `@hunyed15/project-cockpit`（面板 id `project-cockpit`）并存，本插件的行 id / 面板 id 是 `delivery-cockpit`。
+需要 DSH `>=0.2.2-rc.3 <0.3.0`。本地源码安装前先在本目录执行 `npm install`（评审引擎的 ACP 依赖）；安装后 `listTools` 应能看到六个工具：`cockpit_report` / `cockpit_init` / `cockpit_acceptance` / `claude_review` / `claude_review_disposition` / `claude_review_install_hook`。
+
+本插件的行 id / 面板 id 是 `delivery-cockpit`。从 v0.2.0 起它已内置旧 `@hunyed15/project-cockpit` 的评审能力，**只装这一个插件即可**；旧插件可禁用/卸载（见上面「合并说明」）。
 
 ## License
 

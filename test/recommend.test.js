@@ -72,8 +72,8 @@ test('adviceFor：trellis-* 任意前缀统一给 Trellis 安装命令与地址'
 
 test('adviceFor：claude_review 只给标签，不编 URL / 命令', () => {
   const advice = adviceFor(missingCap('claude_review', { kind: 'tool' }))
-  assert.equal(advice.fallback, '启用 claude-code-review 插件')
-  assert.deepEqual(advice.install, [{ label: '@hunyed15/project-cockpit（review 引擎）' }])
+  assert.equal(advice.fallback, '升级/重新启用 delivery-cockpit（已内置评审引擎）')
+  assert.deepEqual(advice.install, [{ label: '@hunyed15/delivery-cockpit（内置 review 引擎）' }])
   assertInstallShape(advice.install)
   assert.equal(advice.install[0].url, undefined)
   assert.equal(advice.install[0].command, undefined)

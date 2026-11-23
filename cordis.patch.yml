@@ -10,6 +10,17 @@
         # 审核账本口径：auto = 有 .trellis 任务账本用 trellis，否则用本地 .dsh/claude-review/ledger。
         # 驾驶舱只读账本，不写；读不到就不做功过判定，绝不猜。
         reviewStorage: auto
+        # ---- 独立评审引擎（原 @hunyed15/project-cockpit 已并入本插件）----
+        # 引擎路径：留空自动探测 <项目>/tools/claude-review → <项目>/.dsh/claude-review → 插件自带 scripts/。
+        enginePath: ''
+        # 单次审核超时（秒），作为 -TimeoutSec 传给引擎，并决定工具级超时（引擎超时 + 120s 余量）。
+        timeoutSec: 1500
+        # 审核传输：auto = 优先内置 ACP（依赖随插件安装），不可用回退现有 CLI；也可强制 acp/cli。
+        transport: auto
+        # 目标仓库里的引擎接口过旧（没有 claude-review-api 标记）时，是否回退到插件自带引擎副本。
+        allowBundledFallback: true
+        # 引擎自己的参数（reviewerRoleFile / failOn / maxRounds / exclude 等）在 scripts/config.json，
+        # 随插件发布；项目级审核员角色文件默认为 <项目>/.trellis/agents/review.md。
         # 面板「截图」按钮：用本机浏览器（Chrome/Edge）的 CDP 截真实页面。
         # 留空自动探测；也可写绝对路径强制指定。只允许回环地址（127.0.0.1/localhost）。
         browserPath: ''

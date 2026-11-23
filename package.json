@@ -1,7 +1,7 @@
 {
   "name": "@hunyed15/delivery-cockpit",
-  "version": "0.1.0",
-  "description": "Project delivery cockpit for DeepSeek Harness: one page that answers where the project stands, what blocks it, what to do next and which capability to use. Writes only .dsh/plugin-state/ and registers typed tools (cockpit_report / cockpit_init).",
+  "version": "0.2.0",
+  "description": "Project delivery cockpit for DeepSeek Harness. One page answers where the project stands, what blocks it, what to do next and which capability to use; it also ships the independent Claude Code review engine and its typed tools (cockpit_report / cockpit_init / cockpit_acceptance / claude_review / claude_review_disposition / claude_review_install_hook). Writes only .dsh/plugin-state/; the review ledger stays in .trellis or .dsh/claude-review/ledger.",
   "license": "MIT",
   "author": "hunyed15",
   "repository": {
@@ -18,7 +18,10 @@
     "project-cockpit",
     "delivery",
     "playbook",
-    "trellis"
+    "trellis",
+    "claude-code",
+    "code-review",
+    "acp"
   ],
   "type": "module",
   "scripts": {
@@ -38,6 +41,7 @@
     "index.js",
     "client.js",
     "lib",
+    "scripts",
     "templates",
     "skills",
     "cordis.patch.yml",
@@ -48,6 +52,10 @@
     "README.md",
     "LICENSE"
   ],
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "^0.106.0",
+    "@agentclientprotocol/sdk": "^2.6.0"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
