@@ -331,7 +331,7 @@ DSH 的 skill 作用域 = **全局（`DSH_HOME/skills` + `~/.agents/skills`）+ 
 - **全局可用 Skills**：上表 DSH_HOME 的 **22 个**（本会话 skill catalog 可见；Trellis 12 + grilling 2 + webapp-testing 已于 2026-11-23 装入）。
 - **grill 已装到全局**（2026-11-23）：`grill-me` 触发 → `grilling` 设计树追问；所有项目可用。
 - **Trellis 12 已装全局**（2026-11-23）：旧插件包里的 `.claude/.agents` 副本不再需要；DSH 直接加载全局版本。
-- **MCP**：`playwright` 缺失、`context7` 缺失、无部署平台 MCP → 全部走回退，并给安装指引。
+- **MCP**：`playwright` 与 `context7` 已接入（本机配置型 bundle：`.dsh-mcp-client` stdio；面板检测 present=yes）；部署平台 MCP 仍未接。
 - **Tools**：`cockpit_*`（本插件）、`claude_review*`（旧插件）可用。
 
 ## 4. playbook 结构扩展（P0 落地）
@@ -382,4 +382,4 @@ DSH 的 skill 作用域 = **全局（`DSH_HOME/skills` + `~/.agents/skills`）+ 
   全部是**代理口径**（项目本地的执行回执 + 审核账本 + 验收表），没有 CI / 发布系统 / 线上监控数据：数据不足显示 `—` 并在 tooltip 说明原因，绝不补 0；指标定义短句随数据一起下发。
 - **周报导出**：`GET /delivery-cockpit/api/report?path=…&days=7|14|30` 返回 Markdown（概览 / 交付指标 / 功能进度 / 验收 / 代码检查 / 最近动态 / 下一步），表后列**数据缺口**与代理口径脚注；header「导出周报」一键下载，默认 7 天（配置键 `reportDays`）。
 - 口径与数据源写在 `docs/IMPLEMENTATION.md` §3.22；**这张表不代表线上 DORA**，只用于看本地交付趋势与数据缺口。
-- 测试：**505 个用例全绿**（新增 `test/metrics.test.js`、`test/report.test.js`，以及 route / model / client-smoke 的增量断言）。
+- 测试：**508 个用例全绿**（新增 `test/metrics.test.js`、`test/report.test.js`，以及 route / model / client-smoke 的增量断言）。

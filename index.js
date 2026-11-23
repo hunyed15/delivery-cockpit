@@ -464,16 +464,43 @@ function readToolNames(ctx) {
   }
 }
 
-function readMcpNames(ctx) {
-  const mcp = attempt(() => ctx.get('mcpManager'))
-  if (!mcp || typeof mcp.list !== 'function') return null
-  try {
-    // present = "装了这个 MCP"（配置里存在），不把"当前连接状态"混进存在性：
-    // 一个正在重连的 MCP 仍然是装着的，界面该显示它、由状态字段说明可用性。
-    return new Set(mcp.list().map((server) => String(server?.name ?? '')).filter(Boolean))
-  } catch {
-    return null
+/**
+ * MCP 存在性：配置型 bundle 可以直连 `dsh-mcp-client`（不经过 mcpManager.servers），
+ * 所以除了 manager 列表，还要从 `mcp__<server>__<tool>` 工具名反推 server。
+ * 两者任一可用即视为已知；都不可用返回 null（未知），不把"探测不到"当"没装"。
+ */
+export function readMcpNames(ctx) {
+  const names = new Set()
+  let known = false
+
+  const manager = attempt(() => ctx.get('mcpManager'))
+  if (manager && typeof manager.list === 'function') {
+    try {
+      for (const server of manager.list()) {
+        const name = String(server?.name ?? '')
+        if (name !== '') names.add(name)
+      }
+      known = true
+    } catch {
+      // 保留 tools 反推这一路
+    }
   }
+
+  const tools = attempt(() => ctx.get('tools'))
+  if (tools && typeof tools.definitions === 'function') {
+    try {
+      for (const definition of tools.definitions()) {
+        const name = String(definition?.name ?? '')
+        const matched = /^mcp__(.+?)__/.exec(name)
+        if (matched) names.add(matched[1])
+      }
+      known = true
+    } catch {
+      // 保留 manager 这一路
+    }
+  }
+
+  return known ? names : null
 }
 
 const samePath = (left, right) => {
