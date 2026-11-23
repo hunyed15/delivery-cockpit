@@ -251,6 +251,7 @@ const PROTOTYPE_ACTION = {  priority: 5,
       note: 'Phase 2 才用于截图留证',
       present: 'no',
       missingMessage: '该阶段需要的 MCP 未安装：Playwright',
+      advice: { fallback: '面板内置 CDP 截图（不需要 MCP）', install: [{ label: 'Playwright MCP', url: 'https://github.com/microsoft/playwright-mcp' }] },
     },
   ],
   missing: [],
@@ -452,6 +453,15 @@ function makePanel(overrides = {}) {
     features: FEATURES,
     dataGaps: [{ source: 'tasks', message: '任务状态来自 AI 自报，不是实时读取' }],
     degraded: { flag: false, reasons: [] },
+  }
+  base.team = {
+    available: true,
+    reason: null,
+    agents: [
+      { id: 'session-lead', name: 'lead', parentName: null, depth: 0, preset: 'standard', origin: null, createdAt: '2026-11-23T00:00:00.000Z', running: true },
+      { id: 'session-fe', name: 'frontend', parentName: 'lead', depth: 1, preset: 'standard', origin: 'subagent', createdAt: '2026-11-23T00:01:00.000Z', running: true },
+      { id: 'session-verify', name: 'verifier', parentName: 'lead', depth: 1, preset: 'standard', origin: 'subagent', createdAt: '2026-11-23T00:02:00.000Z', running: false },
+    ],
   }
   const track = [...base.progression.coldStart, ...base.progression.cycle]
   base.stages = STAGE.map((stage) => {
@@ -736,6 +746,7 @@ export function panelFor(scenario) {
             ? {
                 ...stage,
                 gate: { key: 'architecture', available: false, ok: false, missing: ['docs/architecture.md', 'docs/api.md'], reason: 'missing' },
+                decisionGate: { title: '架构签核', approveAction: 'approve-architecture', approved: false, at: null },
                 deliverables: ['docs/architecture.md', 'docs/api.md'],
                 constraint: 'ponytail',
                 receipts: {
