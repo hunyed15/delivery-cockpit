@@ -232,6 +232,7 @@ test('computeMetrics：空输入不抛错，形状固定，generatedAt 用传入
     'reviewFixHours',
     'acceptanceRate',
     'blockingInventory',
+    'mttrHours',
   ])
   for (const value of Object.values(result.metrics)) {
     assert.ok(typeof value.definition === 'string' && value.definition.length <= 40)

@@ -516,6 +516,9 @@ h1.dc-title { margin:0; font-size:15px; line-height:1.35; font-weight:600; lette
 }
 .dc-service { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--dsw-alias-label-secondary); white-space:nowrap; }
 .dc-service-dot { width:6px; height:6px; border-radius:50%; background:var(--dsw-alias-state-success-primary); flex:none; }
+.dc-workflow-controls { display:inline-flex; align-items:center; gap:6px; min-width:0; flex-wrap:wrap; }
+.dc-mode-btn-light { border-color:color-mix(in srgb, var(--dsw-alias-brand-primary) 40%, var(--dsw-alias-border-l2)); color:var(--dsw-alias-brand-primary); }
+.dc-inline-msg { font-size:11.5px; color:var(--dsw-alias-label-secondary); max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .dc-service-dot-warn { background:var(--dsw-alias-state-warn-primary); }
 
 /* ---------- 页面骨架 ---------- */
@@ -2687,13 +2690,14 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       reviewFixHours: '修复时长',
       acceptanceRate: '验收通过率',
       blockingInventory: '待修问题',
+      mttrHours: '线上恢复时长',
     }
 
     // 小时类指标超过 2 天改用「天」显示，避免「168 小时」这种要心算的数字。
     function formatMetricValue(metric, key) {
       const value = metric && typeof metric.value === 'number' && Number.isFinite(metric.value) ? metric.value : null
       if (value === null) return null
-      if (key === 'leadTimeHours' || key === 'reviewFixHours') {
+      if (key === 'leadTimeHours' || key === 'reviewFixHours' || key === 'mttrHours') {
         return value >= 48 ? `${Number((value / 24).toFixed(1))} 天` : `${Number(value.toFixed(1))} 小时`
       }
       if (key === 'deploymentFrequency7d') return `${value} 次`
@@ -2720,7 +2724,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
         if (item && typeof item.metric === 'string') unavailableMap[item.metric] = item.reason || '数据不足'
       }
       const cards = ['leadTimeHours', 'deploymentFrequency7d', 'changeFailureRate', 'acceptanceRate']
-      const minis = ['reviewFixHours', 'blockingInventory']
+      const minis = ['reviewFixHours', 'mttrHours', 'blockingInventory']
 
       const valueNode = (key, className) => {
         const metric = values[key] || null
@@ -2732,7 +2736,9 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       const note = metrics
         ? unavailable.length > 0
           ? `有 ${unavailable.length} 项数据还不够，先用 — 占位。`
-          : '指标为代理口径：来自项目本地记录，不是线上监控（发布看近 7 天、返工率看近 30 天，其余看全部历史）。'
+          : metrics && metrics.source === 'live'
+            ? '发布频率 / 变更失败率 / 交付周期 / MTTR 来自 .dsh/plugin-state/dora.json 的线上记录（交付周期需部署记录带 leadTimeHours）；其余仍是本地代理。'
+            : '指标为代理口径：来自项目本地记录，不是线上监控（发布看近 7 天、返工率看近 30 天，其余看全部历史）。'
         : '还没有算出交付指标，随项目动态与检查记录补齐后出现。'
 
       return h(
@@ -2743,7 +2749,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           tone: metrics ? 'brand' : 'idle',
           // 不写「近 N 天」：六项里只有发布/返工率是窗口口径，其余看全部历史，
           // 一个窗口前缀会把整组指标说成同一口径（误导）。窗口细节放在每项 tooltip 与脚注里。
-          meta: metrics ? '代理口径' : '数据不足',
+          meta: metrics ? (metrics.source === 'live' ? '线上数据' : '代理口径') : '数据不足',
         },
         h(
           'div',
@@ -4088,6 +4094,92 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
 
     // ---------- 详情页 ----------
 
+    const WORKFLOW_ERROR_TEXT = {
+      'bad-workflow': '模式只支持完整流程 / 轻量模式',
+      'project-card-missing': '项目名片还没生成，先初始化',
+      'project-card-broken': '项目名片不是合法 JSON，先修好',
+    }
+    const TRELLIS_SKIP_TEXT = {
+      'subprocess-missing': '当前会话不能启动子进程，请在能跑命令的会话里初始化',
+      'cli-missing': '没找到 trellis CLI，先安装 Trellis',
+      'pwsh-missing': '找不到 pwsh（PowerShell 7+）',
+    }
+
+    function WorkflowControls(props) {
+      const [busy, setBusy] = React.useState('')
+      const [message, setMessage] = React.useState('')
+      const light = props.workflow === 'light'
+      const path = props.projectPath
+      const trellis = props.trellis || {}
+
+      const toggleWorkflow = async () => {
+        if (busy) return
+        setBusy('workflow')
+        setMessage('')
+        try {
+          await postJson(`${API}/workflow`, { path, workflow: light ? 'full' : 'light' })
+          if (props.onRefresh) props.onRefresh()
+        } catch (error) {
+          const key = String(error && error.message ? error.message : error)
+          setMessage(WORKFLOW_ERROR_TEXT[key] || key)
+        } finally {
+          setBusy('')
+        }
+      }
+
+      const initTrellis = async () => {
+        if (busy) return
+        setBusy('trellis')
+        setMessage('')
+        try {
+          const body = await postJson(`${API}/trellis-init`, { path })
+          if (body.status === 'done' || body.status === 'already-initialized') {
+            if (props.onRefresh) props.onRefresh()
+            return
+          }
+          setMessage(TRELLIS_SKIP_TEXT[body.reason] || `Trellis 没初始化成功（${body.reason || body.status}）`)
+        } catch (error) {
+          setMessage(String(error && error.message ? error.message : error))
+        } finally {
+          setBusy('')
+        }
+      }
+
+      const showTrellis = trellis.initialized === true && trellis.ready !== true
+      return h(
+        'span',
+        { className: 'dc-workflow-controls' },
+        h(
+          'button',
+          {
+            type: 'button',
+            className: `dc-btn dc-btn-ghost dc-mode-btn${light ? ' dc-mode-btn-light' : ''}`,
+            'aria-pressed': light ? 'true' : 'false',
+            title: light
+              ? '轻量模式：跳过架构契约与范围/架构签核；点一下恢复完整 9 阶段'
+              : '完整 9 阶段；小改动可切到轻量模式（跳过架构契约与范围/架构签核）',
+            onClick: toggleWorkflow,
+            disabled: busy === 'workflow',
+          },
+          busy === 'workflow' ? '切换中…' : light ? '轻量模式' : '完整流程',
+        ),
+        showTrellis
+          ? h(
+              'button',
+              {
+                type: 'button',
+                className: 'dc-btn dc-btn-ghost',
+                title: '运行 trellis init --dsh，把项目升级成完整 Trellis 工程（trellis-* 技能才可用）',
+                onClick: initTrellis,
+                disabled: busy === 'trellis',
+              },
+              busy === 'trellis' ? '初始化中…' : '接通 Trellis',
+            )
+          : null,
+        message ? h('span', { className: 'dc-inline-msg', role: 'status' }, message) : null,
+      )
+    }
+
     function DetailPage(props) {
       const panel = props.panel || {}
       const project = panel.project || {}
@@ -4147,6 +4239,12 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
             h('div', { className: 'dc-head-summary', title: healthText }, healthText),
           ),
           h(Chip, { tone: 'idle' }, (panel.iteration && panel.iteration.current) || '还没开始'),
+          h(WorkflowControls, {
+            projectPath: project.path || props.selectedPath || '',
+            workflow: project.workflow === 'light' ? 'light' : 'full',
+            trellis: panel.trellis || {},
+            onRefresh: props.refresh,
+          }),
           h('span', { className: 'dc-spacer' }),
           h(
             'button',

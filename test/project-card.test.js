@@ -9,6 +9,7 @@ import {
   cardStatus,
   mergeDetected,
   readProjectCard,
+  setWorkflow,
   writeProjectCard,
 } from '../lib/project-card.js'
 
@@ -180,4 +181,32 @@ test('cardStatus：filled / needs-human / missing / broken 四种都能表达', 
 
   const dir = await makeProject(t)
   assert.equal(cardStatus(await readProjectCard(dir)), 'missing', '也接受 readProjectCard 的整个结果')
+})
+
+test('setWorkflow：切换 full/light 保留其它字段；非法值与缺名片拒绝', async (t) => {
+  const dir = await makeProject(t)
+  const card = buildDefaultCard(dir, detectedNext, new Date('2026-11-20T14:00:00.000Z'))
+  card.oneLiner = '给自己做的工具'
+  await writeProjectCard(dir, card)
+
+  const light = await setWorkflow(dir, 'light')
+  assert.equal(light.ok, true)
+  assert.equal(light.workflow, 'light')
+  const read = await readProjectCard(dir)
+  assert.equal(read.card.workflow, 'light')
+  assert.equal(read.card.oneLiner, '给自己做的工具')
+  assert.equal(read.card.name, card.name)
+
+  const full = await setWorkflow(dir, 'full')
+  assert.equal(full.ok, true)
+  assert.equal((await readProjectCard(dir)).card.workflow, 'full')
+
+  assert.deepEqual(await setWorkflow(dir, 'turbo'), { ok: false, error: 'bad-workflow' })
+
+  const empty = await mkdtemp(join(tmpdir(), 'dc-card-workflow-'))
+  try {
+    assert.deepEqual(await setWorkflow(empty, 'light'), { ok: false, error: 'project-card-missing' })
+  } finally {
+    await rm(empty, { recursive: true, force: true })
+  }
 })

@@ -10,6 +10,8 @@ import {
   createDecisionHandler,
   createInitHandler,
   createRoutes,
+  createTrellisHandler,
+  createWorkflowHandler,
   BASE,
 } from '../lib/route.js'
 
@@ -17,7 +19,7 @@ const PROJECT = resolve(tmpdir(), 'delivery-cockpit-route-fixture')
 const OTHER = resolve(tmpdir(), 'delivery-cockpit-not-registered')
 
 function makeDeps(overrides = {}) {
-  const calls = { detail: [], plan: [], apply: [], approve: [], decision: [], acceptance: [], shot: [], screenshot: [], report: [] }
+  const calls = { detail: [], plan: [], apply: [], approve: [], decision: [], acceptance: [], shot: [], screenshot: [], report: [], workflow: [], trellis: [] }
   const deps = {
     listWorkspaces: async () => [{ id: 'w1', title: 'demo', path: PROJECT }],
     resolveWorkspace: async (path) => (path === PROJECT ? { id: 'w1', title: 'demo', path: PROJECT } : null),
@@ -43,6 +45,15 @@ function makeDeps(overrides = {}) {
     applyInit: async (path) => {
       calls.apply.push(path)
       return { applied: true, created: ['RULES.md'], skipped: [], errors: [], gitignoreHint: '.dsh/plugin-state/' }
+    },
+    setWorkflow: async (path, workflow) => {
+      calls.workflow.push([path, workflow])
+      if (!['full', 'light'].includes(workflow)) return { ok: false, error: 'bad-workflow' }
+      return { ok: true, workflow, updatedAt: '2026-01-01T00:00:00.000Z' }
+    },
+    initializeTrellis: async (path) => {
+      calls.trellis.push(path)
+      return { status: 'done', exitCode: 0 }
     },
     approvePrototype: async (path, iterationId) => {
       calls.approve.push([path, iterationId])
@@ -694,3 +705,38 @@ test('POST /acceptance-screenshot：GET 打过来给 405', async () => {
   assert.equal(res.status, 405)
 })
 
+
+test('POST /workflow：切换模式；非法值 400；未登记项目 403', async () => {
+  const { deps, calls } = makeDeps()
+  const handler = createWorkflowHandler(deps)
+  const res = fakeRes()
+  await handler(fakeReq({ body: { path: PROJECT, workflow: 'light' } }), res)
+  assert.equal(res.status, 200)
+  assert.deepEqual(JSON.parse(res.body), { ok: true, workflow: 'light', updatedAt: '2026-01-01T00:00:00.000Z' })
+  assert.deepEqual(calls.workflow, [[PROJECT, 'light']])
+
+  const bad = fakeRes()
+  await handler(fakeReq({ body: { path: PROJECT, workflow: 'turbo' } }), bad)
+  assert.equal(bad.status, 400)
+  assert.deepEqual(JSON.parse(bad.body), { ok: false, error: 'bad-workflow' })
+
+  const outside = fakeRes()
+  await handler(fakeReq({ body: { path: OTHER, workflow: 'light' } }), outside)
+  assert.equal(outside.status, 403)
+})
+
+test('POST /trellis-init：成功 200；失败 409 带 detail', async () => {
+  const okDeps = makeDeps()
+  const ok = fakeRes()
+  await createTrellisHandler(okDeps.deps)(fakeReq({ body: { path: PROJECT } }), ok)
+  assert.equal(ok.status, 200)
+  assert.deepEqual(JSON.parse(ok.body), { ok: true, status: 'done', reason: null, exitCode: 0 })
+
+  const failedDeps = makeDeps({
+    initializeTrellis: async () => ({ status: 'failed', reason: 'exit 1' }),
+  })
+  const failed = fakeRes()
+  await createTrellisHandler(failedDeps.deps)(fakeReq({ body: { path: PROJECT } }), failed)
+  assert.equal(failed.status, 409)
+  assert.equal(JSON.parse(failed.body).error, 'trellis-init-failed')
+})

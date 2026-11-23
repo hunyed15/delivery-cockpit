@@ -50,6 +50,7 @@
 > - 小改动可把 .dsh/plugin-state/project.json 的 workflow 设为 light，跳过架构契约与范围/架构签核（仍保留原型、测试、验收、发布门）。
 > - 测试报告做结构校验（非占位命令 / 合法时间 / 至少一条结果）；验收签核要求每条可识别 FR 都有带 feature_ref 的验收。
 > - requireArchitectureGate 默认 true；旧 playbook 覆盖按阶段 key 迁移合并，不再整份忽略。
+> - 面板可切换完整流程 / 轻量模式；空 .trellis 可一键接通 Trellis；可选 dora.json 用线上发布/事故数据替换交付指标代理口径。
 
 
 每个阶段定义：**目标 / 输入 / 交付物（路径 + schema）/ 技术门 / 决策门 / 完成定义**。

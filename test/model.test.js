@@ -869,11 +869,11 @@ test('iteration / dataGaps / degraded 原样透传，原型批准来自当前迭
 test('trellis 与 acceptance 计数如实投影，不把 null 变成 0', () => {
   const model = build(
     evidence({
-      trellis: { exists: true, rules: false, initialized: false, partial: true },
+      trellis: { exists: true, rules: false, initialized: false, ready: false, partial: true },
       acceptance: { total: null, withResult: null, passed: null, failed: null, blocked: null, empty: false, badJson: false },
     }),
   )
-  assert.deepEqual(model.trellis, { exists: true, rules: false, initialized: false, partial: true })
+  assert.deepEqual(model.trellis, { exists: true, rules: false, initialized: false, ready: false, partial: true })
   assert.equal(model.acceptance.total, null)
   assert.equal(model.acceptance.passed, null)
   assert.equal(model.acceptance.empty, false)
@@ -1120,6 +1120,7 @@ test('交付指标（P3）：metrics 透传；缺省为 null；0 与 null 严格
     'reviewFixHours',
     'acceptanceRate',
     'blockingInventory',
+    'mttrHours',
   ])
 
   // 缺项给 null；库存类即使 value=null 也按 0（与 metrics.js 一致：0 是合法值）。

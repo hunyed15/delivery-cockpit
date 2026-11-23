@@ -17,14 +17,16 @@ import { checkStageCapability } from './lib/capabilities.js'
 import { readEvidence } from './lib/evidence.js'
 import { buildFeatureBoard, extractFeatures, readPrdText } from './lib/features.js'
 import { applyInit, planInit } from './lib/init.js'
+import { readDoraData } from './lib/dora.js'
 import { computeMetrics, readMetricLedger } from './lib/metrics.js'
 import { buildDetailModel, buildOverviewRow } from './lib/model.js'
 import { entryForStage, loadPlaybook, resolveCapabilities, STAGE_DEFS } from './lib/playbook.js'
-import { readProjectCard } from './lib/project-card.js'
+import { readProjectCard, setWorkflow } from './lib/project-card.js'
+import { initializeTrellis } from './lib/trellis.js'
 import { appendReceipt, STAGES } from './lib/receipts.js'
 import { buildWeeklyReport, REPORT_DAYS, reportFileName } from './lib/report.js'
 import { REVIEW_DEFAULT_CONFIG, createReviewToolDefinitions } from './lib/review/index.js'
-import { createAcceptanceResultHandler, createAcceptanceScreenshotHandler, createApproveHandler, createDecisionHandler, createInitHandler, createRoutes } from './lib/route.js'
+import { createAcceptanceResultHandler, createAcceptanceScreenshotHandler, createApproveHandler, createDecisionHandler, createInitHandler, createRoutes, createTrellisHandler, createWorkflowHandler } from './lib/route.js'
 import { captureScreenshot, writeScreenshot } from './lib/screenshot.js'
 import { readTeam } from './lib/team.js'
 import { compareScreenshots, pickBaselineEvidence, renderDiffPng } from './lib/visual-diff.js'
@@ -195,63 +197,6 @@ const COCKPIT_INIT = {
   },
 }
 
-/**
- * 可选：把项目从"空 .trellis"升级成 Trellis 工程（写入 .trellis/scripts 等）。
- * 只在 cockpit_init 显式传 trellisInit:true 时运行；失败不阻断 init，只如实返回。
- */
-async function maybeTrellisInit(ctx, projectPath, exec) {
-  const script = join(projectPath, '.trellis', 'scripts', 'get_context.py')
-  const already = await stat(script).then((info) => info.isFile()).catch(() => false)
-  if (already) return { status: 'already-initialized' }
-
-  const subprocess = attempt(() => ctx.get('subprocess'))
-  if (!subprocess || typeof subprocess.spawn !== 'function' || typeof subprocess.resolveExecutable !== 'function') {
-    return { status: 'skipped', reason: 'subprocess-missing' }
-  }
-  let executable = null
-  for (const candidate of process.platform === 'win32' ? ['trellis.cmd', 'trellis'] : ['trellis']) {
-    try {
-      executable = await subprocess.resolveExecutable(candidate)
-      if (typeof executable === 'string' && executable.trim() !== '') break
-    } catch {
-      executable = null
-    }
-  }
-  if (executable === null) return { status: 'skipped', reason: 'cli-missing' }
-
-  const username = process.env.USERNAME || process.env.USER || 'ai'
-  let argv = [executable, 'init', '--dsh', '-y', '-s', '-u', username]
-  if (/\.ps1$/i.test(executable)) {
-    let pwsh = null
-    try {
-      pwsh = await subprocess.resolveExecutable('pwsh')
-    } catch {
-      pwsh = null
-    }
-    if (pwsh === null) return { status: 'skipped', reason: 'pwsh-missing' }
-    argv = [pwsh, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', executable, 'init', '--dsh', '-y', '-s', '-u', username]
-  }
-
-  try {
-    const handle = subprocess.spawn({
-      argv,
-      cwd: projectPath,
-      stdio: {
-        stdin: 'ignore',
-        stdout: { maxBytes: 1024 * 1024 },
-        stderr: { maxBytes: 256 * 1024 },
-      },
-      graceMs: 5000,
-      signal: exec?.signal,
-    })
-    const outcome = await Promise.resolve(handle.done)
-    const exitCode = typeof outcome?.exitCode === 'number' ? outcome.exitCode : -1
-    return { status: exitCode === 0 ? 'done' : 'failed', exitCode }
-  } catch (error) {
-    return { status: 'failed', reason: String(error?.message ?? error) }
-  }
-}
-
 const COCKPIT_ACCEPTANCE = {
   name: 'cockpit_acceptance',
   description:
@@ -356,8 +301,8 @@ export function createToolDefinitions(ctx, options = {}) {
         }
         const applied = await applyInit(projectPath, plan)
         // 与 applied 无关：已有项目第二次 init 时 applied=false，但"空 .trellis 升级 Trellis"
-        // 恰恰发生在这种项目上；maybeTrellisInit 内部用 get_context.py 做幂等守卫。
-        const trellisInit = options.trellisInit === true ? await maybeTrellisInit(ctx, projectPath, exec) : null
+        // 恰恰发生在这种项目上；initializeTrellis 内部用 get_context.py 做幂等守卫。
+        const trellisInit = options.trellisInit === true ? await initializeTrellis(ctx, projectPath, exec) : null
         return {
           ok: (applied.errors ?? []).length === 0,
           dryRun: false,
@@ -756,7 +701,10 @@ export function apply(ctx, config = {}) {
     // 交付指标（P3）：指标层自己读一遍审核账本——evidence 只回计数，且它把坏行当
     // read-error 整体降级；而指标口径要求"坏行跳过、能算多少算多少"，两种失败语义不同，
     // 不能共用同一份解析结果。history/dispositions 在这里按账本目录配对后交给纯函数计算。
-    const metricLedger = await readMetricLedger(projectPath, { reviewStorage: settings.reviewStorage })
+    const [metricLedger, dora] = await Promise.all([
+      readMetricLedger(projectPath, { reviewStorage: settings.reviewStorage }),
+      readDoraData(projectPath),
+    ])
     if (metricLedger.badLines > 0) {
       evidence.warnings = Array.isArray(evidence.warnings) ? evidence.warnings : []
       evidence.warnings.push({
@@ -776,6 +724,7 @@ export function apply(ctx, config = {}) {
       dispositions: metricLedger.dispositions,
       now: generatedAt,
       windowDays: Number.isInteger(options.windowDays) ? options.windowDays : undefined,
+      dora,
     })
     // 团队泳道是附加信息：readTeam 内部兜住所有服务异常，读不到只影响右栏那一条。
     // 这里再兜一层，是为了任何意外都别把整个详情页打挂。
@@ -1051,12 +1000,16 @@ export function apply(ctx, config = {}) {
     approveDecision: (projectPath, iterationId, gate) => approveDecision(projectPath, iterationId, gate),
     setAcceptanceResult: (projectPath, input) => setAcceptanceResult(projectPath, input),
     takeAcceptanceScreenshot: (projectPath, input) => takeAcceptanceScreenshot(projectPath, input),
+    setWorkflow: (projectPath, workflow) => setWorkflow(projectPath, workflow),
+    initializeTrellis: (projectPath) => initializeTrellis(ctx, projectPath),
   }
   const initHandler = createInitHandler(writeDeps)
   const approveHandler = createApproveHandler(writeDeps)
   const decisionHandler = createDecisionHandler(writeDeps)
   const acceptanceResultHandler = createAcceptanceResultHandler(writeDeps)
   const acceptanceScreenshotHandler = createAcceptanceScreenshotHandler(writeDeps)
+  const workflowHandler = createWorkflowHandler(writeDeps)
+  const trellisHandler = createTrellisHandler(writeDeps)
 
   const retryAttempts = Number.isFinite(settings.panelRetryAttempts) ? Math.max(1, Math.trunc(settings.panelRetryAttempts)) : 10
   const retryMs = Number.isFinite(settings.panelRetryMs) ? Math.max(1, Math.trunc(settings.panelRetryMs)) : 500
@@ -1113,6 +1066,20 @@ export function apply(ctx, config = {}) {
         kind: 'exact',
         path: `${ROUTE_PREFIX}/acceptance-screenshot`,
         handler: acceptanceScreenshotHandler,
+      }),
+    )
+    scope.effect(() =>
+      webServer.register({
+        kind: 'exact',
+        path: `${ROUTE_PREFIX}/workflow`,
+        handler: workflowHandler,
+      }),
+    )
+    scope.effect(() =>
+      webServer.register({
+        kind: 'exact',
+        path: `${ROUTE_PREFIX}/trellis-init`,
+        handler: trellisHandler,
       }),
     )
     return true
