@@ -375,3 +375,11 @@ DSH 的 skill 作用域 = **全局（`DSH_HOME/skills` + `~/.agents/skills`）+ 
 - **签核状态可见**：阶段详情直接显示「需要你确认」的已签核 / 未签核与时间（数据来自 `approvals.json` 的 decisions；读不到按未签处理），不用回头翻文件。
 - **团队泳道可见**：右栏「团队」按项目 cwd 列出会话与子代理（名字 / 角色 / 层级 / 在线或空闲），子代理按层级缩进；只读，Host 未暴露 sessions / agents 时显示「读不到」，不伪装成 0 人。
 - 测试：**459 个用例全绿**（新增 `test/recommend.test.js`、`test/team.test.js` 与 model / client-smoke 静态断言）。
+
+### 5.2 P3 落地：交付指标 + 周报导出（2026-11-23）
+
+- **交付指标**：面板主区「项目进度」之后新增模块——交付周期 / 近 7 天发布 / 返工率 / 验收通过率四张数卡 + 修复时长 / 待修问题两条小指标。
+  全部是**代理口径**（项目本地的执行回执 + 审核账本 + 验收表），没有 CI / 发布系统 / 线上监控数据：数据不足显示 `—` 并在 tooltip 说明原因，绝不补 0；指标定义短句随数据一起下发。
+- **周报导出**：`GET /delivery-cockpit/api/report?path=…&days=7|14|30` 返回 Markdown（概览 / 交付指标 / 功能进度 / 验收 / 代码检查 / 最近动态 / 下一步），表后列**数据缺口**与代理口径脚注；header「导出周报」一键下载，默认 7 天（配置键 `reportDays`）。
+- 口径与数据源写在 `docs/IMPLEMENTATION.md` §3.22；**这张表不代表线上 DORA**，只用于看本地交付趋势与数据缺口。
+- 测试：**505 个用例全绿**（新增 `test/metrics.test.js`、`test/report.test.js`，以及 route / model / client-smoke 的增量断言）。

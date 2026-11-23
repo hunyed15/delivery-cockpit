@@ -10,6 +10,8 @@
         # 审核账本口径：auto = 有 .trellis 任务账本用 trellis，否则用本地 .dsh/claude-review/ledger。
         # 驾驶舱只读账本，不写；读不到就不做功过判定，绝不猜。
         reviewStorage: auto
+        # 周报导出的默认窗口（天）：只接受 7 / 14 / 30；面板「导出周报」固定带 days=7。
+        reportDays: 7
         # ---- 独立评审引擎（原 @hunyed15/project-cockpit 已并入本插件）----
         # 引擎路径：留空自动探测 <项目>/tools/claude-review → <项目>/.dsh/claude-review → 插件自带 scripts/。
         enginePath: ''

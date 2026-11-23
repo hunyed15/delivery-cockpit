@@ -17,7 +17,7 @@ const PROJECT = resolve(tmpdir(), 'delivery-cockpit-route-fixture')
 const OTHER = resolve(tmpdir(), 'delivery-cockpit-not-registered')
 
 function makeDeps(overrides = {}) {
-  const calls = { detail: [], plan: [], apply: [], approve: [], decision: [], acceptance: [], shot: [], screenshot: [] }
+  const calls = { detail: [], plan: [], apply: [], approve: [], decision: [], acceptance: [], shot: [], screenshot: [], report: [] }
   const deps = {
     listWorkspaces: async () => [{ id: 'w1', title: 'demo', path: PROJECT }],
     resolveWorkspace: async (path) => (path === PROJECT ? { id: 'w1', title: 'demo', path: PROJECT } : null),
@@ -28,6 +28,13 @@ function makeDeps(overrides = {}) {
     readDetail: async (path) => {
       calls.detail.push(path)
       return { ok: true, project: { path, name: 'demo' } }
+    },
+    // 周报：与 /panel 同一道读授权；返回 markdown + 下载文件名。
+    readReport: async (path, options) => {
+      calls.report.push([path, options])
+      // 与真实 index.readReport 同语义：没给 days 时按配置默认 7 天。
+      const days = options && options.days !== undefined ? options.days : 7
+      return { markdown: `# demo 项目周报\n\n- days: ${days}\n`, filename: 'demo-weekly-2026-11-23.md' }
     },
     planInit: async (path) => {
       calls.plan.push(path)
@@ -164,6 +171,88 @@ test('GET /panel 已登记工作区返回面板', async () => {
   assert.equal(body.ok, true)
   assert.equal(body.panel.project.name, 'demo')
   assert.deepEqual(calls.detail, [PROJECT])
+})
+
+test('GET /report：200 + markdown 类型 + 附件下载头，days 透传', async () => {
+  const { deps, calls } = makeDeps()
+  const response = await createRoutes(deps).handle(get(`${BASE}/report?path=${encodeURIComponent(PROJECT)}&days=7`))
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-type'), 'text/markdown; charset=utf-8')
+  assert.equal(response.headers.get('cache-control'), 'no-store')
+  const disposition = response.headers.get('content-disposition')
+  assert.match(disposition, /^attachment;/)
+  assert.ok(disposition.includes('filename="demo-weekly-2026-11-23.md"'), `ASCII 文件名要逐字：${disposition}`)
+  assert.ok(disposition.includes("filename*=UTF-8''demo-weekly-2026-11-23.md"), '同时给 RFC 5987 文件名')
+  assert.match(await response.text(), /^# demo 项目周报/)
+  assert.deepEqual(calls.report, [[PROJECT, { days: 7 }]])
+  assert.equal(calls.detail.length, 0, '周报不重复走 /panel')
+})
+
+test('GET /report：days=14 生效，缺省 days 默认 7', async () => {
+  const { deps, calls } = makeDeps()
+  const routes = createRoutes(deps)
+  const fortnight = await routes.handle(get(`${BASE}/report?path=${encodeURIComponent(PROJECT)}&days=14`))
+  assert.equal(fortnight.status, 200)
+  assert.match(await fortnight.text(), /days: 14/)
+  const defaulted = await routes.handle(get(`${BASE}/report?path=${encodeURIComponent(PROJECT)}`))
+  assert.equal(defaulted.status, 200)
+  assert.match(await defaulted.text(), /days: 7/)
+  assert.deepEqual(calls.report, [
+    [PROJECT, { days: 14 }],
+    [PROJECT, {}],
+  ])
+})
+
+test('GET /report：days=3 直接 400，不读盘', async () => {
+  const { deps, calls } = makeDeps()
+  const routes = createRoutes(deps)
+  const response = await routes.handle(get(`${BASE}/report?path=${encodeURIComponent(PROJECT)}&days=3`))
+  assert.equal(response.status, 400)
+  assert.deepEqual(await response.json(), { ok: false, error: 'bad-days' })
+  // 非整数 / 带尾巴 / 进制写法的 days 也不做"猜一个数字"。
+  for (const bad of ['7abc', '7.5', '-7', 'foo', '0x7', '0b111', ' 7 天']) {
+    const denied = await routes.handle(get(`${BASE}/report?path=${encodeURIComponent(PROJECT)}&days=${bad}`))
+    assert.equal(denied.status, 400, `days=${bad} 必须是 400`)
+    assert.deepEqual(await denied.json(), { ok: false, error: 'bad-days' })
+  }
+  assert.equal(calls.report.length, 0, '参数不合法时不能读盘')
+})
+
+test('GET /report：未登记 403、缺 path 400，且都不调用 readReport', async () => {
+  const { deps, calls } = makeDeps()
+  const routes = createRoutes(deps)
+  const denied = await routes.handle(get(`${BASE}/report?path=${encodeURIComponent(OTHER)}&days=7`))
+  assert.equal(denied.status, 403)
+  assert.deepEqual(await denied.json(), { ok: false, error: 'workspace-not-allowed' })
+  const missing = await routes.handle(get(`${BASE}/report?days=7`))
+  assert.equal(missing.status, 400)
+  assert.deepEqual(await missing.json(), { ok: false, error: 'missing-path' })
+  assert.equal(calls.report.length, 0)
+})
+
+test('GET /report：中文项目名用 RFC 5987 编码，header 本身保持 ASCII', async () => {
+  const { deps } = makeDeps({
+    readReport: async () => ({ markdown: '# 客户管理 项目周报\n', filename: '客户管理-weekly-2026-11-23.md' }),
+  })
+  const response = await createRoutes(deps).handle(get(`${BASE}/report?path=${encodeURIComponent(PROJECT)}`))
+  assert.equal(response.status, 200)
+  const disposition = response.headers.get('content-disposition')
+  assert.ok(
+    disposition.includes("filename*=UTF-8''%E5%AE%A2%E6%88%B7%E7%AE%A1%E7%90%86-weekly-2026-11-23.md"),
+    `中文文件名要按 RFC 5987 编码：${disposition}`,
+  )
+  assert.match(disposition, /filename="[^"]*weekly-2026-11-23\.md"/, '同时留纯 ASCII 回退名')
+})
+
+test('GET /report：读失败转 500 JSON，不是连接中断', async () => {
+  const { deps } = makeDeps({
+    readReport: async () => {
+      throw new Error('boom')
+    },
+  })
+  const response = await createRoutes(deps).handle(get(`${BASE}/report?path=${encodeURIComponent(PROJECT)}`))
+  assert.equal(response.status, 500)
+  assert.deepEqual(await response.json(), { ok: false, error: 'boom' })
 })
 
 test('GET /panel 的 /workspaces 失败要转成 500 JSON，不是抛给载体', async () => {

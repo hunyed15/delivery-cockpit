@@ -529,7 +529,7 @@ h1.dc-title { margin:0; font-size:15px; line-height:1.35; font-weight:600; lette
 .dc-btn {
   appearance:none; display:inline-flex; align-items:center; justify-content:center; gap:6px;
   height:30px; padding:0 12px; border-radius:8px; border:1px solid var(--dsw-alias-border-l2);
-  background:transparent; color:var(--dsw-alias-label-primary);
+  background:transparent; color:var(--dsw-alias-label-primary); text-decoration:none;
   font:inherit; font-size:13px; font-weight:600; line-height:1; cursor:pointer; white-space:nowrap;
   transition:background-color .15s ease-out, border-color .15s ease-out, color .15s ease-out, transform .12s ease-out;
 }
@@ -688,6 +688,30 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:600; letter-
 .dc-stage-list { margin:0; padding-left:16px; display:flex; flex-direction:column; gap:2px; color:var(--dsw-alias-label-primary); overflow-wrap:anywhere; }
 .dc-stage-caps { display:flex; flex-wrap:wrap; gap:6px; }
 .dc-stage-empty { color:var(--dsw-alias-label-secondary); }
+
+/* ---------- ③½ 交付指标（代理口径）：4 张数卡 + 2 条小指标 ---------- */
+.dc-metric-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+.dc-metric {
+  display:flex; flex-direction:column; gap:2px; min-width:0; padding:10px 12px;
+  border:1px solid var(--dsw-alias-border-l1); border-radius:8px; background:var(--dsw-alias-bg-layer-1);
+}
+.dc-metric-label { font-size:11px; font-weight:600; color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere; }
+.dc-metric-value {
+  font-size:18px; font-weight:600; line-height:1.25; color:var(--dsw-alias-label-primary);
+  font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; overflow-wrap:anywhere;
+}
+.dc-metric-value-null { color:var(--dsw-alias-label-secondary); }
+.dc-metric-mini-row {
+  display:flex; gap:4px 18px; flex-wrap:wrap; margin-top:10px;
+  font-size:12px; color:var(--dsw-alias-label-secondary);
+}
+.dc-metric-mini { display:inline-flex; align-items:baseline; gap:6px; min-width:0; }
+.dc-metric-mini-value {
+  color:var(--dsw-alias-label-primary); font-weight:600;
+  font-variant-numeric:tabular-nums; font-feature-settings:"tnum";
+}
+.dc-metric-mini-value-null { color:var(--dsw-alias-label-secondary); }
+.dc-metric-note { margin:8px 0 0; font-size:11.5px; color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere; }
 
 /* ---------- ④ 功能 & 待修问题账 ---------- */
 .dc-decision { margin:0 0 12px; padding:12px 14px; border-radius:8px;
@@ -1193,6 +1217,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
   .dc-feature-row, .dc-acc-row { grid-template-columns:minmax(0,1fr); }
   .dc-feature-side { flex-wrap:wrap; }
   .dc-feature-progress { width:40px; }
+  .dc-metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .dc-metric-value { font-size:16px; }
   .dc-feature-side { justify-content:flex-start; flex-wrap:wrap; }
   .dc-acc-actions { justify-content:flex-start; flex-wrap:wrap; }
   .dc-feature-row { min-height:0; }
@@ -2642,6 +2668,106 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       )
     }
 
+    // ---------- ③½ 交付指标（P3）：代理口径 ----------
+    //
+    // 指标由 Host 的 lib/metrics.js 算好下发（detail.metrics）。客户端只负责显示：
+    // - 数据不足（value=null）显示「—」并把口径/缺口原因放进 title，不显示 0；
+    // - 0 是合法值（近 7 天确实没发布），照常显示 0；
+    // 面板里不出现技术账本/引擎词汇，口径短句直接来自 Host。
+    // 指标名走人话词表：契约里的库存指标在面板统一叫「待修问题」。
+    const METRIC_LABELS = {
+      leadTimeHours: '交付周期',
+      deploymentFrequency7d: '近 7 天发布',
+      changeFailureRate: '返工率',
+      reviewFixHours: '修复时长',
+      acceptanceRate: '验收通过率',
+      blockingInventory: '待修问题',
+    }
+
+    // 小时类指标超过 2 天改用「天」显示，避免「168 小时」这种要心算的数字。
+    function formatMetricValue(metric, key) {
+      const value = metric && typeof metric.value === 'number' && Number.isFinite(metric.value) ? metric.value : null
+      if (value === null) return null
+      if (key === 'leadTimeHours' || key === 'reviewFixHours') {
+        return value >= 48 ? `${Number((value / 24).toFixed(1))} 天` : `${Number(value.toFixed(1))} 小时`
+      }
+      if (key === 'deploymentFrequency7d') return `${value} 次`
+      if (key === 'blockingInventory') return `${value} 项`
+      // 比率保留整数百分比：面板上「33%」比「32.6%」更好读。
+      return `${Math.round(value * 100)}%`
+    }
+
+    function metricTitle(metric, key, unavailableMap) {
+      const parts = []
+      if (metric && metric.definition) parts.push(metric.definition)
+      const value = metric && typeof metric.value === 'number' ? metric.value : null
+      if (unavailableMap[key]) parts.push(unavailableMap[key])
+      if (metric && Number.isInteger(metric.sample)) parts.push(`样本 ${metric.sample}`)
+      return parts.length > 0 ? parts.join(' · ') : '数据不足'
+    }
+
+    function MetricsSection(props) {
+      const metrics = props.metrics || null
+      const values = (metrics && metrics.metrics) || {}
+      const unavailable = asArray(metrics && metrics.unavailable)
+      const unavailableMap = {}
+      for (const item of unavailable) {
+        if (item && typeof item.metric === 'string') unavailableMap[item.metric] = item.reason || '数据不足'
+      }
+      const cards = ['leadTimeHours', 'deploymentFrequency7d', 'changeFailureRate', 'acceptanceRate']
+      const minis = ['reviewFixHours', 'blockingInventory']
+
+      const valueNode = (key, className) => {
+        const metric = values[key] || null
+        const text = formatMetricValue(metric, key)
+        const valueClass = text === null ? `${className} dc-metric-value-null` : className
+        return h('span', { className: valueClass, title: metricTitle(metric, key, unavailableMap) }, text === null ? '—' : text)
+      }
+
+      const note = metrics
+        ? unavailable.length > 0
+          ? `有 ${unavailable.length} 项数据还不够，先用 — 占位。`
+          : '指标为代理口径：来自项目本地记录，不是线上监控（发布看近 7 天、返工率看近 30 天，其余看全部历史）。'
+        : '还没有算出交付指标，随项目动态与检查记录补齐后出现。'
+
+      return h(
+        Module,
+        {
+          title: '交付指标',
+          icon: 'progress',
+          tone: metrics ? 'brand' : 'idle',
+          // 不写「近 N 天」：六项里只有发布/返工率是窗口口径，其余看全部历史，
+          // 一个窗口前缀会把整组指标说成同一口径（误导）。窗口细节放在每项 tooltip 与脚注里。
+          meta: metrics ? '代理口径' : '数据不足',
+        },
+        h(
+          'div',
+          { className: 'dc-metric-grid' },
+          cards.map((key, index) =>
+            h(
+              'div',
+              { key: `metric${index}`, className: 'dc-metric' },
+              h('span', { className: 'dc-metric-label' }, METRIC_LABELS[key]),
+              valueNode(key, 'dc-metric-value'),
+            ),
+          ),
+        ),
+        h(
+          'div',
+          { className: 'dc-metric-mini-row' },
+          minis.map((key, index) =>
+            h(
+              'span',
+              { key: `metricMini${index}`, className: 'dc-metric-mini' },
+              h('span', null, METRIC_LABELS[key]),
+              valueNode(key, 'dc-metric-mini-value'),
+            ),
+          ),
+        ),
+        h('p', { className: 'dc-metric-note' }, note),
+      )
+    }
+
     // ---------- 详情 · ④ 功能 & 待修问题账 ----------
     //
     // 功能状态由 Host 用三路证据（验收 / 归属 bug / 动态）推导后下发，这里只如实呈现：
@@ -4052,6 +4178,16 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
             : null,
           props.panelLoading ? h('span', { className: 'dc-sr', role: 'status' }, '正在刷新') : null,
           h(
+            'a',
+            {
+              className: 'dc-btn',
+              // 下载交给浏览器处理（Content-Disposition: attachment），不走 JS fetch。
+              href: `${API}/report?path=${encodeURIComponent(project.path || props.selectedPath || '')}&days=7`,
+              title: '下载最近 7 天的项目周报（Markdown）',
+            },
+            '导出周报',
+          ),
+          h(
             'button',
             {
               type: 'button',
@@ -4175,6 +4311,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                 iteration: panel.iteration,
                 action,
               }),
+              h(MetricsSection, { metrics: panel.metrics }),
               h(FeatureBoardSection, {
                 features: panel.features,
                 acceptance: panel.acceptance,

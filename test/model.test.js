@@ -23,6 +23,7 @@ const DETAIL_KEYS = [
   'generatedAt',
   'iteration',
   'ledger',
+  'metrics',
   'nextAction',
   'ok',
   'progression',
@@ -162,6 +163,7 @@ function build(ev, options = {}) {
     generatedAt: '2026-11-20T12:00:00.000Z',
     features: options.features,
     team: options.team,
+    metrics: options.metrics,
   })
 }
 
@@ -1081,4 +1083,55 @@ test('team：只读投影（无输入 not-read / 服务缺失 / 正常 / 截断�
   const capped = teamSection(many)
   assert.equal(capped.agents.length, 20)
   assert.equal(capped.truncated, true)
+})
+
+test('交付指标（P3）：metrics 透传；缺省为 null；0 与 null 严格区分', () => {
+  const none = build(evidence())
+  assert.equal(none.metrics, null, 'Host 没算指标时为 null，客户端据此不渲染指标模块')
+
+  const metrics = {
+    generatedAt: '2026-11-20T12:00:00.000Z',
+    windowDays: 30,
+    metrics: {
+      leadTimeHours: { value: 6.5, unit: 'hours', sample: 2, definition: '口径', source: 'receipts' },
+      deploymentFrequency7d: { value: 0, unit: 'releases', sample: 0, definition: '口径', source: 'receipts' },
+      changeFailureRate: { value: null, unit: 'ratio', sample: 0, definition: '口径', source: 'review-history' },
+      reviewFixHours: { value: 3, unit: 'hours', sample: 1, definition: '口径', source: 'review-history+dispositions' },
+      acceptanceRate: { value: 0.5, unit: 'ratio', sample: 2, definition: '口径', source: 'acceptance' },
+      blockingInventory: { value: 2, unit: 'items', sample: 2, definition: '口径', source: 'review+acceptance' },
+    },
+    unavailable: [{ metric: 'changeFailureRate', reason: '近 30 天没有可判定的检查轮次' }],
+  }
+  const model = build(evidence(), { metrics })
+  assert.equal(model.metrics.windowDays, 30)
+  assert.equal(model.metrics.generatedAt, '2026-11-20T12:00:00.000Z')
+  assert.equal(model.metrics.metrics.leadTimeHours.value, 6.5)
+  assert.equal(model.metrics.metrics.deploymentFrequency7d.value, 0, '0 是合法值，不能抹成 null')
+  assert.equal(model.metrics.metrics.changeFailureRate.value, null, '数据不足保持 null')
+  assert.equal(model.metrics.metrics.leadTimeHours.definition, '口径')
+  assert.equal(model.metrics.metrics.leadTimeHours.sample, 2)
+  assert.deepEqual(model.metrics.unavailable, [
+    { metric: 'changeFailureRate', reason: '近 30 天没有可判定的检查轮次' },
+  ])
+  assert.deepEqual(Object.keys(model.metrics.metrics), [
+    'leadTimeHours',
+    'deploymentFrequency7d',
+    'changeFailureRate',
+    'reviewFixHours',
+    'acceptanceRate',
+    'blockingInventory',
+  ])
+
+  // 缺项给 null；库存类即使 value=null 也按 0（与 metrics.js 一致：0 是合法值）。
+  const partial = build(evidence(), {
+    metrics: {
+      windowDays: 7,
+      metrics: { blockingInventory: { value: null, unit: 'items', sample: 0 } },
+      unavailable: [{ metric: 'blockingInventory', reason: '检查与验收都还没读到' }],
+    },
+  })
+  assert.equal(partial.metrics.windowDays, 7)
+  assert.equal(partial.metrics.metrics.blockingInventory.value, null, 'model 不再把库存 null 强转 0')
+  assert.equal(partial.metrics.metrics.leadTimeHours, null)
+  assert.deepEqual(partial.metrics.unavailable, [{ metric: 'blockingInventory', reason: '检查与验收都还没读到' }])
 })

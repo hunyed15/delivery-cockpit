@@ -831,7 +831,65 @@ features: {
 
 `package.json` 的 `dependencies`：`@agentclientprotocol/claude-agent-acp ^0.106.0`、`@agentclientprotocol/sdk ^2.6.0`；`files` 增加 `scripts`。`acp-review.mjs` 按包名解析这两个依赖，所以本地源码安装前要在插件目录执行 `npm install`（装好后 `node_modules/@agentclientprotocol/*` 存在）。
 
-测试：`test/review-tools.test.js`（14 条：schema/render、命令行拼装、结论归一、旧引擎回退、subprocess 缺失、dryRun 真实干跑（临时 git 仓库，确认不落 history/state/报告）、处置账本、hook 安装与备份）。当前 **473 个用例全绿**。
+测试：`test/review-tools.test.js`（14 条：schema/render、命令行拼装、结论归一、旧引擎回退、subprocess 缺失、dryRun 真实干跑（临时 git 仓库，确认不落 history/state/报告）、处置账本、hook 安装与备份）。
+
+### 3.22 P3 · 交付指标（DORA 代理口径）+ 项目周报导出
+
+> 目标：面板能回答「这一轮交付得多快、返工多少、堵在哪」，并能一键导出 Markdown 周报。
+> **全部是代理指标**：插件只有项目本地的执行回执 / 审核账本 / 验收表，拿不到 CI、发布系统与线上监控；
+> 每个指标都带 `definition`（一句人话口径）与 `source`，面板 tooltip 与周报脚注都会亮出来，不冒充实测。
+
+#### ① `lib/metrics.js`（纯逻辑 + 一个只读入口）
+
+| 指标 | 公式（代理） | 数据源 | 空值口径 |
+|---|---|---|---|
+| `leadTimeHours` | 按 `iteration_id` 分组（排除 `bootstrap` 与审计事件 `event`），迭代内**最早回执 `at` → 该迭代最后一条 `release`+`completed` 的 `at`** 的小时数，取已发布迭代的中位数 | receipts | 无已发布迭代 ⇒ `value:null` |
+| `deploymentFrequency7d` | `now-7d..now`（含端点）内 `stage:'release' && status:'completed'` 回执数 | receipts | **0 是合法值**（`value:0, sample:0`） |
+| `changeFailureRate` | 近 `windowDays`（默认 30）内 `verdict ∈ {fix, reject}` 的行数 / 窗口内 verdict 可判定的行数 | review-history | 窗口内无行 ⇒ `null` |
+| `reviewFixHours` | 对 verdict 为 fix/reject 的轮次，找同轮最早 `status:'fixed'` 处置的 `at`，取（fixed − review）小时数的中位数 | review-history + dispositions | 无配对 ⇒ `null` |
+| `acceptanceRate` | `passed / (passed + failed + blocked + stale)`；stale 有结果但**不算通过** | acceptance | 分母 0 ⇒ `null` |
+| `blockingInventory` | `review.blocking + acceptance.failed + acceptance.blocked`（null 按 0，`sample` 记已知几路） | review + acceptance | 恒为数字 |
+
+- **坏数据一律跳过**：`at` 解析失败、`round` 不是整数、fixed 早于 review（时钟回拨）都不参与，绝不拿生成时间兜底。
+- **0 与 null 严格区分**：数据不足是 `null` 并进 `unavailable: [{metric, reason}]`；"近 7 天确实没发布"是 `0`。
+- 中位数：偶数取中间两个平均；小时数保留 2 位、比率保留 4 位小数（客户端/周报再按整数百分比展示）。
+- `readMetricLedger(projectPath, {reviewStorage})`：读 `history.jsonl` + `dispositions.jsonl`，返回 `{history, dispositions, dirs, badLines, truncated}`。
+  - 口径与 `lib/evidence.js` 一致：`trellis` 优先（扫 `.trellis/tasks/<task>/review`，最多 200 个任务目录），没有才回退本地 `.dsh/claude-review/ledger/review`；`reviewStorage` 可强制 `trellis` / `local`。
+  - 容忍坏行（跳过并计入 `badLines`）与缺文件（返回空数组）；每份账本最多读 **2000 行**（取尾部，账本追加写）、单文件 **2 MiB** 上限，超限置 `truncated`。
+  - 行上打 `ledger` 目录标签：`reviewFixHours` 只配对**同一账本内**的同号轮次，避免把 A 任务的处置安到 B 任务头上。
+
+#### ② `lib/report.js`（纯函数，无 I/O）
+
+`buildWeeklyReport({ detail, metrics, days, now })` → Markdown：标题（`# <项目名> 项目周报（YYYY-MM-DD ~ YYYY-MM-DD）`，UTC 日期）+ 七个区块
+（概览 / 交付指标 / 功能进度 / 验收 / 代码检查 / 最近动态 / 下一步）。
+
+- 指标表三列（指标 | 值 | 说明/来源），`null` 显示 `—`，表后列 **数据缺口**，并附代理口径脚注；
+- 空数据写「无」/「—」，**不补 0**；表格单元格的 `|` 与换行转义（定义里有 `|` 也不会打散表格）；
+- 验收最多列 20 条未通过（含 `pass` 但 stale 的"需要重新确认"），代码检查给"最近结论"一句人话；
+- 最近动态取 `detail.ledger.receipts` 最近 10 条；下一步带指令原文（指令含 ``` 时自动加长围栏）。
+- `reportFileName(projectName, now)`：项目名做文件名安全处理（路径分隔符/控制字符换 `-`，空名回退 `project`）。
+
+#### ③ `GET /delivery-cockpit/api/report?path=...&days=7`
+
+- 与 `/panel` **同一道读授权**：`authorize(deps, path)`，缺 path ⇒ 400 `missing-path`，未登记 ⇒ 403 `workspace-not-allowed`；
+- `days` 只接受 `7 / 14 / 30`，其它（含 `7abc` / `7.5`）一律 400 `bad-days`（参数不合法时不读盘）；缺省不硬编码，交给 `readReport` 按配置 `reportDays`（默认 `7`）决定，配置覆盖才有效；
+- 调 `deps.readReport(auth.path, days === undefined ? {} : { days })`，返回 `{ markdown, filename, days }`；读失败走统一 500 JSON；
+- 响应头：`Content-Type: text/markdown; charset=utf-8`、`Cache-Control: no-store`、
+  `Content-Disposition: attachment; filename="<项目名>-weekly-<YYYY-MM-DD>.md"; filename*=UTF-8''<percent-encoded>`。
+  纯 ASCII 项目名时 `filename=` 与契约逐字一致；中文项目名按 RFC 5987 进 `filename*`（HTTP 头只能是 ByteString，见 §5 偏差）。
+- `index.js` 的 `readReport` 复用 `readDetailWithEvidence`（详情 + evidence + metrics 同一条读盘链），不再扫第二遍项目文件；审核账本按指标口径单独读一次（为什么不能与 evidence 共用，见 §5 偏差）；
+- 配置：`reportDays` 默认 `7`（`DEFAULT_CONFIG` + `cordis.patch.yml`），面板入口固定带 `days=7`。
+
+#### ④ 面板（`client.js`）
+
+- 主区新增「交付指标」模块，位置在「项目进度」之后、「功能」之前：4 张数卡（交付周期 / 近 7 天发布 / 返工率 / 验收通过率）+ 2 条小指标（修复时长 / 待修问题）。
+- 数据来自 `detail.metrics`（`lib/model.js` 的 `metricsSection` 透传；Host 没算 ⇒ `null`，模块显示"数据不足"而不是 0）。
+  `value:null` 渲染 `—` 并给弱化样式，`title` 带口径短句 + 缺口原因 + 样本数；`0` 正常显示 `0`；百分比保留整数。
+- header 增加 `<a class="dc-btn" href="${API}/report?path=…&days=7">导出周报</a>`：下载由浏览器按 `Content-Disposition` 处理，不新增 `fetch`。
+- 样式只用 host 主题 token；4 卡网格在窄屏（容器 ≤700px）降为 2 列，360 宽不溢出。
+- 词表沿用现有约定（不出现 引擎正常 / 账本健康 / 门禁 / 回执 / 阻塞 / 失效 / 未验 / 功能账 / 缺陷 / 待决策 等）。
+
+测试：`test/metrics.test.js`（12 条：中位数/窗口边界/0 vs null/坏时间/跨账本配对/验收 stale/库存 sample/真实临时目录的本地与 Trellis 账本读取、坏行、2000 行上限）、`test/report.test.js`（8 条：七区块/日期范围/null 与 0/缺口脚注/空数据不补 0/管道符转义/截断/文件名）、`test/route.test.js` +6（/report 授权、下载头、days=14、days=3 ⇒ 400、中文名 RFC 5987、读失败 500）、`test/model.test.js` +1（metrics 透传与 null/0）、`test/client-smoke.test.js` +3（指标模块文案/顺序/导出入口）。全量 `node --test "test/*.test.js"` = **505 个用例全绿**。
 
 ## 5. 实现偏差记录（实现期确认，均已在测试中固化）
 
@@ -947,3 +1005,16 @@ features: {
 - 只注册两处 slot（`main` + `sidebar.panellist`），不注册 `conversation.*` / `shell.overlay`（Phase 1 不做提醒与通栏）。
 - `ledger.badLines > 0` 不置 `degraded`（§3.6 规定坏行只计数），只出顶部提示，主按钮仍可用。
 - 降级（`confirm-data`）时 `buttons: []`，界面呈现原因 + 重试，而不是一个被禁用的主按钮。
+
+**交付指标 + 周报（P3）**
+
+- `computeMetrics.windowDays` 只接受 `7 / 30`：`/report` 的 `days=14` 只影响标题日期范围，不改变"返工率 = 近 30 天"的代理口径（不为了让参数看起来有用而偷偷改指标）。
+- `blockingInventory` 在 `metrics.js` 里恒为数字（null 按 0），`model.js` 也把 `value:null` 归一成 0：库存为 0 是合法结论；但 `sample` 如实记"已知几路"，数据全缺时 `unavailable` 仍会写"检查与验收都还没读到"。
+- `deploymentFrequency7d` 的 `sample` 等于 `value`（都是窗口内的发布回执数）——契约没有更细的样本概念，不造一个没含义的数字。
+- **`Content-Disposition` 中文文件名**：HTTP 头值只能是 ByteString，中文直接进 header 会让 `new Response` 抛 `Cannot convert argument to a ByteString`。因此非 ASCII 项目名用 `filename*=UTF-8''<percent-encoded>`，再给一个纯 ASCII 的 `filename=` 回退；纯 ASCII 项目名时两份一致、与契约逐字相符（`filename="demo-weekly-YYYY-MM-DD.md"`）。
+- `readMetricLedger` 返回 **对象** `{history, dispositions, dirs, badLines, truncated}` 而不是单个数组：`reviewFixHours` 必须按"账本目录 + 轮次"配对（只按 round 会把别的任务的处置算进来），两个数组是配对所需的最小信息。
+- 周报日期一律按 **UTC** 取：周报是导出文件，同一份数据在任何时区都应得到相同的标题与文件名（测试也按 UTC 断言）。
+- **指标层单独读一遍审核账本**（不跟 `evidence.review` 共用解析结果）：`evidence` 只回计数，且它把任何坏行当 `read-error` 整段降级；指标口径要求"坏行跳过、能算多少算多少"。两种失败语义不同，共用会让指标因为一行历史坏数据全部变 `null`。代价是面板刷新时账本 I/O 两次（真实项目任务目录很少，可接受）。
+- `acceptanceRate` 的 definition 写明真实分母：`通过（含证据）/（通过+没通过+卡住+需重新确认）`——`stale`（需重新确认）计入分母、`pass` 但没证据的条目不计入，文案与算法一致，避免"有结果但没证据"被误读成已计入。
+- 面板「交付指标」模块 meta 只写「代理口径」不写「近 N 天」：六项里只有发布频率（近 7 天）与返工率（近 30 天）是窗口口径，交付周期/修复时长看全部历史，一个窗口前缀会把整组指标说成同一口径；窗口细节放在每项 tooltip 与脚注。
+

@@ -380,6 +380,58 @@ for (const item of ACCEPTANCE_ITEMS) {
   if (SHOT_DIFFS_BY_ITEM[item.id]) item.shotDiffs = SHOT_DIFFS_BY_ITEM[item.id]
 }
 
+// 交付指标（panel.metrics，P3）：形状照 lib/model.js 的 metricsSection。
+// 刻意留一项 value:null（修复时长配对不上），预览时能同时看到数字、百分比与「—」。
+const METRICS = {
+  generatedAt: new Date(NOW).toISOString(),
+  windowDays: 30,
+  metrics: {
+    leadTimeHours: {
+      value: 19.5,
+      unit: 'hours',
+      sample: 3,
+      definition: '已发布迭代从首条动态到发布的中位时长（代理）',
+      source: 'receipts',
+    },
+    deploymentFrequency7d: {
+      value: 2,
+      unit: 'releases',
+      sample: 2,
+      definition: '近 7 天完成的发布记录数（代理）',
+      source: 'receipts',
+    },
+    changeFailureRate: {
+      value: 0.3333,
+      unit: 'ratio',
+      sample: 6,
+      definition: '近 30 天检查轮次未通过的占比（代理）',
+      source: 'review-history',
+    },
+    reviewFixHours: {
+      value: null,
+      unit: 'hours',
+      sample: 0,
+      definition: '检查未通过到首次修复处置的中位时长（代理）',
+      source: 'review-history+dispositions',
+    },
+    acceptanceRate: {
+      value: 0.25,
+      unit: 'ratio',
+      sample: 4,
+      definition: '通过（含证据）/（通过+没通过+卡住+需重新确认）',
+      source: 'acceptance',
+    },
+    blockingInventory: {
+      value: 2,
+      unit: 'items',
+      sample: 3,
+      definition: '未处置检查问题 + 验收没通过/卡住',
+      source: 'review+acceptance',
+    },
+  },
+  unavailable: [{ metric: 'reviewFixHours', reason: '还没有能配对的检查处置记录' }],
+}
+
 function makePanel(overrides = {}) {
   const base = {
     ok: true,
@@ -451,6 +503,7 @@ function makePanel(overrides = {}) {
     },
     warnings: [],
     features: FEATURES,
+    metrics: METRICS,
     dataGaps: [{ source: 'tasks', message: '任务状态来自 AI 自报，不是实时读取' }],
     degraded: { flag: false, reasons: [] },
   }

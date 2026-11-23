@@ -8,7 +8,7 @@
  */
 import { readFile, readdir, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { addAcceptanceEvidence, draftAcceptance, readAcceptanceFile, setAcceptanceResult } from './lib/acceptance.js'
@@ -17,10 +17,12 @@ import { checkStageCapability } from './lib/capabilities.js'
 import { readEvidence } from './lib/evidence.js'
 import { buildFeatureBoard, extractFeatures, readPrdText } from './lib/features.js'
 import { applyInit, planInit } from './lib/init.js'
+import { computeMetrics, readMetricLedger } from './lib/metrics.js'
 import { buildDetailModel, buildOverviewRow } from './lib/model.js'
 import { entryForStage, loadPlaybook, resolveCapabilities, STAGE_DEFS } from './lib/playbook.js'
 import { readProjectCard } from './lib/project-card.js'
 import { appendReceipt, STAGES } from './lib/receipts.js'
+import { buildWeeklyReport, REPORT_DAYS, reportFileName } from './lib/report.js'
 import { REVIEW_DEFAULT_CONFIG, createReviewToolDefinitions } from './lib/review/index.js'
 import { createAcceptanceResultHandler, createAcceptanceScreenshotHandler, createApproveHandler, createDecisionHandler, createInitHandler, createRoutes } from './lib/route.js'
 import { captureScreenshot, writeScreenshot } from './lib/screenshot.js'
@@ -65,6 +67,8 @@ const DEFAULT_CONFIG = {
   transport: REVIEW_DEFAULT_CONFIG.transport,
   // 目标仓库里的引擎接口过旧时，是否允许回退到插件自带的引擎副本。
   allowBundledFallback: REVIEW_DEFAULT_CONFIG.allowBundledFallback,
+  // 周报默认窗口（天）：只接受 7/14/30，面板「导出周报」固定带 days=7，可在这里改默认值。
+  reportDays: 7,
 }
 
 // 与账本常量共用一份枚举：9 阶段迁移后不再手写第二份，避免工具 schema 与 lib 漂移。
@@ -608,7 +612,11 @@ export function apply(ctx, config = {}) {
     missingHints: playbook?.missingHints ?? {},
   })
 
-  const readDetail = async (projectPath) => {
+  /**
+   * 详情 + 证据 + 指标：面板与周报共用同一条读盘链（避免周报再读一遍整棵树）。
+   * 返回对象只在 Host 内部消费；HTTP 层仍只下发 buildDetailModel 的产物。
+   */
+  const readDetailWithEvidence = async (projectPath) => {
     const evidence = await readEvidence(projectPath, { reviewStorage: settings.reviewStorage })
     const loaded = await loadPlaybook(projectPath, await readBuiltinPlaybook())
     // 覆盖文件坏了也要让人看见：合并进 evidence 的 warnings，由模型统一上报。
@@ -638,11 +646,62 @@ export function apply(ctx, config = {}) {
       evidence.warnings.push(warning)
     }
 
+    // 交付指标（P3）：指标层自己读一遍审核账本——evidence 只回计数，且它把坏行当
+    // read-error 整体降级；而指标口径要求"坏行跳过、能算多少算多少"，两种失败语义不同，
+    // 不能共用同一份解析结果。history/dispositions 在这里按账本目录配对后交给纯函数计算。
+    const metricLedger = await readMetricLedger(projectPath, { reviewStorage: settings.reviewStorage })
+    if (metricLedger.badLines > 0) {
+      evidence.warnings = Array.isArray(evidence.warnings) ? evidence.warnings : []
+      evidence.warnings.push({
+        source: 'review',
+        message: `检查记录有 ${metricLedger.badLines} 行读不出来，指标可能偏低`,
+      })
+    }
+    if (metricLedger.truncated) {
+      evidence.warnings = Array.isArray(evidence.warnings) ? evidence.warnings : []
+      evidence.warnings.push({ source: 'review', message: '检查记录超过读取上限，只读了最近的一部分，指标可能偏低' })
+    }
+
     const generatedAt = new Date().toISOString()
+    const metrics = computeMetrics({
+      evidence,
+      history: metricLedger.history,
+      dispositions: metricLedger.dispositions,
+      now: generatedAt,
+    })
     // 团队泳道是附加信息：readTeam 内部兜住所有服务异常，读不到只影响右栏那一条。
     // 这里再兜一层，是为了任何意外都别把整个详情页打挂。
     const team = await readTeam(ctx, projectPath).catch(() => ({ available: false, reason: 'read-error', agents: [] }))
-    return buildDetailModel({ evidence, playbook: loaded.playbook, stageCapabilities, generatedAt, features, team })
+    return {
+      detail: buildDetailModel({ evidence, playbook: loaded.playbook, stageCapabilities, generatedAt, features, team, metrics }),
+      evidence,
+      metrics,
+    }
+  }
+
+  const readDetail = async (projectPath) => (await readDetailWithEvidence(projectPath)).detail
+
+  /**
+   * 周报导出：复用面板的详情链，再补 Markdown 排版。
+   * 返回 `{ markdown, filename, days }`；文件名日期按导出时刻（UTC）落。
+   */
+  const readReport = async (projectPath, options = {}) => {
+    const configuredDays = Number(settings.reportDays)
+    const days = REPORT_DAYS.includes(Number(options?.days))
+      ? Number(options.days)
+      : REPORT_DAYS.includes(configuredDays)
+        ? configuredDays
+        : 7
+    const { detail, metrics } = await readDetailWithEvidence(projectPath)
+    const now = new Date()
+    const markdown = buildWeeklyReport({ detail, metrics, days, now })
+    const projectName =
+      typeof detail?.project?.name === 'string' && detail.project.name.trim() !== ''
+        ? detail.project.name.trim()
+        : typeof projectPath === 'string' && projectPath.trim() !== ''
+          ? basename(projectPath)
+          : ''
+    return { markdown, filename: reportFileName(projectName, now), days }
   }
 
   const readOverview = async () => {
@@ -861,6 +920,8 @@ export function apply(ctx, config = {}) {
     resolveWorkspace,
     readOverview,
     readDetail,
+    // 周报导出（P3）：与 /panel 同一道读授权，返回 markdown + 下载文件名。
+    readReport,
     readShot,
     planInit: (projectPath) => planInit(projectPath, { templatesDir: TEMPLATES }),
     applyInit: async (projectPath) => applyInit(projectPath, await planInit(projectPath, { templatesDir: TEMPLATES })),
@@ -870,6 +931,7 @@ export function apply(ctx, config = {}) {
     resolveWorkspace,
     readOverview,
     readDetail,
+    readReport,
     readShot,
     planInit: (projectPath) => planInit(projectPath, { templatesDir: TEMPLATES }),
     applyInit: async (projectPath) => applyInit(projectPath, await planInit(projectPath, { templatesDir: TEMPLATES })),

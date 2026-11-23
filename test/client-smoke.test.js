@@ -641,3 +641,39 @@ test('团队泳道在 360 窄屏不溢出（可换行 + min-width:0）', () => {
   assert.ok(/\.dc-team-row \{[^}]*min-width:0/.test(css), '行容器必须 min-width:0')
   assert.ok(/\.dc-advice \{[^}]*overflow-wrap:anywhere/.test(css), '建议长文本必须换行')
 })
+
+test('交付指标：主区模块、四个数卡 + 两条小指标、— 兜底与代理口径', () => {
+  assert.ok(source.includes("title: '交付指标'"), '主区要有「交付指标」模块')
+  for (const label of ['交付周期', '近 7 天发布', '返工率', '验收通过率', '修复时长', '待修问题']) {
+    assert.ok(source.includes(label), `缺少指标名：${label}`)
+  }
+  assert.ok(
+    source.includes('h(MetricsSection, { metrics: panel.metrics })'),
+    '指标数据必须来自 model 透传的 panel.metrics',
+  )
+  assert.ok(source.includes("text === null ? '—' : text"), 'value 为 null 时必须渲染成 —（不是 0）')
+  assert.ok(source.includes('dc-metric-value-null'), '— 要走弱化样式，不能和真实数字一样醒目')
+  assert.ok(css.includes('.dc-metric-grid') && css.includes('grid-template-columns:repeat(4,minmax(0,1fr))'), '4 张数卡网格')
+  assert.ok(css.includes('grid-template-columns:repeat(2,minmax(0,1fr))'), '窄屏降成 2 列，360 不溢出')
+  assert.ok(source.includes('dc-metric-mini-row'), '修复时长/待修问题用两行小指标')
+  assert.ok(source.includes('数据不足') && source.includes('代理口径'), '要明说数据不足与代理口径')
+  assert.ok(source.includes("meta: metrics ? '代理口径' : '数据不足'"), '模块 meta 不能写「近 N 天」（六项窗口口径不一致）')
+  assert.ok(source.includes('发布看近 7 天、返工率看近 30 天'), '窗口细节要写在脚注里')
+  assert.ok(source.includes('样本 '), 'title 里要带样本数')
+  // 0 是合法值：只有 null 才显示 —，0 走正常格式化。
+  assert.ok(source.includes("`${Math.round(value * 100)}%`"), '百分比保留整数')
+  assert.ok(!/value\s*===\s*0\s*\?\s*'—'/.test(source), '0 不能被当成空值')
+})
+
+test('交付指标：模块顺序在「项目进度」之后、「功能」之前', () => {
+  const progress = source.indexOf("title: '项目进度'")
+  const metrics = source.indexOf("title: '交付指标'")
+  const features = source.indexOf("title: '功能'")
+  assert.ok(progress >= 0 && metrics > progress && features > metrics, `顺序不对：${progress} / ${metrics} / ${features}`)
+})
+
+test('导出周报：header 有下载入口，直接指向 /report（浏览器下载，不走 fetch）', () => {
+  assert.ok(source.includes('导出周报'), 'header 要有「导出周报」入口')
+  assert.match(source, /href:\s*`\$\{API\}\/report\?path=\$\{encodeURIComponent\(project\.path \|\| props\.selectedPath \|\| ''\)\}&days=7`/, '链接必须带 path 与 days=7')
+  assert.ok(!/fetch\(\s*`\$\{API\}\/report/.test(source), '周报下载不走 fetch')
+})
