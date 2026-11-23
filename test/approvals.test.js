@@ -392,3 +392,27 @@ test('验收签核：result 大小写归一（手写 PASS 与状态机口径一�
     assert.equal(result.ok, true)
   })
 })
+test('并发签核：原型 + 四门同时写，锁串行化后一个都不丢', async () => {
+  await withProject(async (project) => {
+    await writeFile(join(project, 'prototype.html'), '<html></html>', 'utf8')
+    await writePrd(project)
+    await writeArchitecture(project)
+    await writeAcceptance(project, passItems())
+    await writeRelease(project)
+
+    const results = await Promise.all([
+      approvePrototype(project, 'v1.0'),
+      approveDecision(project, 'v1.0', 'scope'),
+      approveDecision(project, 'v1.0', 'architecture'),
+      approveDecision(project, 'v1.0', 'acceptance'),
+      approveDecision(project, 'v1.0', 'release'),
+    ])
+    for (const result of results) assert.equal(result.ok, true, JSON.stringify(result))
+
+    const entry = await storedEntry(project)
+    for (const field of ['prototypeApprovedAt', 'scopeApprovedAt', 'architectureApprovedAt', 'acceptanceApprovedAt', 'releaseApprovedAt']) {
+      assert.equal(typeof entry[field], 'string', '并发写丢了 ' + field)
+      assert.ok(entry[field].length > 0)
+    }
+  })
+})

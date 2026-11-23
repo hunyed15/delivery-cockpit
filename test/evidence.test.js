@@ -743,3 +743,15 @@ test('技术门证据：门内坏 JSON 只影响该门，不把整份 evidence �
   })
 })
 
+
+test('大文件读取：超过 2 MiB 只读前缀并告警（不先整文件读入）', async () => {
+  await withProject(async (project) => {
+    await writeStateText(project, 'acceptance.json', 'x'.repeat(3 * 1024 * 1024))
+    const evidence = await readEvidence(project)
+    assert.ok(
+      evidence.warnings.some((warning) => JSON.stringify(warning).includes('2 MiB')),
+      '超限必须有截断告警',
+    )
+    assert.equal(evidence.ok, true)
+  })
+})

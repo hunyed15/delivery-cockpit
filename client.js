@@ -1690,6 +1690,11 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           if (event.key === 'Enter') {
             const row = event.target.closest ? event.target.closest('[data-kb-row]') : null
             if (!row) return
+            // 焦点在行内按钮/链接/输入等交互元素上时，把 Enter 交还给浏览器（否则会抢掉"通过/撤销"等点击）。
+            const interactive = event.target.closest
+              ? event.target.closest('button, a, summary, input, textarea, select, [role="button"]')
+              : null
+            if (interactive && interactive !== row) return
             // 功能行是原生 button，回车由浏览器处理；验收行是 div[tabindex]，这里手动开合细节。
             if (row.classList.contains('dc-acc-item')) {
               const details = row.querySelector('.dc-acc-more')

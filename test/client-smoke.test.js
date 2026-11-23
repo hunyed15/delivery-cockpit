@@ -677,3 +677,8 @@ test('导出周报：header 有下载入口，直接指向 /report（浏览器�
   assert.match(source, /href:\s*`\$\{API\}\/report\?path=\$\{encodeURIComponent\(project\.path \|\| props\.selectedPath \|\| ''\)\}&days=7`/, '链接必须带 path 与 days=7')
   assert.ok(!/fetch\(\s*`\$\{API\}\/report/.test(source), '周报下载不走 fetch')
 })
+
+test('键盘：Enter 不抢行内按钮/链接的激活', () => {
+  assert.ok(source.includes("event.target.closest('button, a, summary, input, textarea, select, [role=\"button\"]')"), 'Enter 分支必须识别交互元素')
+  assert.ok(source.includes('if (interactive && interactive !== row) return'), '交互元素上的 Enter 要交还浏览器')
+})

@@ -82,3 +82,28 @@ test('IDAT 坏掉 → bad-crc（CRC 先拦下损坏数据）', () => {
   broken[idatDataStart] = broken[idatDataStart] ^ 0xff
   assert.deepEqual(decodePng(broken), { ok: false, error: 'bad-crc' })
 })
+
+test('解码上限：超宽/超大 PNG 直接 too-large，不分配巨大 Buffer', async () => {
+  const { deflateSync } = await import('node:zlib')
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  const chunk = (type, data) => {
+    const typeBuffer = Buffer.from(type, 'ascii')
+    const length = Buffer.alloc(4)
+    length.writeUInt32BE(data.length, 0)
+    const crc = Buffer.alloc(4)
+    crc.writeUInt32BE(crc32(Buffer.concat([typeBuffer, data])), 0)
+    return Buffer.concat([length, typeBuffer, data, crc])
+  }
+  const width = 20000
+  const height = 1
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(width, 0)
+  ihdr.writeUInt32BE(height, 4)
+  ihdr[8] = 8
+  ihdr[9] = 2
+  const raw = Buffer.alloc((width * 3 + 1) * height)
+  const png = Buffer.concat([signature, chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))])
+  const decoded = decodePng(png)
+  assert.equal(decoded.ok, false)
+  assert.equal(decoded.error, 'too-large')
+})

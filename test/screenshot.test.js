@@ -73,3 +73,24 @@ test('writeScreenshot：只写 .dsh/plugin-state/shots/，返回项目相对路�
     await rm(project, { recursive: true, force: true })
   }
 })
+
+test('截图逐跳回环：本机 302 到外网时被拦截，不截外网内容', async (t) => {
+  if (detectBrowser() === null) {
+    t.skip('本机没有 Chrome/Edge，跳过浏览器用例')
+    return
+  }
+  const { createServer } = await import('node:http')
+  const server = createServer((request, response) => {
+    response.writeHead(302, { Location: 'http://example.com/' })
+    response.end()
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const port = server.address().port
+  try {
+    const result = await captureScreenshot({ url: 'http://127.0.0.1:' + port + '/', timeoutMs: 20000 })
+    assert.equal(result.ok, false)
+    assert.equal(result.error, 'url-not-loopback')
+  } finally {
+    await new Promise((resolve) => server.close(resolve))
+  }
+})
