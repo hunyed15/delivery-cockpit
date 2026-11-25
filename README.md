@@ -1,194 +1,329 @@
-# Delivery Cockpit · 交付驾驶舱
+# Delivery Cockpit
 
-DSH（DeepSeek Harness）插件：把项目的真实交付状态收拢成一屏——**当前在哪一步、哪个功能做完/没做完/有 bug、卡在哪、下一步做什么、该用哪个能力**。
+DSH（DeepSeek Harness）插件，用来管理一个软件项目从想法到发布的完整交付过程。
+
+它把项目当前的状态、下一步该做什么、做完没有、证据在哪，集中放到一个面板里，并让关键节点必须由人确认。它不替 agent 写代码，也不替 skill 做决定；它负责流程、证据和门禁。
 
 - 包名：`@hunyed15/delivery-cockpit`
 - 插件 / 面板 id：`delivery-cockpit`
 - 仓库：https://github.com/hunyed15/delivery-cockpit
 
-## 它做什么
+## 做什么用
 
-驾驶舱负责**接线**：把 agent loop、skills/MCP、会话与任务账本、验收证据、审核账本连起来，把人需要知道的信息放到仪表上。
+一个项目从"有个想法"到"上线"，中间有很多步骤：想清楚需求、定架构、做原型、写代码、跑测试、代码复核、验收、发布。每一步都可能：
 
-它**不复制 agent 的判断**：插件决定"干什么、什么时候、干完没有"，agent 决定"怎么干、用哪个技能、失败怎么办"。所有状态都来自可核对的证据文件或人的操作，读不到就显示 `—` 并说明缺什么，不补 0、不猜。
+- 做没做完说不清；
+- 做完了但没有证据；
+- 不知道下一步该做什么；
+- 跳过验收直接发布；
+- 代码检查、测试、验收各自为政。
 
-## 一屏能看什么
+Delivery Cockpit 的作用是把这些步骤固定成 9 个节点，给每个节点定义输入、产物、检查项和负责人；然后从项目文件里读取真实证据，推导当前进度和下一步动作。
 
-- **下一步唯一动作**：状态机根据当前证据给出一个动作（初始化 / 想清楚 / 定架构 / 看原型 / 写代码 / 补测试 / 修审核问题 / 验效果 / 签核 / 发布 / 开下一轮）。
-- **9 阶段**：项目立项 → 需求定义 → 架构契约 → 原型设计 → 代码开发 → 测试验证 → 代码复核 → 验收确认 → 部署发布。点任意阶段可只读查看目标、方法、约束、交付物、阶段检查与最近记录。
-- **功能账**：从 PRD 的受控结构（`## 功能需求` 下的 `### FR-N`）提取功能，用验收结果、审核 bug、执行回执三路证据推导状态；没有证据就显示 `—`。
-- **验收清单**：每条都能在面板里点通过 / 失败 / 阻塞 / 撤销；通过必须有证据，Host 会校验证据文件真实存在。
-- **代码检查**：内置独立 Claude Code 评审引擎，面板读取审核账本，显示阻塞问题、已修待复核与最近轮次。
-- **团队泳道**：按项目 cwd 列出正在工作的会话与子代理（只读，服务不可用时直说）。
-- **交付指标**：交付周期、发布频率、变更失败率、验收通过率、修复时长、待修问题；可接线上 DORA 数据（见下）。
+它主要解决四类问题：
 
-## 工作流与门禁
+1. **进度不可信**：不靠聊天记录或 agent 自报，靠回执、文件、测试报告、验收证据。
+2. **下一步不明确**：状态机每次只给一个动作，人和 agent 不需要自己判断流程。
+3. **关键节点没人把关**：范围、架构、原型、验收、发布需要人点确认，前置条件由 Host 校验。
+4. **交付和证据脱节**：验收结果、截图、测试、审核、发布清单都落到固定文件，面板和周报能直接读。
 
-### 9 阶段与人工签核
+## 设计理念
 
-每个迭代按 9 阶段推进。关键节点不是"agent 说完成就算"，而是：
+**1. 插件决定"做哪一步"，skill 决定"怎么做"**
 
-| 门 | 依据 |
+阶段顺序、门禁、下一步由插件控制。具体用哪个 skill、怎么写代码、怎么测试，由 skill 和 agent 决定。skill 不能推翻阶段顺序。
+
+**2. 只认证据，不认自报**
+
+"做完了"不算完成。要有回执、文件、测试报告、验收证据或人的签核。读不到就显示 `—` 并说明缺什么，不补 0，不猜。
+
+**3. 人保留关键决定权**
+
+范围、架构、原型、验收、发布五个节点需要人确认。Agent 可以把材料准备好，但不能替人点通过。
+
+**4. 复用已有能力，不自建一套生态**
+
+插件不复制 Trellis、Playwright、Context7、Claude Code Review 等能力，只负责按阶段路由、检查是否存在、缺了给替代方案或安装提示。
+
+**5. 写操作尽量少，并且可追溯**
+
+插件主要写 `.dsh/plugin-state/`；项目代码、文档、测试由 agent 和 skill 按阶段产出。所有执行记录追加到回执账本，不修改历史。
+
+## 9 个节点
+
+| 节点 | 做什么 | 主要产物 | 复用的能力 | 门禁 |
+|---|---|---|---|---|
+| 1. 项目立项 | 明确目标、用户、约束、不做什么；初始化项目状态 | `docs/brief.md`、`RULES.md`、`project.json`、`playbook.json`、`acceptance.json` | `grilling`（可选）、`cockpit_init` | 无 |
+| 2. 需求定义 | 写 PRD，拆出 FR 和验收标准 | `docs/prd.md`、`acceptance.json` 骨架 | `trellis-brainstorm`（可选，缺失用内置 PRD 模板）、`cockpit_acceptance` | 范围签核 |
+| 3. 架构契约 | 定组件、数据模型、接口、关键决策 | `docs/architecture.md`、`docs/api.md` 或 `docs/openapi.json` | `ponytail`（YAGNI）、`context7`（可选） | 架构技术门 + 架构签核 |
+| 4. 原型设计 | 做可点击的静态原型，让人先看界面 | `prototype.html` | `frontend-design`、`ui-ux-pro-max`（可选）、`impeccable`、`playwright`（可选） | 原型通过 |
+| 5. 代码开发 | 按任务实现，一次一个任务 | 任务清单、代码、`receipts.jsonl` | `tdd-loop`、`ponytail`、`claude_review` | 无 |
+| 6. 测试验证 | 跑测试，留下可复现的报告 | `test-report.json`（非代码项目用 `manual-check.json`） | `verify-claims`、`webapp-testing`（可选）、`playwright`（可选） | 测试技术门 |
+| 7. 代码复核 | 独立评审，修掉阻塞问题 | `.dsh/claude-review/ledger/` 或 `.trellis/tasks/<task>/review/` | `claude_review`、`claude-code-review` | 阻塞问题必须为 0 |
+| 8. 验收确认 | 人逐条验收，每条通过都要有证据 | `acceptance.json`、`shots/`、diff 图 | `verify-claims`、`webapp-testing`（可选） | 验收签核 |
+| 9. 部署发布 | 写发布清单，人批准后发布 | `release.json`（版本、产物 sha256、回滚说明） | `trellis-finish-work`（可选，缺失用 git + 清单模板） | 发布技术门 + 发布批准 |
+
+阶段定义在 `templates/playbook.json`。每个阶段包含：
+
+- `method`：首选方法；
+- `constraint`：约束；
+- `capabilities`：需要的能力（skill / tool / MCP），以及缺失时的替代方案；
+- `deliverables`：产物路径；
+- `technicalGate`：自动检查；
+- `decisionGate`：人工确认；
+- `promptTemplate`：下发给 agent 的指令模板。
+
+项目可以在 `.dsh/plugin-state/playbook.json` 覆盖这些定义。
+
+## 复用了哪些 skill 和功能
+
+插件不安装这些能力，只检测本机是否已安装，并在面板里提示"用哪个、缺什么、替代方案是什么"。
+
+**Trellis 系列**
+
+- `trellis-brainstorm`：需求梳理；
+- `trellis-finish-work`：发布收尾；
+- Trellis 任务 / 规范 / 账本：代码开发阶段的任务来源。
+
+**设计与前端**
+
+- `frontend-design`：原型设计主方法；
+- `ui-ux-pro-max`：设计令牌和组件规范（可选）；
+- `impeccable`：UI 质量审计。
+
+**开发与验证**
+
+- `tdd-loop`：测试先行；
+- `ponytail`：YAGNI、最小改动；
+- `verify-claims`：没有命令输出/证据不算通过；
+- `webapp-testing`：Playwright 端到端测试决策树；
+- `claude-code-review`：五轴代码复核清单。
+
+**MCP**
+
+- Playwright MCP：浏览器端到端测试；
+- Context7 MCP：查框架/库文档。
+
+**插件自带的工具**
+
+- `claude_review`：调用本地 Claude Code CLI 做独立评审；
+- `claude_review_disposition`：记录评审问题如何处理；
+- `claude_review_install_hook`：安装 pre-commit 评审门禁；
+- `cockpit_report`：写执行回执；
+- `cockpit_init`：初始化项目状态；
+- `cockpit_acceptance`：按 PRD 起草验收条目。
+
+## 产出物
+
+项目里的主要文件：
+
+| 文件 | 内容 |
 |---|---|
-| 范围签核 | PRD 已存在，人确认这一轮范围 |
-| 架构签核 | `docs/architecture.md` + `docs/api.md` / `docs/openapi.json` 通过结构校验 |
-| 原型通过 | `prototype.html` 或 `docs/prototype.html` 存在 |
-| 测试验证 | `.dsh/plugin-state/test-report.json`（非代码项目可用 `manual-check.json`） |
-| 验收签核 | 验收全绿、每条可识别 FR 都有带 `feature_ref` 的验收、证据文件存在 |
-| 发布批准 | `release.json` 的产物路径存在且 sha256 匹配，然后人点批准 |
+| `docs/brief.md` | 项目一页说明：目标、用户、约束、不做什么 |
+| `docs/prd.md` | 需求文档，功能用 `### FR-N 标题` 表示 |
+| `docs/architecture.md` | 组件、数据模型、接口清单、关键决策（ADR） |
+| `docs/api.md` / `docs/openapi.json` | 接口契约 |
+| `prototype.html` | 可点击的原型 |
+| `.trellis/tasks/` | 任务清单（使用 Trellis 时） |
+| `.dsh/plugin-state/receipts.jsonl` | 执行回执：谁、在哪个阶段、做了什么、用了什么能力 |
+| `.dsh/plugin-state/acceptance.json` | 验收条目、结果、证据 |
+| `.dsh/plugin-state/shots/` | 验收截图和 diff 图 |
+| `.dsh/plugin-state/test-report.json` | 测试命令、通过/失败数、时间 |
+| `.dsh/plugin-state/release.json` | 版本、产物 `{path, sha256}`、回滚说明 |
+| `.dsh/plugin-state/approvals.json` | 按迭代记录范围/架构/验收/发布签核 |
+| `.dsh/plugin-state/dora.json` | 可选：线上发布与事故记录 |
 
-架构 / 测试 / 发布是三道**自动技术门**；其余阶段由状态机规则、执行回执与人工决策门承担。
+面板本身产出：
 
-### 轻量模式
+- 项目总览：多个项目当前在哪个阶段、下一步做什么；
+- 项目详情：9 阶段、功能账、验收、代码检查、团队、指标；
+- 周报：Markdown，包含进度、指标、验收、检查、数据缺口和下一步。
 
-面板 header 可切换「完整流程 / 轻量模式」。轻量模式（`project.json` 的 `workflow: "light"`）跳过架构契约与范围/架构签核，适合小改动；原型、测试、验收、发布门仍然保留。
+## 如何使用
 
-### Trellis
+### 1. 安装
 
-`cockpit_init` 默认只创建空 `.trellis/`。需要完整 Trellis 工程时，在面板点「接通 Trellis」，或调用 `cockpit_init { trellisInit: true }`；它会运行 `trellis init --dsh`，`evidence.trellis.ready` 表示 trellis-* 技能真的可跑。
-
-## 验收、截图与视觉回归
-
-- 通过必须带证据；证据可以是项目内文件路径或 URL。
-- 面板「截图」用本机 Chrome/Edge 的 CDP 截真实页面，保存到 `.dsh/plugin-state/shots/`；只允许回环地址（`127.0.0.1` / `localhost` / `[::1]`），并逐请求拦截非回环地址。
-- 每次截图与上一版做像素对比：一致 / 有变化（比例 + 标红 diff 图）/ 新建基线 / 尺寸变化 / 无法对比。
-- 视觉有变化时，该条之前的「通过」自动失效，状态机退回「验效果」，并写一条可追溯的执行回执；人重新确认后才放行。
-- Agent 可写「验收复核」审计事件，但改验收结果仍由人操作。
-
-## 功能账
-
-功能只从 PRD 的受控结构提取，不解析自由文本：
-
-```markdown
-## 功能需求
-
-### FR-1 信号采集（P0）
-### FR-2 检索与打分（P1）
-```
-
-每条功能状态来自三路证据：
-
-| 证据 | 来源 | 状态 |
-|---|---|---|
-| 验收通过 + 证据 | `acceptance.json` 中 `feature_ref: "FR-1"`、`result: "pass"`、`evidence[]` | 已完成 |
-| 归属的未处置 bug | 审核账本 blocking 的 `file` 命中该功能路径 | 有阻塞 |
-| 进行中的回执 | `cockpit_report` 的 `feature_ids: ["FR-1"]` | 进行中 / 待验收 |
-
-回执没写 `feature_ids` 时，会按 `write_scope` / `artifacts` 与任务标题/关联文件自动归属，并在展开行说明"其中 N 条自动归属"；自报优先。
-
-`cockpit_acceptance` 可按 PRD 功能一次性起草验收条目骨架，只追加，不覆盖人已填的结果与证据。
-
-## 代码检查
-
-插件内置独立评审引擎（Claude Code CLI），提供三个工具：
-
-- `claude_review`
-- `claude_review_disposition`
-- `claude_review_install_hook`
-
-审核账本可在 `.trellis/tasks/<task>/review/` 或 `.dsh/claude-review/ledger/`；面板「代码检查」读同一份账本。引擎文件随插件发布在 `scripts/`，ACP 依赖通过 `npm install` 安装。
-
-## 交付指标与周报
-
-面板「交付指标」模块默认是**本地代理口径**：来自执行回执、审核账本、验收表，不是线上监控。数据不足显示 `—` 并说明原因。
-
-可选接入线上 DORA 数据：`.dsh/plugin-state/dora.json`
-
-```json
-{
-  "deployments": [
-    { "at": "2026-11-23T10:00:00Z", "version": "v1.0.1", "success": true, "leadTimeHours": 8 }
-  ],
-  "incidents": [
-    { "at": "2026-11-23T08:00:00Z", "resolvedAt": "2026-11-23T09:00:00Z" }
-  ]
-}
-```
-
-接入后，发布频率 / 变更失败率 / 交付周期 / MTTR（线上恢复时长）使用真实记录（交付周期需部署记录带 `leadTimeHours`），面板标注「线上数据」；其余指标仍是本地代理。窗口内没有发布记录时，变更失败率显示 `—`，不会显示 0%。
-
-header「导出周报」下载 Markdown：`GET /delivery-cockpit/api/report?path=…&days=7`，`days` 支持 `7 / 14 / 30`，同时作为指标窗口。
-
-## 安装
-
-环境要求：DSH `>=0.2.2-rc.3 <0.3.0`。
+要求 DSH `>=0.2.2-rc.3 <0.3.0`。
 
 ```powershell
 # 在插件目录安装评审引擎依赖
 npm install
 
-# 安装到当前 DSH profile
+# 安装到当前 DSH profile（target 换成插件目录的绝对路径）
 plugin_manager(action: "install_bundle", target: "<插件目录绝对路径>")
 ```
 
-安装后 `listTools` 应能看到六个工具：
+安装后应有六个工具：
 
 `cockpit_report` / `cockpit_init` / `cockpit_acceptance` / `claude_review` / `claude_review_disposition` / `claude_review_install_hook`
 
-## 数据文件
+### 2. 初始化项目
 
-插件只写 `.dsh/plugin-state/`（初始化时额外创建空 `.trellis/`）；显式点「接通 Trellis」时由 `trellis init` 写项目文件；审核引擎按自己的账本路径写入。
+在项目根目录调用：
 
-| 文件 | 用途 |
-|---|---|
-| `RULES.md` | 项目执行规则 |
-| `project.json` | 项目名片：名称、技术栈、命令、`workflow: full/light` |
-| `playbook.json` | 阶段能力路由（可覆盖内置） |
-| `acceptance.json` | 验收条目、结果与证据 |
-| `approvals.json` | 按迭代记范围/架构/验收/发布签核 |
-| `test-report.json` | 测试命令、通过/失败数、时间 |
-| `manual-check.json` | 非代码项目的人工检查单 |
-| `release.json` | 版本、产物 `{path, sha256}`、回滚说明 |
-| `dora.json` | 可选的线上发布/事故记录 |
-| `receipts.jsonl` | 执行回执流水账 |
+```json
+{ "cwd": "<项目目录>", "dryRun": false }
+```
+
+`cockpit_init` 会创建：
+
+- `.trellis/`（空目录）
+- `.dsh/plugin-state/RULES.md`
+- `.dsh/plugin-state/project.json`
+- `.dsh/plugin-state/playbook.json`
+- `.dsh/plugin-state/acceptance.json`
+
+如果想同时把项目升级成完整 Trellis 工程：
+
+```json
+{ "cwd": "<项目目录>", "dryRun": false, "trellisInit": true }
+```
+
+也可以在面板上点「接通 Trellis」。
+
+### 3. 打开面板
+
+在 DSH 侧栏打开「交付驾驶舱」，选择项目。面板顶部会显示当前阶段和下一步动作；跟着「下一步」做即可。
+
+- 阶段条可以点开任意节点，看目标、方法、约束、产物、检查项和最近记录；
+- 功能账显示每个 FR 的状态；
+- 验收清单可以逐条点通过/失败/阻塞/撤销；
+- 代码检查显示审核问题；
+- 团队泳道显示正在工作的会话和子代理；
+- 交付指标显示本地代理口径，接入 `dora.json` 后部分指标变为线上数据。
+
+### 4. 让 agent 按流程工作
+
+给 agent 的规则很简单：
+
+1. 先看面板的「下一步」；
+2. 按该阶段声明的方法做事；
+3. 做完写一条 `cockpit_report` 回执，写清用了哪个 skill/MCP、改了什么、产物在哪；
+4. 需要人决定时写 `needs_human_decision`；
+5. 不要跳过门禁。
+
+示例回执：
+
+```json
+{
+  "iteration_id": "v1.0",
+  "stage": "implementation",
+  "status": "completed",
+  "summary_for_human": "完成客户新增接口和表单",
+  "used_skill_or_mcp": "tdd-loop",
+  "task_ref": "T3",
+  "write_scope": ["web/customers/**"],
+  "artifacts": ["web/customers/create.tsx"],
+  "feature_ids": ["FR-1"]
+}
+```
+
+### 5. 验收和发布
+
+- 开发完成后，状态机会让 agent 生成验收清单；
+- 人在面板逐条验收，通过必须附截图或文件证据；
+- 截图可以直接在面板里用本机 Chrome/Edge 截；
+- 截图和上一版有像素变化时，之前的"通过"会自动失效，需要人重新确认；
+- 验收全部通过并签核后，才进入发布清单；
+- 发布清单里的产物必须存在且 sha256 匹配，然后人点发布批准。
+
+### 6. 导出周报
+
+```text
+GET /delivery-cockpit/api/report?path=<项目路径>&days=7
+```
+
+`days` 支持 `7 / 14 / 30`，返回 Markdown 下载。
+
+## 轻量模式
+
+小改动不需要完整走架构契约。面板顶部可以切换「完整流程 / 轻量模式」。
+
+轻量模式会跳过：
+
+- 架构契约技术门；
+- 范围签核；
+- 架构签核。
+
+仍然保留原型、测试、验收、发布门。模式存在 `.dsh/plugin-state/project.json` 的 `workflow` 字段：`full` 或 `light`。
+
+## 线上 DORA 数据（可选）
+
+默认指标来自项目本地记录，是代理口径。要使用真实线上数据，在项目里放 `.dsh/plugin-state/dora.json`：
+
+```json
+{
+  "deployments": [
+    {
+      "at": "2026-11-23T10:00:00Z",
+      "version": "v1.0.1",
+      "success": true,
+      "leadTimeHours": 8
+    }
+  ],
+  "incidents": [
+    {
+      "at": "2026-11-23T08:00:00Z",
+      "resolvedAt": "2026-11-23T09:00:00Z"
+    }
+  ]
+}
+```
+
+接入后：
+
+- 发布频率、变更失败率、交付周期、MTTR 使用线上记录；
+- 面板标注「线上数据」；
+- 其余指标仍是本地代理；
+- 窗口内没有发布记录时，变更失败率显示 `—`，不会显示 0%。
 
 ## 开发
 
 ```powershell
 npm install
-node --test "test/*.test.js"     # 全部单测（当前 539 个用例）
+npm test                         # node --test "test/*.test.js"，当前 539 个用例
 node tools/preview/server.mjs    # 本机预览面板，默认 http://127.0.0.1:4711
 ```
 
-改 `index.js` / `lib/*` 后重载插件；改 `client.js` 后刷新页面（本机开发时先确认客户端构建已重跑）。
+改 `index.js` / `lib/*` 后重载插件；改 `client.js` 后刷新页面。
 
-> 目录形式的 `node --test test/` 在 Node 24 不可用，请使用上面的 glob 形式或 `npm test`。
+> Node 24 下不要用 `node --test test/` 目录形式，使用 `npm test` 或带引号的 glob。
 
 ## 目录
 
 ```
-index.js            Host 半：六个工具 + 面板路由 + 能力探测
-client.js           Client 半：main / sidebar.panellist，两处入口
-lib/state.js        状态机：给出下一步唯一动作
-lib/evidence.js     只读证据聚合（trellis / PRD / 回执 / 签核 / 验收 / 任务 / 审核 / 门禁）
-lib/gates.js        架构 / 测试 / 发布技术门校验
-lib/approvals.js    人工签核（按迭代落盘，前置校验）
-lib/acceptance.js   验收表起草与结果写入
-lib/features.js     功能账（PRD 受控结构 + 三路证据 + bug 归属）
-lib/screenshot.js   本机 CDP 截图（回环限制 + 逐请求拦截）
-lib/png.js          最小 PNG 编解码
-lib/visual-diff.js  像素对比与 diff 图
-lib/metrics.js      交付指标（代理 + 线上 DORA）
-lib/dora.js         可选线上数据读取
-lib/report.js       周报 Markdown
-lib/model.js        面板模型（总览 + 详情）
+index.js            Host 半：工具、面板路由、能力探测
+client.js           Client 半：总览 + 详情面板
+lib/state.js        9 阶段状态机
+lib/evidence.js     只读证据聚合
+lib/gates.js        架构 / 测试 / 发布技术门
+lib/approvals.js    人工签核
+lib/acceptance.js   验收表
+lib/features.js     功能账
+lib/screenshot.js   本机 CDP 截图
+lib/png.js          PNG 编解码
+lib/visual-diff.js  截图像素对比
+lib/metrics.js      交付指标
+lib/dora.js         线上 DORA 数据
+lib/report.js       周报
+lib/model.js        面板模型
 lib/route.js        HTTP 路由
 lib/trellis.js      Trellis 初始化
-lib/review/         评审引擎接入层（引擎/工具/账本/配置）
-scripts/            随包发布的评审引擎
-templates/          释放到项目的 RULES / playbook / acceptance 模板
-test/               node --test 单测与契约断言
-tools/preview/      本机预览与截图（真实 React + CSS）
+lib/review/         评审引擎接入
+scripts/            评审引擎
+templates/          RULES / playbook / acceptance 模板
+test/               单测
+tools/preview/      本机预览
 ```
 
 ## 文档
 
-- [docs/VISION.md](docs/VISION.md) —— 产品定位、9 阶段、门禁与边界
-- [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) —— 模块接口、数据形状、HTTP 端点、测试清单
-- [docs/CAPABILITIES.md](docs/CAPABILITIES.md) —— 能力路由与 skills/MCP 说明
-- [docs/DETAIL.md](docs/DETAIL.md) —— 插件详情页文案
-- [DESIGN.md](DESIGN.md) —— 视觉与文案系统
-- [docs/REVIEW-2026-11-23.md](docs/REVIEW-2026-11-23.md) —— 代码 / 设计 / 使用冲突审查与修复记录
+- [docs/VISION.md](docs/VISION.md)：产品定位、阶段和门禁的设计
+- [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)：模块、数据形状、HTTP 端点
+- [docs/CAPABILITIES.md](docs/CAPABILITIES.md)：能力路由和 skills/MCP 说明
+- [docs/DETAIL.md](docs/DETAIL.md)：插件详情页文案
+- [DESIGN.md](DESIGN.md)：视觉与文案规范
+- [docs/REVIEW-2026-11-23.md](docs/REVIEW-2026-11-23.md)：代码/设计/使用冲突审查记录
 
 ## License
 
