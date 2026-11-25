@@ -6,16 +6,16 @@
   "author": "hunyed15",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hunyed15/dsh-project-cockpit.git"
+    "url": "git+https://github.com/hunyed15/delivery-cockpit.git"
   },
-  "homepage": "https://github.com/hunyed15/dsh-project-cockpit#readme",
+  "homepage": "https://github.com/hunyed15/delivery-cockpit#readme",
   "bugs": {
-    "url": "https://github.com/hunyed15/dsh-project-cockpit/issues"
+    "url": "https://github.com/hunyed15/delivery-cockpit/issues"
   },
   "keywords": [
     "dsh",
     "deepseek-harness",
-    "project-cockpit",
+    "delivery-cockpit",
     "delivery",
     "playbook",
     "trellis",
