@@ -496,3 +496,13 @@ test('renderPrompt：模板缺失 ⇒ text:null，但 capabilitiesText 照算', 
   assert.equal(renderPrompt({ promptTemplate: 42 }, resolved).text, null)
   assert.equal(renderPrompt({ promptTemplate: '' }, resolved).text, null)
 })
+
+test('需求定义指令：说明 brief 可有可无，且不覆盖已有 prd', async () => {
+  const raw = await readFile('templates/playbook.json', 'utf8')
+  const template = JSON.parse(raw).stages['需求定义'].promptTemplate
+  assert.match(template, /有 `docs\/brief\.md`/)
+  assert.match(template, /不要编造 brief/)
+  assert.match(template, /已有 `docs\/prd\.md` 时不要重写/)
+  assert.match(template, /\{capabilities\}/)
+  assert.match(template, /功能范围与优先级必须由人签核/)
+})

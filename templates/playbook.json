@@ -37,7 +37,7 @@
       "deliverables": ["docs/prd.md", ".dsh/plugin-state/acceptance.json"],
       "technicalGate": null,
       "decisionGate": { "title": "范围签核", "approveAction": "approve-scope" },
-      "promptTemplate": "用 {capabilities} 把 brief 收敛成 `docs/prd.md`：`## 功能需求` 下每条用 `### FR-N 标题（P0/P1）`，每条至少一个验收标准；再用 `cockpit_acceptance` 按 FR 起草验收条目（result 留空）。范围与优先级确认后写回执。",
+      "promptTemplate": "先确认输入：有 `docs/brief.md` 就以它为起点；没有就直接用需求目标、用户场景与约束来写，**不要编造 brief**。已有 `docs/prd.md` 时不要重写，只补缺失的 FR 与验收标准。产出 `docs/prd.md`：`## 功能需求` 下每条用 `### FR-N 标题（P0/P1）`，每条至少一个验收标准；再用 {capabilities} 按 FR 起草验收条目：result 留空，且只追加、不覆盖人已填的结果。PRD 由你起草，但**功能范围与优先级必须由人签核**后才算数，不要替人决定优先级；确认后写回执。",
       "exitGate": "`docs/prd.md` 解析出 ≥1 个 FR，且每个 FR 至少关联 1 条验收条目；甲方确认范围",
       "redLines": ["不写代码", "不选具体框架或技术栈", "不生成界面设计", "不自行假设未确认的需求"]
     },

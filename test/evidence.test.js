@@ -791,3 +791,16 @@ test('trellis.ready：只有 get_context.py 存在才算可跑，空 .trellis �
     assert.equal(after.trellis.ready, true)
   })
 })
+test('brief：docs/brief.md 存在就记下，缺失不算问题', async () => {
+  await withProject(async (project) => {
+    await mkdir(join(project, '.trellis'), { recursive: true })
+    await writeText(project, '.dsh/plugin-state/RULES.md', '# rules')
+    const missing = await readEvidence(project)
+    assert.deepEqual(missing.brief, { found: false, path: null })
+    assert.equal(missing.degraded.flag, false)
+
+    await writeText(project, 'docs/brief.md', '# brief\n目标用户：写手\n')
+    const found = await readEvidence(project)
+    assert.deepEqual(found.brief, { found: true, path: 'docs/brief.md' })
+  })
+})

@@ -682,3 +682,19 @@ test('requireArchitectureGate=false：架构门缺文件也不挡路', () => {
   const decision = deriveDecision(evidence)
   assert.equal(decision.kind, 'acceptance-draft')
 })
+test('需求定义：brief 缺失时不要求补 brief，brief 存在则指向它', () => {
+  const noBrief = baseEvidence()
+  noBrief.prd = { found: false, path: null }
+  noBrief.brief = { found: false, path: null }
+  const first = deriveDecision(noBrief)
+  assert.equal(first.kind, 'brainstorm')
+  assert.match(first.reason, /无 brief 也行/)
+  assert.ok(first.notes.some((note) => note.includes('不必先补 brief')))
+
+  const withBrief = baseEvidence()
+  withBrief.prd = { found: false, path: null }
+  withBrief.brief = { found: true, path: 'docs/brief.md' }
+  const second = deriveDecision(withBrief)
+  assert.equal(second.kind, 'brainstorm')
+  assert.match(second.reason, /把 docs\/brief\.md 收敛成需求/)
+})
