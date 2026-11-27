@@ -691,3 +691,11 @@ test('产品增强：轻量模式开关与 Trellis 接通入口都在详情 head
   assert.ok(source.includes('trellis.ready'), '按 ready 判断是否显示入口')
   assert.ok(source.includes('线上数据') && source.includes('代理口径'), '指标来源要区分')
 })
+test('代码检查：可切 Claude/Gemini，可设置模型与 agy 代理', () => {
+  assert.ok(source.includes('/review-settings'), '要 POST /review-settings 保存评审器')
+  assert.ok(source.includes('Claude Code') && source.includes('Gemini（Antigravity）'), '两种评审器都要有')
+  assert.ok(source.includes('留空用 agy 默认') && source.includes('gemini-4-hydrogen-high'), '模型输入要有 Gemini 示例')
+  assert.ok(source.includes('agy 代理'), 'agy 代理要可配置')
+  assert.ok(source.includes('代理只注入 agy 子进程'), '要说明代理作用范围')
+  assert.ok(css.includes('.dc-review-settings'), '评审器设置要有样式')
+})

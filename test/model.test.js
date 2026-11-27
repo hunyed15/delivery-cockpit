@@ -164,6 +164,7 @@ function build(ev, options = {}) {
     features: options.features,
     team: options.team,
     metrics: options.metrics,
+    reviewSettings: options.reviewSettings,
   })
 }
 
@@ -1151,4 +1152,13 @@ test('总览行也尊重 workflow.requireArchitectureGate=false（不能详情�
   })
   const row = buildOverviewRow({ id: 'w', title: 'demo', path: 'C:/demo', evidence: ev })
   assert.notEqual(row.nextKind, 'architecture')
+})
+test('评审器投影：旧别名 agent/model 与坏 profile 的 source 口径', () => {
+  const legacy = build(evidence(), { reviewSettings: { agent: 'agy', model: 'gemini-4-hydrogen-high', agyProxy: '', source: 'config' } })
+  assert.equal(legacy.review.settings.agent, 'agy')
+  assert.equal(legacy.review.settings.model, 'gemini-4-hydrogen-high')
+
+  const untouched = build(evidence())
+  assert.equal(untouched.review.settings.agent, 'claude')
+  assert.equal(untouched.review.settings.source, 'config')
 })

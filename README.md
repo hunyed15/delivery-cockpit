@@ -106,12 +106,31 @@ Delivery Cockpit 的作用是把这些步骤固定成 9 个节点，给每个节
 
 **插件自带的工具**
 
-- `claude_review`：调用本地 Claude Code CLI 做独立评审；
+- `claude_review`：调用本地评审引擎（Claude Code 或 Gemini）做独立评审；
 - `claude_review_disposition`：记录评审问题如何处理；
 - `claude_review_install_hook`：安装 pre-commit 评审门禁；
 - `cockpit_report`：写执行回执；
 - `cockpit_init`：初始化项目状态；
 - `cockpit_acceptance`：按 PRD 起草验收条目。
+
+## 评审器：Claude 或 Gemini
+
+代码检查默认用 **Claude Code**，也可以在面板「代码检查」里切到 **Gemini（Antigravity agy）**，并分别设置模型。
+
+- Claude Code：默认评审器，行为不变。
+- Gemini：需要本机安装 `agy` 并登录；`agy models` 能列出模型。agy 对网络较敏感，可在面板填代理（例如 `http://127.0.0.1:10808`）；代理只注入 agy 子进程，不影响其他请求，留空表示不注入。
+- 模型留空使用引擎默认；Gemini 可以填 `gemini-4-hydrogen-high`、`gemini-3.8-flash` 等 `agy models` 里的 id。
+- 评审器和模型保存在项目 `.dsh/plugin-state/review.json`，不同项目可以各选各的。
+- Gemini 评审会切到 `plan` 只读模式，并在 ACP 权限回调里拒绝写文件/执行命令；不使用 `--dangerously-skip-permissions`。
+
+插件默认值在 `cordis.patch.yml`：
+
+```yaml
+reviewAgent: claude
+reviewModel: ''
+agyPath: ''
+agyProxy: ''
+```
 
 ## 产出物
 
@@ -281,7 +300,7 @@ GET /delivery-cockpit/api/report?path=<项目路径>&days=7
 
 ```powershell
 npm install
-npm test                         # node --test "test/*.test.js"，当前 539 个用例
+npm test                         # node --test "test/*.test.js"，当前 552 个用例
 node tools/preview/server.mjs    # 本机预览面板，默认 http://127.0.0.1:4711
 ```
 

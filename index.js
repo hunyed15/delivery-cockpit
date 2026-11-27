@@ -22,11 +22,12 @@ import { computeMetrics, readMetricLedger } from './lib/metrics.js'
 import { buildDetailModel, buildOverviewRow } from './lib/model.js'
 import { entryForStage, loadPlaybook, resolveCapabilities, STAGE_DEFS } from './lib/playbook.js'
 import { readProjectCard, setWorkflow } from './lib/project-card.js'
+import { mergeReviewProfile, readReviewProfile, writeReviewProfile } from './lib/review/profile.js'
 import { initializeTrellis } from './lib/trellis.js'
 import { appendReceipt, STAGES } from './lib/receipts.js'
 import { buildWeeklyReport, REPORT_DAYS, reportFileName } from './lib/report.js'
 import { REVIEW_DEFAULT_CONFIG, createReviewToolDefinitions } from './lib/review/index.js'
-import { createAcceptanceResultHandler, createAcceptanceScreenshotHandler, createApproveHandler, createDecisionHandler, createInitHandler, createRoutes, createTrellisHandler, createWorkflowHandler } from './lib/route.js'
+import { createAcceptanceResultHandler, createAcceptanceScreenshotHandler, createApproveHandler, createDecisionHandler, createInitHandler, createReviewSettingsHandler, createRoutes, createTrellisHandler, createWorkflowHandler } from './lib/route.js'
 import { captureScreenshot, writeScreenshot } from './lib/screenshot.js'
 import { readTeam } from './lib/team.js'
 import { compareScreenshots, pickBaselineEvidence, renderDiffPng } from './lib/visual-diff.js'
@@ -73,6 +74,14 @@ const DEFAULT_CONFIG = {
   reportDays: 7,
   // 架构契约技术门是否强制（VISION §12 的 requireArchitectureGate）；false 时只保留签核门。
   requireArchitectureGate: true,
+  // 评审器默认值（项目可用 .dsh/plugin-state/review.json 覆盖）。
+  // agent/model 是旧别名，与 reviewAgent/reviewModel 等价，面板与工具都认。
+  agent: '',
+  model: '',
+  reviewAgent: 'claude',
+  reviewModel: '',
+  agyPath: '',
+  agyProxy: '',
 }
 
 // 与账本常量共用一份枚举：9 阶段迁移后不再手写第二份，避免工具 schema 与 lib 漂移。
@@ -718,6 +727,29 @@ export function apply(ctx, config = {}) {
     }
 
     const generatedAt = new Date().toISOString()
+    const reviewProfile = await readReviewProfile(projectPath).catch(() => null)
+    const mergedReview = mergeReviewProfile(
+      {
+        // 新旧别名都原样交给 mergeReviewProfile 裁决：面板显示必须和评审执行同口径。
+        agent: settings.agent,
+        reviewAgent: settings.reviewAgent,
+        model: settings.model,
+        reviewModel: settings.reviewModel,
+        agyProxy: settings.agyProxy,
+      },
+      reviewProfile,
+    )
+    const profileSet = reviewProfile && typeof reviewProfile.set === 'object' ? reviewProfile.set : null
+    const profileApplied =
+      reviewProfile?.error === null &&
+      profileSet !== null &&
+      (profileSet.agent === true || profileSet.model === true || profileSet.agyProxy === true)
+    const reviewSettings = {
+      agent: mergedReview.agent,
+      model: mergedReview.model,
+      agyProxy: mergedReview.agyProxy,
+      source: profileApplied ? 'project' : 'config',
+    }
     const metrics = computeMetrics({
       evidence,
       history: metricLedger.history,
@@ -730,7 +762,7 @@ export function apply(ctx, config = {}) {
     // 这里再兜一层，是为了任何意外都别把整个详情页打挂。
     const team = await readTeam(ctx, projectPath).catch(() => ({ available: false, reason: 'read-error', agents: [] }))
     return {
-      detail: buildDetailModel({ evidence, playbook: loaded.playbook, stageCapabilities, generatedAt, features, team, metrics }),
+      detail: buildDetailModel({ evidence, playbook: loaded.playbook, stageCapabilities, generatedAt, features, team, metrics, reviewSettings }),
       evidence,
       metrics,
     }
@@ -1002,6 +1034,7 @@ export function apply(ctx, config = {}) {
     takeAcceptanceScreenshot: (projectPath, input) => takeAcceptanceScreenshot(projectPath, input),
     setWorkflow: (projectPath, workflow) => setWorkflow(projectPath, workflow),
     initializeTrellis: (projectPath) => initializeTrellis(ctx, projectPath),
+    writeReviewProfile: (projectPath, patch) => writeReviewProfile(projectPath, patch),
   }
   const initHandler = createInitHandler(writeDeps)
   const approveHandler = createApproveHandler(writeDeps)
@@ -1010,6 +1043,7 @@ export function apply(ctx, config = {}) {
   const acceptanceScreenshotHandler = createAcceptanceScreenshotHandler(writeDeps)
   const workflowHandler = createWorkflowHandler(writeDeps)
   const trellisHandler = createTrellisHandler(writeDeps)
+  const reviewSettingsHandler = createReviewSettingsHandler(writeDeps)
 
   const retryAttempts = Number.isFinite(settings.panelRetryAttempts) ? Math.max(1, Math.trunc(settings.panelRetryAttempts)) : 10
   const retryMs = Number.isFinite(settings.panelRetryMs) ? Math.max(1, Math.trunc(settings.panelRetryMs)) : 500
@@ -1080,6 +1114,13 @@ export function apply(ctx, config = {}) {
         kind: 'exact',
         path: `${ROUTE_PREFIX}/trellis-init`,
         handler: trellisHandler,
+      }),
+    )
+    scope.effect(() =>
+      webServer.register({
+        kind: 'exact',
+        path: `${ROUTE_PREFIX}/review-settings`,
+        handler: reviewSettingsHandler,
       }),
     )
     return true

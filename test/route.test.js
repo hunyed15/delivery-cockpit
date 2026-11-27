@@ -9,6 +9,7 @@ import {
   createApproveHandler,
   createDecisionHandler,
   createInitHandler,
+  createReviewSettingsHandler,
   createRoutes,
   createTrellisHandler,
   createWorkflowHandler,
@@ -19,7 +20,7 @@ const PROJECT = resolve(tmpdir(), 'delivery-cockpit-route-fixture')
 const OTHER = resolve(tmpdir(), 'delivery-cockpit-not-registered')
 
 function makeDeps(overrides = {}) {
-  const calls = { detail: [], plan: [], apply: [], approve: [], decision: [], acceptance: [], shot: [], screenshot: [], report: [], workflow: [], trellis: [] }
+  const calls = { detail: [], plan: [], apply: [], approve: [], decision: [], acceptance: [], shot: [], screenshot: [], report: [], workflow: [], trellis: [], reviewSettings: [] }
   const deps = {
     listWorkspaces: async () => [{ id: 'w1', title: 'demo', path: PROJECT }],
     resolveWorkspace: async (path) => (path === PROJECT ? { id: 'w1', title: 'demo', path: PROJECT } : null),
@@ -45,6 +46,11 @@ function makeDeps(overrides = {}) {
     applyInit: async (path) => {
       calls.apply.push(path)
       return { applied: true, created: ['RULES.md'], skipped: [], errors: [], gitignoreHint: '.dsh/plugin-state/' }
+    },
+    writeReviewProfile: async (path, patch) => {
+      calls.reviewSettings.push([path, patch])
+      if (patch.agent && !['claude', 'agy'].includes(patch.agent)) return { ok: false, error: 'bad-agent' }
+      return { ok: true, agent: patch.agent || 'claude', model: patch.model || '', agyProxy: patch.agyProxy || '' }
     },
     setWorkflow: async (path, workflow) => {
       calls.workflow.push([path, workflow])
@@ -739,4 +745,24 @@ test('POST /trellis-init：成功 200；失败 409 带 detail', async () => {
   await createTrellisHandler(failedDeps.deps)(fakeReq({ body: { path: PROJECT } }), failed)
   assert.equal(failed.status, 409)
   assert.equal(JSON.parse(failed.body).error, 'trellis-init-failed')
+})
+
+test('POST /review-settings：保存 Claude/agy 与模型；非法 agent 400', async () => {
+  const { deps, calls } = makeDeps()
+  const handler = createReviewSettingsHandler(deps)
+  const res = fakeRes()
+  await handler(fakeReq({ body: { path: PROJECT, agent: 'agy', model: 'gemini-4-hydrogen-high', agyProxy: 'http://127.0.0.1:10808' } }), res)
+  assert.equal(res.status, 200)
+  assert.deepEqual(JSON.parse(res.body), {
+    ok: true,
+    agent: 'agy',
+    model: 'gemini-4-hydrogen-high',
+    agyProxy: 'http://127.0.0.1:10808',
+  })
+  assert.deepEqual(calls.reviewSettings, [[PROJECT, { agent: 'agy', model: 'gemini-4-hydrogen-high', agyProxy: 'http://127.0.0.1:10808' }]])
+
+  const bad = fakeRes()
+  await handler(fakeReq({ body: { path: PROJECT, agent: 'gemini' } }), bad)
+  assert.equal(bad.status, 400)
+  assert.equal(JSON.parse(bad.body).error, 'bad-agent')
 })

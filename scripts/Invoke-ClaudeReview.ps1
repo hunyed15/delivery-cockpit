@@ -94,6 +94,10 @@ param(
     [string]$TaskDir = '',
     [ValidateSet('', 'auto', 'acp', 'cli')]
     [string]$Transport = '',
+    [ValidateSet('', 'claude', 'agy')]
+    [string]$Agent = '',
+    [string]$AgyPath = '',
+    [string]$AgyProxy = '',
     [string]$NodeExe = '',
     [switch]$NodeRunAsNode,
     [string]$AcpAdapter = '',
@@ -181,6 +185,9 @@ $configPath = Join-Path $scriptRoot 'config.json'
 $cfg = @{
     claudeExe        = ''
     model            = ''
+    agent            = 'claude'
+    agyPath          = ''
+    agyProxy         = ''
     effort           = 'low'
     timeoutSec       = 600
     maxDiffChars     = 200000
@@ -205,6 +212,10 @@ if (Test-Path -LiteralPath $configPath) {
 
 if ($TimeoutSec -le 0) { $TimeoutSec = [int]$cfg.timeoutSec }
 if ($MaxDiffChars -le 0) { $MaxDiffChars = [int]$cfg.maxDiffChars }
+if ([string]::IsNullOrWhiteSpace($Agent)) { $Agent = if ($cfg.agent) { [string]$cfg.agent } else { 'claude' } }
+if ($Agent -notin @('claude', 'agy')) { Fail "Agent 必须是 claude|agy（当前 '$Agent'）" }
+if ([string]::IsNullOrWhiteSpace($AgyPath) -and $cfg.agyPath) { $AgyPath = [string]$cfg.agyPath }
+if (-not $PSBoundParameters.ContainsKey('AgyProxy') -and $cfg.agyProxy) { $AgyProxy = [string]$cfg.agyProxy }
 if ([string]::IsNullOrWhiteSpace($Model)) { $Model = [string]$cfg.model }
 if ([string]::IsNullOrWhiteSpace($Effort)) { $Effort = [string]$cfg.effort }
 if ([string]::IsNullOrWhiteSpace($Transport)) { $Transport = if ($cfg.transport) { [string]$cfg.transport } else { 'auto' } }
@@ -1032,6 +1043,8 @@ if (Test-Path -LiteralPath $configPath) { $cacheFiles += $configPath }
 # ACP transport 的 bridge/依赖版本也影响输出；缓存不能把 CLI 的旧结论当成 ACP 的。
 $acpBridgeCache = Join-Path $scriptRoot 'acp-review.mjs'
 if (Test-Path -LiteralPath $acpBridgeCache) { $cacheFiles += $acpBridgeCache }
+$agyBridgeCache = Join-Path $scriptRoot 'agy-acp-review.mjs'
+if (Test-Path -LiteralPath $agyBridgeCache) { $cacheFiles += $agyBridgeCache }
 $pluginPackageCache = Join-Path (Split-Path -Parent $scriptRoot) 'package.json'
 if (Test-Path -LiteralPath $pluginPackageCache) { $cacheFiles += $pluginPackageCache }
 $acpAdapterCache = Join-Path (Split-Path -Parent $scriptRoot) 'node_modules/@agentclientprotocol/claude-agent-acp/package.json'
@@ -1052,7 +1065,10 @@ $cacheParts = @(
     $Focus,
     ($Checks -join "`n"),
     ($Paths -join "`n"),
+    $Agent,
     $Model,
+    $AgyPath,
+    $AgyProxy,
     $Effort,
     [string]$MaxDiffChars,
     $Profile,
@@ -1390,15 +1406,24 @@ $sw = [Diagnostics.Stopwatch]::StartNew()
 
 # ACP is an internal transport: deps are plugin dependencies, no user ACP setup.
 # auto = ACP when bridge/adapter/node are available, otherwise the existing CLI.
-$acpBridge = Join-Path $scriptRoot 'acp-review.mjs'
-$acpAdapter = if (-not [string]::IsNullOrWhiteSpace($AcpAdapter)) {
+$acpBridge = if ($Agent -eq 'agy') { Join-Path $scriptRoot 'agy-acp-review.mjs' } else { Join-Path $scriptRoot 'acp-review.mjs' }
+$acpAdapter = if ($Agent -eq 'agy') {
+    ''
+} elseif (-not [string]::IsNullOrWhiteSpace($AcpAdapter)) {
     $AcpAdapter
 } else {
     Join-Path (Split-Path -Parent $scriptRoot) 'node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js'
 }
 $nodeExe = Resolve-NodeExe $NodeExe
-$useAcp = $Transport -ne 'cli' -and (Test-Path -LiteralPath $acpBridge) -and (Test-Path -LiteralPath $acpAdapter) -and -not [string]::IsNullOrWhiteSpace($nodeExe)
+$adapterReady = $Agent -eq 'agy' -or (Test-Path -LiteralPath $acpAdapter)
+$useAcp = $Transport -ne 'cli' -and (Test-Path -LiteralPath $acpBridge) -and $adapterReady -and -not [string]::IsNullOrWhiteSpace($nodeExe)
+if ($Agent -eq 'agy' -and $Transport -eq 'cli') {
+    Fail "agy 评审只支持 ACP transport，不能使用 cli。"
+}
 if ($Transport -eq 'acp' -and -not $useAcp) {
+    if ($Agent -eq 'agy') {
+        Fail "agy ACP 不可用：需要 agy-acp-review.mjs、Node 运行时和已安装的 agy CLI。"
+    }
     Fail "ACP transport 不可用：需要 acp-review.mjs、插件依赖 @agentclientprotocol/claude-agent-acp 和 Node 运行时。重装/更新插件即可，无需单独配置 ACP。"
 }
 # 启动预算必须短：ACP 初始化卡死时尽快回退 CLI，而不是吃掉整轮 TimeoutSec。
@@ -1406,6 +1431,9 @@ $acpStartupMs = [Math]::Min(30000, [Math]::Max(5000, [int]($TimeoutSec * 1000 / 
 
 $script:ReviewBridge = $acpBridge
 $script:ReviewAdapter = $acpAdapter
+$script:ReviewAgent = $Agent
+$script:ReviewAgyPath = $AgyPath
+$script:ReviewAgyProxy = $AgyProxy
 $script:ReviewNodeExe = $nodeExe
 $script:ReviewClaudeExe = $claudeExe
 $script:ReviewPromptIn = $promptIn
@@ -1422,6 +1450,16 @@ $script:ReviewEffort = $Effort
 
 function Start-ReviewProcess([ValidateSet('acp', 'cli')][string]$kind) {
     if ($kind -eq 'acp') {
+        if ($script:ReviewAgent -eq 'agy') {
+            $acpArgs = @($script:ReviewBridge, '--prompt', $script:ReviewPromptIn, '--role', $script:ReviewRolePath,
+                '--cwd', $root,
+                '--agy-path', $script:ReviewAgyPath,
+                '--agy-proxy', $script:ReviewAgyProxy,
+                '--startup-timeout-ms', [string]$script:ReviewStartupMs,
+                '--timeout-ms', [string]([Math]::Max(5000, ($script:ReviewTimeoutSec * 1000) - 10000)))
+            if (-not [string]::IsNullOrWhiteSpace($script:ReviewModel)) { $acpArgs += @('--model', [string]$script:ReviewModel) }
+            if (-not [string]::IsNullOrWhiteSpace($script:ReviewEffort)) { $acpArgs += @('--effort', [string]$script:ReviewEffort) }
+        } else {
         $acpArgs = @($script:ReviewBridge, '--prompt', $script:ReviewPromptIn, '--role', $script:ReviewRolePath,
             '--cwd', $root, '--claude', $script:ReviewClaudeExe,
             '--adapter', $script:ReviewAdapter,
@@ -1430,6 +1468,7 @@ function Start-ReviewProcess([ValidateSet('acp', 'cli')][string]$kind) {
         if ($script:ReviewMaxBudgetUsd -gt 0) { $acpArgs += @('--max-budget-usd', [string]$script:ReviewMaxBudgetUsd) }
         if (-not [string]::IsNullOrWhiteSpace($script:ReviewModel)) { $acpArgs += @('--model', [string]$script:ReviewModel) }
         if (-not [string]::IsNullOrWhiteSpace($script:ReviewEffort)) { $acpArgs += @('--effort', [string]$script:ReviewEffort) }
+        }
         $acpLine = (@($acpArgs | ForEach-Object { Quote-ProcessArg ([string]$_) }) -join ' ')
         $oldRunAsNode = $env:ELECTRON_RUN_AS_NODE
         if ($script:ReviewNodeRunAsNode) { $env:ELECTRON_RUN_AS_NODE = '1' }
@@ -1480,7 +1519,7 @@ while ($true) {
     $procExit = if ($null -ne $proc.ExitCode) { [int]$proc.ExitCode } else { 0 }
 
     # The bridge exits 3 only when the ACP runtime is unavailable (not when the model failed).
-    if ($acpUsed -and $procExit -eq 3 -and $Transport -eq 'auto') {
+    if ($acpUsed -and $procExit -eq 3 -and $Transport -eq 'auto' -and $Agent -eq 'claude') {
         $acpErrors = @()
         try {
             $acpEnvelope = $rawOut | ConvertFrom-Json
@@ -1539,7 +1578,9 @@ if ($envelope -and ((($envelope.PSObject.Properties.Name -contains 'is_error') -
     Fail ("$kindLabel 返回错误结果（subtype=$($envelope.subtype), status=$($envelope.api_error_status)）$errDetail。raw: $rawPath")
 }
 
-$resultText = if ($envelope -and $envelope.PSObject.Properties.Name -contains 'result') { [string]$envelope.result } else { $rawOut }
+$resultText = if ($envelope -and $envelope.PSObject.Properties.Name -contains 'result') {
+    if ($envelope.result -is [string]) { [string]$envelope.result } else { $envelope.result | ConvertTo-Json -Depth 30 -Compress }
+} else { $rawOut }
 $roleMode = if ($envelope -and ($envelope.PSObject.Properties.Name -contains 'roleMode')) {
     [string]$envelope.roleMode
 } elseif ($roleExists) {

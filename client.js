@@ -983,6 +983,14 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:600; letter-
 .dc-rail-title { margin:0; font-size:12px; font-weight:600; color:var(--dsw-alias-label-primary); }
 .dc-rail-meta { font-size:11px; color:var(--dsw-alias-label-secondary); font-variant-numeric:tabular-nums; }
 .dc-rail-note { margin:0; font-size:12px; color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere; }
+.dc-review-settings { margin-top:10px; padding-top:8px; border-top:1px dashed var(--dsw-alias-border-l1); }
+.dc-review-settings > summary { cursor:pointer; font-size:11.5px; color:var(--dsw-alias-label-secondary); }
+.dc-review-settings > summary:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; border-radius:4px; }
+.dc-review-settings-body { display:flex; flex-direction:column; gap:8px; padding-top:8px; }
+.dc-review-settings-body label { display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--dsw-alias-label-secondary); }
+.dc-review-settings-body select, .dc-review-settings-body input { height:28px; padding:0 8px; border:1px solid var(--dsw-alias-border-l1); border-radius:6px; background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary); font:inherit; font-size:12px; }
+.dc-review-settings-body select:focus-visible, .dc-review-settings-body input:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:1px; }
+.dc-review-settings-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .dc-rail-stats { display:flex; gap:14px; flex-wrap:wrap; font-size:11.5px; color:var(--dsw-alias-label-secondary); margin-bottom:6px; }
 .dc-rail-num { color:var(--dsw-alias-label-primary); font-weight:600; font-variant-numeric:tabular-nums; }
 .dc-rail-severe { margin-top:8px; padding-top:8px; border-top:1px dashed var(--dsw-alias-border-l1); font-size:11.5px; min-width:0; }
@@ -3847,9 +3855,112 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       return sorted[0] || null
     }
 
+    const REVIEW_AGENT_LABELS = { claude: 'Claude Code', agy: 'Gemini（Antigravity）' }
+
+    function ReviewSettings(props) {
+      const settings = props.settings || {}
+      const [agent, setAgent] = React.useState(settings.agent === 'agy' ? 'agy' : 'claude')
+      const [model, setModel] = React.useState(settings.model || '')
+      const [proxy, setProxy] = React.useState(settings.agyProxy || '')
+      const [busy, setBusy] = React.useState(false)
+      const [message, setMessage] = React.useState('')
+
+      React.useEffect(() => {
+        setAgent(settings.agent === 'agy' ? 'agy' : 'claude')
+        setModel(settings.model || '')
+        setProxy(settings.agyProxy || '')
+      }, [settings.agent, settings.model, settings.agyProxy])
+
+      const save = async () => {
+        if (busy) return
+        setBusy(true)
+        setMessage('')
+        try {
+          await postJson(`${API}/review-settings`, {
+            path: props.projectPath,
+            agent,
+            model: model.trim(),
+            agyProxy: proxy.trim(),
+          })
+          setMessage('已保存')
+          if (props.onRefresh) props.onRefresh()
+        } catch (error) {
+          setMessage(String(error && error.message ? error.message : error))
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      const summary = `${REVIEW_AGENT_LABELS[agent] || agent}${model.trim() ? ` · ${model.trim()}` : ' · 默认模型'}`
+      return h(
+        'details',
+        { className: 'dc-review-settings' },
+        h('summary', { title: '切换 Claude Code / Gemini 评审器并设置模型' }, `评审器：${summary}`),
+        h(
+          'div',
+          { className: 'dc-review-settings-body' },
+          h(
+            'label',
+            null,
+            '评审引擎',
+            h(
+              'select',
+              {
+                value: agent,
+                onChange: (event) => {
+                  setAgent(event.target.value)
+                  setMessage('')
+                },
+              },
+              h('option', { value: 'claude' }, 'Claude Code'),
+              h('option', { value: 'agy' }, 'Gemini（Antigravity）'),
+            ),
+          ),
+          h(
+            'label',
+            null,
+            '模型',
+            h('input', {
+              type: 'text',
+              value: model,
+              placeholder: agent === 'agy' ? '留空用 agy 默认；如 gemini-4-hydrogen-high' : '留空用 Claude 默认模型',
+              onChange: (event) => setModel(event.target.value),
+            }),
+          ),
+          agent === 'agy'
+            ? h(
+                'label',
+                null,
+                'agy 代理',
+                h('input', {
+                  type: 'text',
+                  value: proxy,
+                  placeholder: 'http://127.0.0.1:10808',
+                  onChange: (event) => setProxy(event.target.value),
+                }),
+              )
+            : null,
+          h(
+            'div',
+            { className: 'dc-review-settings-actions' },
+            h('button', { type: 'button', className: 'dc-btn', onClick: save, disabled: busy }, busy ? '保存中…' : '保存'),
+            message ? h('span', { className: 'dc-inline-msg', role: 'status' }, message) : null,
+          ),
+          agent === 'agy'
+            ? h('p', { className: 'dc-rail-note' }, '需要本机安装 agy 并已登录；代理只注入 agy 子进程，不影响其他请求。')
+            : null,
+        ),
+      )
+    }
+
     function ReviewRail(props) {
       const review = props.review || {}
       const features = props.features || {}
+      const settingsNode = h(ReviewSettings, {
+        settings: review.settings || {},
+        projectPath: props.projectPath || '',
+        onRefresh: props.onRefresh,
+      })
       if (review.available === false) {
         return h(
           Module,
@@ -3859,6 +3970,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
             { className: 'dc-rail-note' },
             review.reason === 'no-ledger' ? '还没有接过代码检查。' : '代码检查暂时没读到。',
           ),
+          settingsNode,
         )
       }
       const blocking = Number(review.blocking) || 0
@@ -3895,6 +4007,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
               { className: 'dc-rail-note' },
               rounds > 0 ? `最近 ${rounds} 轮检查通过 · 没问题` : '还没做代码检查。',
             ),
+        settingsNode,
       )
     }
 
@@ -4061,7 +4174,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                 : null,
             )
           : null,
-        h(ReviewRail, { review: props.review, features: props.features }),
+        h(ReviewRail, { review: props.review, features: props.features, projectPath: props.projectPath, onRefresh: props.onRefresh }),
         h(TeamRail, { team: props.team }),
         h(ReceiptsTimeline, { ledger }),
         gapCount > 0

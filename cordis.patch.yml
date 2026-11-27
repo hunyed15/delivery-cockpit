@@ -21,6 +21,14 @@
         timeoutSec: 1500
         # 审核传输：auto = 优先内置 ACP（依赖随插件安装），不可用回退现有 CLI；也可强制 acp/cli。
         transport: auto
+        # 评审器：claude（默认）/ agy（Gemini Antigravity），项目可在面板覆盖。
+        reviewAgent: claude
+        # 可选模型覆盖；留空用引擎默认。
+        reviewModel: ''
+        # agy 可执行文件路径；留空自动探测 PATH。
+        agyPath: ''
+        # agy 子进程代理；留空不注入；只影响 agy，不影响其他请求。
+        agyProxy: ''
         # 目标仓库里的引擎接口过旧（没有 claude-review-api 标记）时，是否回退到插件自带引擎副本。
         allowBundledFallback: true
         # 引擎自己的参数（reviewerRoleFile / failOn / maxRounds / exclude 等）在 scripts/config.json，

@@ -526,3 +526,50 @@ test('写授权：显式 taskDir / enginePath 单独触发授权分支（cwd 用
     await rm(project, { recursive: true, force: true })
   }
 })
+test('claude_review 读取项目 review.json：切 agy 后命令行带 Agent/Model/AgyProxy', async () => {
+  const project = await makeGitRepo('dc-review-profile-tool-')
+  try {
+    await mkdir(join(project, '.dsh', 'plugin-state'), { recursive: true })
+    await writeFile(
+      join(project, '.dsh', 'plugin-state', 'review.json'),
+      JSON.stringify({ agent: 'agy', model: 'gemini-4-hydrogen-high', agyProxy: 'http://127.0.0.1:10808' }),
+      'utf8',
+    )
+    const collector = {}
+    const tool = getTool(toolsWith(cannedSubprocess('{"ok":true,"mode":"full","verdict":"pass"}', 0, collector)), 'claude_review')
+    await tool.execute({ mode: 'full', description: 'profile test' }, execIn(project, 'session-profile'))
+    const line = (collector.argv ?? []).join(' ')
+    assert.ok(line.includes("-Agent 'agy'"), line)
+    assert.ok(line.includes("-Transport 'acp'"), line)
+    assert.ok(line.includes("-Model 'gemini-4-hydrogen-high'"), line)
+    assert.ok(line.includes("-AgyProxy 'http://127.0.0.1:10808'"), line)
+  } finally {
+    await rm(project, { recursive: true, force: true })
+  }
+})
+test('claude_review 项目 profile 显式清空 model/agyProxy 时不被全局默认覆盖', async () => {
+  const project = await makeGitRepo('dc-review-profile-clear-')
+  try {
+    await mkdir(join(project, '.dsh', 'plugin-state'), { recursive: true })
+    await writeFile(
+      join(project, '.dsh', 'plugin-state', 'review.json'),
+      JSON.stringify({ agent: 'agy', model: '', agyProxy: '' }),
+      'utf8',
+    )
+    const collector = {}
+    const tool = getTool(
+      toolsWith(cannedSubprocess('{"ok":true,"mode":"full","verdict":"pass"}', 0, collector), {
+        reviewModel: 'global-model',
+        agyProxy: 'http://127.0.0.1:10808',
+      }),
+      'claude_review',
+    )
+    await tool.execute({ mode: 'full', description: 'clear profile' }, execIn(project, 'session-clear'))
+    const line = (collector.argv ?? []).join(' ')
+    assert.ok(!line.includes('-Model'), line)
+    // 显式空代理要传 -AgyProxy ''：PowerShell 用 ContainsKey 区分"清空"与"未指定"。
+    assert.ok(line.includes("-AgyProxy ''"), line)
+  } finally {
+    await rm(project, { recursive: true, force: true })
+  }
+})
