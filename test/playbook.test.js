@@ -447,7 +447,7 @@ test('验收确认阶段：提示 Agent 用 event=acceptance-recheck 写验收�
   assert.match(entry.exitGate, /stale|失效/, '出口条件要包含失效条目不算通过')
 })
 
-test('renderPrompt：只替换 {capabilities}，其他 {...} 原样保留', async () => {
+test('renderPrompt：加工作流技能前缀，只替换 {capabilities}，其他 {...} 原样保留', async () => {
   const entry = entryForStage(builtin, 'prototype')
   const services = {
     skills: setOf('ui-ux-pro-max', 'frontend-design', 'impeccable'),
@@ -460,11 +460,14 @@ test('renderPrompt：只替换 {capabilities}，其他 {...} 原样保留', asyn
   const expected = builtin.stages['原型设计'].promptTemplate
     .split('{capabilities}')
     .join('frontend-design, ui-ux-pro-max, impeccable')
-  assert.equal(rendered.text, expected)
+  // 阶段工作流技能由插件自带：指令前缀会点明去读哪个 SKILL.md（第三方能力只是工具）
+  const kit = builtin.stages['原型设计'].kit
+  assert.equal(kit, 'cockpit-prototype')
+  assert.equal(rendered.text, `按技能 \`.dsh/skills/${kit}/SKILL.md\` 执行本阶段。` + expected)
   assert.equal(rendered.capabilitiesText, 'frontend-design, ui-ux-pro-max, impeccable')
 
   const custom = renderPrompt({ promptTemplate: '用 {capabilities} 做 {something}' }, resolved)
-  assert.equal(custom.text, '用 frontend-design, ui-ux-pro-max, impeccable 做 {something}')
+  assert.equal(custom.text, '用 frontend-design, ui-ux-pro-max, impeccable 做 {something}', '没有 kit 时不加前缀')
 })
 
 test('renderPrompt：参与替换的为空时给「按 RULES.md 自行完成」；inline 与缺失都不进文本', () => {

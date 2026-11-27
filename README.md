@@ -75,7 +75,17 @@ Delivery Cockpit 的作用是把这些步骤固定成 9 个节点，给每个节
 
 项目可以在 `.dsh/plugin-state/playbook.json` 覆盖这些定义。
 
-## 复用了哪些 skill 和功能
+## 工作流归插件所有（自带 9 个阶段技能）
+
+驾驶舱不是「把第三方 skill 拼起来」，而是自带一条完整工作流：
+
+- **9 个阶段技能随插件发布**：`cockpit-bootstrap` / `cockpit-requirements` / `cockpit-architecture` / `cockpit-prototype` / `cockpit-implementation` / `cockpit-testing` / `cockpit-review` / `cockpit-acceptance` / `cockpit-release`，`cockpit_init` 会把它们装到项目 `.dsh/skills/`。
+- **每个技能都按项目形态分两种做法**：新项目从零产出；存量项目记录现状、最小改动、不重写历史、不补历史阶段。
+- **形态由驾驶舱判定**：依据工程文件、源码目录、需求文档与已有回执，给出 `new` / `existing` 和理由（面板 `project.shape`）。skill 读这个结论，不自己扫一遍再猜。
+- **第三方只是工具**：trellis-*、frontend-design、tdd-loop、verify-claims、playwright、Context7 等放在能力列表里，有就用、没有不影响流程，更不由它们决定做哪一步。
+- **回执要报工作流**：`cockpit_report` 的 `used_skill_or_mcp` 必须包含 `cockpit-<stage>`（可以再附带实际用的工具，如 `cockpit-implementation, tdd-loop`）。
+
+## 第三方工具（可选）
 
 插件不安装这些能力，只检测本机是否已安装，并在面板里提示"用哪个、缺什么、替代方案是什么"。
 
@@ -300,7 +310,7 @@ GET /delivery-cockpit/api/report?path=<项目路径>&days=7
 
 ```powershell
 npm install
-npm test                         # node --test "test/*.test.js"，当前 556 个用例
+npm test                         # node --test "test/*.test.js"，当前 560 个用例
 node tools/preview/server.mjs    # 本机预览面板，默认 http://127.0.0.1:4711
 ```
 

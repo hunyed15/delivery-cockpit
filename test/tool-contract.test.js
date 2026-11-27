@@ -71,7 +71,13 @@ test('cockpit_report execute 真的把回执追加进会话工作目录的账本
     const tools = createToolDefinitions(fakeCtx)
     const report = tools.find((item) => item.name === 'cockpit_report')
     const value = await report.execute(
-      { iteration_id: 'bootstrap', stage: 'bootstrap', status: 'completed', summary_for_human: '工作区建好了' },
+      {
+        iteration_id: 'bootstrap',
+        stage: 'bootstrap',
+        status: 'completed',
+        summary_for_human: '工作区建好了',
+        used_skill_or_mcp: 'cockpit-bootstrap',
+      },
       execIn(project),
     )
     assert.equal(value.ok, true)
@@ -99,7 +105,7 @@ test('cockpit_report 支持验收复核留痕（event=acceptance-recheck），�
         summary_for_human: '复核 A1「能添加客户」：按步骤重走一遍，仍通过',
         feature_ids: ['FR-1'],
         event: 'acceptance-recheck',
-        used_skill_or_mcp: 'verify-claims',
+        used_skill_or_mcp: 'cockpit-acceptance',
       },
       execIn(project),
     )
@@ -126,7 +132,7 @@ test('cockpit_report 支持验收复核留痕（event=acceptance-recheck），�
         stage: 'acceptance',
         status: 'in_progress',
         summary_for_human: '开始验收',
-        used_skill_or_mcp: 'verify-claims',
+        used_skill_or_mcp: 'cockpit-acceptance',
       },
       execIn(project),
     )
@@ -311,7 +317,7 @@ test('cockpit_report 写入前校验阶段能力：implementation 缺 tdd-loop �
       (error) => {
         assert.match(error.message, /^cockpit_report: /)
         assert.match(error.message, /本阶段（代码开发）/)
-        assert.match(error.message, /必须使用 tdd-loop/)
+        assert.match(error.message, /必须使用 cockpit-implementation/)
         assert.match(error.message, /stage-capability-required/)
         return true
       },
@@ -324,7 +330,7 @@ test('cockpit_report 写入前校验阶段能力：implementation 缺 tdd-loop �
         stage: 'implementation',
         status: 'completed',
         summary_for_human: '任务 T1 做完了',
-        used_skill_or_mcp: 'tdd-loop',
+        used_skill_or_mcp: 'cockpit-implementation, tdd-loop',
         task_ref: 'T1',
         write_scope: ['src/**'],
       },
@@ -333,7 +339,7 @@ test('cockpit_report 写入前校验阶段能力：implementation 缺 tdd-loop �
     assert.equal(value.ok, true)
     assert.equal(value.capabilityWarning, undefined, '命中 method 时没有 warning')
     const row = JSON.parse((await readFile(join(project, '.dsh', 'plugin-state', 'receipts.jsonl'), 'utf8')).trim())
-    assert.equal(row.used_skill_or_mcp, 'tdd-loop')
+    assert.equal(row.used_skill_or_mcp, 'cockpit-implementation, tdd-loop')
   } finally {
     await rm(project, { recursive: true, force: true })
   }
@@ -349,7 +355,7 @@ test('cockpit_report 阶段能力：testing 要 verify-claims；acceptance 不�
           { iteration_id: 'v1.0', stage: 'testing', status: 'completed', summary_for_human: '测试跑完了' },
           execIn(project),
         ),
-      /本阶段（测试验证）必须使用 verify-claims.*stage-capability-required/,
+      /本阶段（测试验证）必须使用 cockpit-testing.*stage-capability-required/,
     )
     const tested = await report.execute(
       {
@@ -357,7 +363,7 @@ test('cockpit_report 阶段能力：testing 要 verify-claims；acceptance 不�
         stage: 'testing',
         status: 'completed',
         summary_for_human: '测试全绿',
-        used_skill_or_mcp: 'verify-claims',
+        used_skill_or_mcp: 'cockpit-testing',
       },
       execIn(project),
     )
@@ -376,39 +382,39 @@ test('cockpit_report 阶段能力：testing 要 verify-claims；acceptance 不�
           },
           execIn(project),
         ),
-      /本阶段（验收确认）必须使用 verify-claims.*stage-capability-required/,
+      /本阶段（验收确认）必须使用 cockpit-acceptance.*stage-capability-required/,
     )
   } finally {
     await rm(project, { recursive: true, force: true })
   }
 })
 
-test('cockpit_report 阶段能力：可选能力阶段（bootstrap）不阻断，但回执带 capabilityWarning', async () => {
+test('cockpit_report 阶段能力：bootstrap 也要求记录工作流技能', async () => {
   const project = await mkdtemp(join(tmpdir(), 'dc-cap-tool-'))
   try {
     const report = createToolDefinitions(fakeCtx).find((item) => item.name === 'cockpit_report')
-    const value = await report.execute(
-      { iteration_id: 'bootstrap', stage: 'bootstrap', status: 'completed', summary_for_human: '工作区建好了' },
-      execIn(project),
+    // 少了 used_skill_or_mcp ⇒ 拒绝（阶段方法现在由插件自带技能承担）
+    await assert.rejects(
+      () =>
+        report.execute(
+          { iteration_id: 'bootstrap', stage: 'bootstrap', status: 'completed', summary_for_human: '工作区建好了' },
+          execIn(project),
+        ),
+      /本阶段（项目立项）必须使用 cockpit-bootstrap.*stage-capability-required/,
     )
-    assert.equal(value.ok, true)
-    assert.equal(typeof value.capabilityWarning, 'string')
-    assert.match(value.capabilityWarning, /可选/)
-    assert.match(value.capabilityWarning, /未记录 used_skill_or_mcp/)
 
-    // 明确记了回退能力也别谎报"用了方法"：warning 换成"已按回退能力记录"
-    const fallback = await report.execute(
+    const value = await report.execute(
       {
         iteration_id: 'bootstrap',
         stage: 'bootstrap',
         status: 'completed',
-        summary_for_human: '用追问模板做完了',
-        used_skill_or_mcp: 'ponytail',
+        summary_for_human: '工作区建好了',
+        used_skill_or_mcp: 'cockpit-bootstrap',
       },
       execIn(project),
     )
-    assert.equal(fallback.ok, true)
-    assert.match(fallback.capabilityWarning, /已按回退能力记录/)
+    assert.equal(value.ok, true)
+    assert.equal(value.capabilityWarning, undefined, '命中方法时不该有 warning')
   } finally {
     await rm(project, { recursive: true, force: true })
   }
@@ -433,7 +439,7 @@ test('cockpit_report 阶段能力：constraint 不能冒充 method；optional �
           },
           execIn(project),
         ),
-      /本阶段（代码开发）必须使用 tdd-loop.*stage-capability-required/,
+      /本阶段（代码开发）必须使用 cockpit-implementation.*stage-capability-required/,
     )
     // method 命中即可写回执
     const value = await report.execute(
@@ -444,7 +450,7 @@ test('cockpit_report 阶段能力：constraint 不能冒充 method；optional �
         summary_for_human: '代码写好了',
         task_ref: 'T1',
         write_scope: ['src/**'],
-        used_skill_or_mcp: 'tdd-loop',
+        used_skill_or_mcp: 'cockpit-implementation, tdd-loop',
       },
       execIn(project),
     )
@@ -476,15 +482,30 @@ test('cockpit_report 阶段能力：constraint 不能冒充 method；optional �
           },
           execIn(project),
         ),
-      /本阶段（测试验证）必须使用 verify-claims.*stage-capability-required/,
-    )    // 架构契约没有 required method（门禁靠契约文件）：任何 used_skill_or_mcp 都不阻断
+      /本阶段（测试验证）必须使用 cockpit-testing.*stage-capability-required/,
+    )
+    // 架构契约的方法现在是 cockpit-architecture：constraint（ponytail）不能冒充
+    await assert.rejects(
+      () =>
+        report.execute(
+          {
+            iteration_id: 'v1.0',
+            stage: 'architecture',
+            status: 'completed',
+            summary_for_human: '契约写好了',
+            used_skill_or_mcp: 'ponytail',
+          },
+          execIn(project),
+        ),
+      /本阶段（架构契约）必须使用 cockpit-architecture.*stage-capability-required/,
+    )
     const architecture = await report.execute(
       {
         iteration_id: 'v1.0',
         stage: 'architecture',
         status: 'completed',
         summary_for_human: '契约写好了',
-        used_skill_or_mcp: 'ponytail',
+        used_skill_or_mcp: 'cockpit-architecture',
       },
       execIn(project),
     )

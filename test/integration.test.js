@@ -121,7 +121,12 @@ test('从空项目到下一轮迭代：每一步都有唯一动作，且人不�
 
     // 2) 初始化之后（名片名字由目录名回退、定位留空等人填）→ 想清楚
     const plan = await planInit(project)
-    assert.equal(plan.files.filter((file) => file.status === 'create').length, 4)
+    const createState = plan.files.filter((file) => file.status === 'create' && file.source !== 'plugin-skill')
+    assert.equal(createState.length, 4)
+    assert.ok(
+      plan.files.filter((file) => file.source === 'plugin-skill' && file.status === 'create').length >= 9,
+      '阶段技能要随 init 释放',
+    )
     const applied = await applyInit(project, plan)
     assert.equal(applied.applied, true)
     ;({ decision } = await decisionOf(project))

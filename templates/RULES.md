@@ -20,9 +20,20 @@
 | 部署发布 | `release` | 发布清单 + 人批准 |
 
 - 走到哪一步、下一步做什么，**以驾驶舱面板的「下一步」为准**。
+- 每个阶段的流程由**插件自带的阶段技能** `cockpit-<stage>` 承担（装在 `.dsh/skills/`）：`cockpit-bootstrap`、`cockpit-requirements`、`cockpit-architecture`、`cockpit-prototype`、`cockpit-implementation`、`cockpit-testing`、`cockpit-review`、`cockpit-acceptance`、`cockpit-release`。
+- 第三方 skill / MCP（trellis-*、frontend-design、tdd-loop、verify-claims、playwright…）是**可选工具**：有就用，没有不影响流程，也不由它们决定做哪一步。
 - 技能（skill）只决定"这一步**怎么做**"，**不得改变"做哪一步"**。
 - 若某个 skill 的流程与本规则冲突，**以本规则为准**，并在回执里说明"我偏离了哪个 skill 的哪一条"。
 - 历史账本里的旧 stage id（`init`/`scaffold`/`brainstorm`/`coding`/`code_review`/`verification`）会被自动归一，不影响既有记录。
+
+## 1.5 先看项目形态：新项目还是存量项目
+
+- 形态（`new` / `existing`）由**驾驶舱判定**并随面板下发（`project.shape` 与指令里的说法），依据是工程文件、源码目录、需求文档与已有回执。
+- **不要自己扫一遍项目再猜形态**；判不出来就直接问用户一句。
+- 两种形态的做法不同：
+  - 新项目：从零产出该阶段的东西（问出 brief、写 PRD、定契约、做原型…）；
+  - 存量项目：**记录现状、最小改动**——不重写已有文档与实现，不补历史阶段，只处理本轮发版需要的范围。
+- 存量项目不补写历史阶段（例如不为半路接入的项目伪造 brief 或架构契约）。
 
 ## 2. 动手前先认领
 

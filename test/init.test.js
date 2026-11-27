@@ -42,9 +42,13 @@ test('planInit：只读不写盘，计划描述两个目录 + 四个文件', asy
   assert.equal(plan.stateDir, join(dir, '.dsh', 'plugin-state'))
   assert.equal(plan.trellisDir, join(dir, '.trellis'))
   assert.equal(plan.gitignoreHint, GITIGNORE_HINT)
-  assert.deepEqual(plan.dirs.map((item) => item.status), ['create', 'create'])
-  assert.deepEqual(plan.files.map((item) => item.name), INIT_FILE_NAMES)
-  assert.deepEqual(plan.files.map((item) => item.status), ['create', 'create', 'create', 'create'])
+  assert.deepEqual(plan.dirs.map((item) => item.status), ['create', 'create', 'create'])
+  const stateFiles = plan.files.filter((item) => item.source !== 'plugin-skill')
+  assert.deepEqual(stateFiles.map((item) => item.name), INIT_FILE_NAMES)
+  const skillFiles = plan.files.filter((item) => item.source === 'plugin-skill')
+  assert.ok(skillFiles.length >= 9, `插件技能至少 9 个，实际 ${skillFiles.length}`)
+  assert.ok(skillFiles.some((item) => item.name === 'skills/cockpit-requirements/SKILL.md'))
+  assert.ok(plan.files.every((item) => item.status === 'create'))
   assert.equal(plan.files.find((item) => item.name === 'RULES.md').bytes, (await templateBytes('RULES.md')).length)
   assert.equal(plan.files.find((item) => item.name === 'project.json').source, 'generated')
   assert.equal(plan.files.find((item) => item.name === 'RULES.md').source, 'template')
@@ -65,15 +69,11 @@ test('applyInit：只释放四个文件与两个目录，内容来自包内模�
   assert.equal(result.dryRun, false)
   assert.equal(result.applied, true)
   assert.deepEqual(result.errors, [])
-  assert.deepEqual(result.created, [
-    '.trellis',
-    '.dsh/plugin-state',
-    '.dsh/plugin-state/RULES.md',
-    '.dsh/plugin-state/playbook.json',
-    '.dsh/plugin-state/project.json',
-    '.dsh/plugin-state/acceptance.json',
-  ])
-  assert.deepEqual(result.skipped, [])
+  assert.ok(result.created.includes('.dsh/plugin-state/RULES.md'))
+  assert.ok(result.created.includes('.dsh/plugin-state/playbook.json'))
+  assert.ok(result.created.includes('.dsh/skills/cockpit-requirements/SKILL.md'))
+  assert.ok(result.created.some((item) => item.includes('.dsh/skills/cockpit-implementation/')), '阶段技能要被释放到项目里')
+  assert.deepEqual(result.skipped, [], '全新项目不该有 skipped')
 
   for (const name of ['RULES.md', 'playbook.json', 'acceptance.json']) {
     assert.deepEqual(await readFile(join(dir, '.dsh', 'plugin-state', name)), await templateBytes(name), `${name} 必须和模板逐字节一致`)
@@ -104,21 +104,16 @@ test('幂等：第二次 init 不写任何字节，created 为空、applied:fals
   const gitignoreBefore = await readFile(join(dir, '.gitignore'), 'utf8').catch(() => null)
 
   const plan = await planInit(dir)
-  assert.deepEqual(plan.dirs.map((item) => item.status), ['exists', 'exists'])
-  assert.deepEqual(plan.files.map((item) => item.status), ['exists', 'exists', 'exists', 'exists'])
+  assert.deepEqual(plan.dirs.map((item) => item.status), ['exists', 'exists', 'exists'])
+  assert.ok(plan.files.every((item) => item.status === 'exists'))
   assert.deepEqual(plan.errors, [])
 
   const result = await applyInit(dir, plan)
   assert.equal(result.applied, false)
   assert.deepEqual(result.created, [])
-  assert.deepEqual(result.skipped, [
-    '.trellis',
-    '.dsh/plugin-state',
-    '.dsh/plugin-state/RULES.md',
-    '.dsh/plugin-state/playbook.json',
-    '.dsh/plugin-state/project.json',
-    '.dsh/plugin-state/acceptance.json',
-  ])
+  assert.deepEqual(result.skipped.slice(0, 3), ['.trellis', '.dsh/plugin-state', '.dsh/skills'])
+  for (const name of names) assert.ok(result.skipped.includes(`.dsh/plugin-state/${name}`), `${name} 应为 skipped`)
+  assert.ok(result.skipped.some((item) => item.includes('/skills/cockpit-requirements/')), '技能已存在时应 skipped')
 
   for (const name of names) {
     assert.deepEqual(await readFile(join(dir, '.dsh', 'plugin-state', name)), before.get(name), `${name} 字节不能被改动`)
@@ -161,7 +156,12 @@ test('模板缺失：该文件进 errors，其余照常写，不静默跳过', a
   for (const name of ['RULES.md', 'playbook.json', 'acceptance.json']) {
     assert.ok(plan.errors.some((message) => message.includes(name)), `${name} 缺失必须被报出来`)
   }
-  assert.deepEqual(plan.files.map((item) => item.name), ['project.json'], '拿不到模板的文件不进 files')
+  assert.deepEqual(
+    plan.files.filter((item) => item.source !== 'plugin-skill').map((item) => item.name),
+    ['project.json'],
+    '拿不到模板的文件不进 files',
+  )
+  assert.ok(plan.files.some((item) => item.source === 'plugin-skill'), '技能不依赖 templatesDir，仍要进计划')
 
   const result = await applyInit(dir, plan)
   assert.equal(result.errors.length, 3, 'plan 里的错误要带进结果')

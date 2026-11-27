@@ -924,7 +924,7 @@ test('stages：9 阶段只读详情（元信息/门禁/能力/最近记录），
   const architecture = model.stages.find((stage) => stage.id === 'architecture')
   assert.equal(architecture.name, '架构契约')
   assert.equal(architecture.cycle, true)
-  assert.equal(architecture.method, null)
+  assert.equal(architecture.method, 'cockpit-architecture')
   assert.equal(architecture.constraint, 'ponytail')
   assert.deepEqual(architecture.deliverables, ['docs/architecture.md', 'docs/api.md'])
   assert.equal(architecture.technicalGate, 'validateArchitecture')
@@ -1161,4 +1161,12 @@ test('评审器投影：旧别名 agent/model 与坏 profile 的 source 口径',
   const untouched = build(evidence())
   assert.equal(untouched.review.settings.agent, 'claude')
   assert.equal(untouched.review.settings.source, 'config')
+})
+test('project.shape：新/存量形态如实投影，skill 据此选做法', () => {
+  const existing = build(evidence({ shape: { kind: 'existing', reasons: ['有工程文件 package.json'] } }))
+  assert.equal(existing.project.shape.kind, 'existing')
+  assert.deepEqual(existing.project.shape.reasons, ['有工程文件 package.json'])
+
+  const fresh = build(evidence())
+  assert.equal(fresh.project.shape.kind, 'new')
 })

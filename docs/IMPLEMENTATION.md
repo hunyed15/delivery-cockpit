@@ -911,7 +911,7 @@ features: {
 - **workflow 开关**：`POST /delivery-cockpit/api/workflow` body `{path, workflow:'full'|'light'}`，只改 `.dsh/plugin-state/project.json` 的 `workflow` 与 `updatedAt`（`setWorkflow`，保留名片其它字段）；非法值 400，缺名片/坏名片 409。面板 header 显示「完整流程 / 轻量模式」按钮，切换后自动刷新；`panel.project.workflow` 由 model 下发。
 - **Trellis 入口**：`lib/trellis.js#initializeTrellis` 抽成 Host 共享实现（`cockpit_init {trellisInit:true}` 与 `POST /api/trellis-init` 共用）；只有 `.trellis/scripts/get_context.py` 不存在时才跑 `trellis init --dsh -y -s -u <user>`，缺 subprocess/CLI 返回 skipped 不报错；`evidence.trellis.ready` 表示运行时真的可跑。面板在 `initialized && !ready` 时显示「接通 Trellis」。
 - **线上 DORA**：可选 `.dsh/plugin-state/dora.json`，schema `{deployments:[{at, version?, success?, leadTimeHours?}], incidents:[{at, resolvedAt}]}`。`lib/dora.js` 做只读归一（坏行计数、坏 JSON 不降级）；`computeMetrics` 有线上数据时用真实发布/失败/恢复时长替换代理的发布频率、变更失败率、交付周期，并新增 `mttrHours`；`metrics.source='live'|'proxy'`，面板 meta/脚注、周报定义同步说明来源；没接线上数据时 `mttrHours=null` 并说明原因，不补 0。
-- **验证**：556 passed / 0 failed；新增 dora/project-card/route/evidence/client 用例。
+- **验证**：560 passed / 0 failed；新增 dora/project-card/route/evidence/client 用例。
 
 
 ### 3.25 评审器切换：Claude / Gemini（2026-11-27）
@@ -930,6 +930,18 @@ features: {
 - **PRD 不覆盖**：`docs/prd.md` 已存在时，指令明确「不要重写，只补缺失的 FR 与验收标准」，避免存量项目被覆盖。
 - **谁决定优先级**：PRD 由 agent 起草，但功能范围与优先级必须由人通过「范围签核」确认，指令里写明不要替人拍板。
 - **项目 playbook 会盖掉内置更新**：`cockpit_init` 会把内置 playbook 复制进项目；之后内置模板更新不会自动进项目。需要同步时改 `.dsh/plugin-state/playbook.json` 对应 stage，或删掉该文件改用内置。
+
+### 3.27 工作流归插件所有（2026-11-28）
+
+**问题**：把 trellis-brainstorm / frontend-design / tdd-loop 这类第三方 skill 当成阶段 method，等于把流程交给不理解驾驶舱状态的组件——它们不知道项目是新的还是存量的，也不知道当前该做哪一步，指令只能靠"猜"。
+
+**改法**：
+
+1. **插件自带阶段技能**：`skills/cockpit-<stage>/SKILL.md`（9 个），每个都写清「何时用 / 先读什么 / 新项目怎么做 / 存量项目怎么做 / 步骤 / 产物 / 硬约束」。`cockpit_init` 把它们释放到项目 `.dsh/skills/`（幂等，已存在则 skipped）。
+2. **method 指向自带技能**：`templates/playbook.json` 9 个阶段的 `method` 全部改为 `cockpit-<stage>`，并新增 `kit` 字段；`renderPrompt` 在指令前加一句「按技能 `.dsh/skills/<kit>/SKILL.md` 执行本阶段」。
+3. **第三方降级为工具**：trellis-*、frontend-design、tdd-loop、verify-claims、playwright 等仍列在 `capabilities` 里，但只是「可选工具」，缺了不影响流程。
+4. **新/存量由驾驶舱判定**：新增 `lib/shape.js`，依据工程文件、源码目录、需求文档、已有回执给出 `new` / `existing` 与理由；写进 `evidence.shape` → `panel.project.shape`。skill 一律读这个结论，不许自己扫一遍再猜。
+5. **回执校验随之收紧**：`used_skill_or_mcp` 必须包含 `cockpit-<stage>`（可再附带实际用的工具，如 `cockpit-implementation, tdd-loop`），否则 `cockpit_report` 拒绝写入。
 
 ## 5. 实现偏差记录（实现期确认，均已在测试中固化）
 
