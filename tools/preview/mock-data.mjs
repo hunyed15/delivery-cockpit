@@ -489,7 +489,7 @@ function makePanel(overrides = {}) {
       truncated: false,
       items: ACCEPTANCE_ITEMS,
     },
-    review: { available: true, reason: null, rounds: 2, blocking: 0, fixed: 0, issues: [] },
+    review: { available: true, reason: null, rounds: 2, blocking: 0, fixed: 0, issues: [], settings: { agent: 'claude', model: '', agyProxy: '', source: 'config' } },
     tasks: {
       available: true,
       total: 5,

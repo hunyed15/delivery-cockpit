@@ -300,7 +300,7 @@ GET /delivery-cockpit/api/report?path=<项目路径>&days=7
 
 ```powershell
 npm install
-npm test                         # node --test "test/*.test.js"，当前 552 个用例
+npm test                         # node --test "test/*.test.js"，当前 553 个用例
 node tools/preview/server.mjs    # 本机预览面板，默认 http://127.0.0.1:4711
 ```
 

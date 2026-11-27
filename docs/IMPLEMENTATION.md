@@ -911,7 +911,7 @@ features: {
 - **workflow 开关**：`POST /delivery-cockpit/api/workflow` body `{path, workflow:'full'|'light'}`，只改 `.dsh/plugin-state/project.json` 的 `workflow` 与 `updatedAt`（`setWorkflow`，保留名片其它字段）；非法值 400，缺名片/坏名片 409。面板 header 显示「完整流程 / 轻量模式」按钮，切换后自动刷新；`panel.project.workflow` 由 model 下发。
 - **Trellis 入口**：`lib/trellis.js#initializeTrellis` 抽成 Host 共享实现（`cockpit_init {trellisInit:true}` 与 `POST /api/trellis-init` 共用）；只有 `.trellis/scripts/get_context.py` 不存在时才跑 `trellis init --dsh -y -s -u <user>`，缺 subprocess/CLI 返回 skipped 不报错；`evidence.trellis.ready` 表示运行时真的可跑。面板在 `initialized && !ready` 时显示「接通 Trellis」。
 - **线上 DORA**：可选 `.dsh/plugin-state/dora.json`，schema `{deployments:[{at, version?, success?, leadTimeHours?}], incidents:[{at, resolvedAt}]}`。`lib/dora.js` 做只读归一（坏行计数、坏 JSON 不降级）；`computeMetrics` 有线上数据时用真实发布/失败/恢复时长替换代理的发布频率、变更失败率、交付周期，并新增 `mttrHours`；`metrics.source='live'|'proxy'`，面板 meta/脚注、周报定义同步说明来源；没接线上数据时 `mttrHours=null` 并说明原因，不补 0。
-- **验证**：552 passed / 0 failed；新增 dora/project-card/route/evidence/client 用例。
+- **验证**：553 passed / 0 failed；新增 dora/project-card/route/evidence/client 用例。
 
 
 ### 3.25 评审器切换：Claude / Gemini（2026-11-27）

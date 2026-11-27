@@ -675,7 +675,7 @@ test('交付指标：模块顺序在「项目进度」之后、「功能」之�
 
 test('导出周报：header 有下载入口，直接指向 /report（浏览器下载，不走 fetch）', () => {
   assert.ok(source.includes('导出周报'), 'header 要有「导出周报」入口')
-  assert.match(source, /href:\s*`\$\{API\}\/report\?path=\$\{encodeURIComponent\(project\.path \|\| props\.selectedPath \|\| ''\)\}&days=7`/, '链接必须带 path 与 days=7')
+  assert.match(source, /href:\s*`\$\{API\}\/report\?path=\$\{encodeURIComponent\(projectPath\)\}&days=7`/, '链接必须带 path 与 days=7')
   assert.ok(!/fetch\(\s*`\$\{API\}\/report/.test(source), '周报下载不走 fetch')
 })
 
@@ -698,4 +698,17 @@ test('代码检查：可切 Claude/Gemini，可设置模型与 agy 代理', () =
   assert.ok(source.includes('agy 代理'), 'agy 代理要可配置')
   assert.ok(source.includes('代理只注入 agy 子进程'), '要说明代理作用范围')
   assert.ok(css.includes('.dc-review-settings'), '评审器设置要有样式')
+})
+test('评审器设置放在详情 header（不埋在右栏底部），且缺项目路径时不发请求', () => {
+  const menu = source.indexOf('h(ReviewSettings')
+  const rail = source.indexOf('h(SidebarRail')
+  assert.ok(menu > 0 && rail > menu, '评审器菜单要在 header 里，位于右栏之前')
+
+  const railStart = source.indexOf('function ReviewRail')
+  const railEnd = source.indexOf('function ReceiptsTimeline')
+  const railBody = source.slice(railStart, railEnd)
+  assert.ok(!railBody.includes('ReviewSettings'), '右栏里不应再出现评审器设置')
+
+  assert.ok(source.includes('这个视图拿不到项目路径'), '缺路径时要给人话提示而不是发空请求')
+  assert.ok(source.includes('disabled: busy || projectPath === \'\''), '缺路径时保存按钮要禁用')
 })

@@ -983,14 +983,25 @@ h2.dc-name { margin:0; font-size:20px; line-height:1.3; font-weight:600; letter-
 .dc-rail-title { margin:0; font-size:12px; font-weight:600; color:var(--dsw-alias-label-primary); }
 .dc-rail-meta { font-size:11px; color:var(--dsw-alias-label-secondary); font-variant-numeric:tabular-nums; }
 .dc-rail-note { margin:0; font-size:12px; color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere; }
-.dc-review-settings { margin-top:10px; padding-top:8px; border-top:1px dashed var(--dsw-alias-border-l1); }
-.dc-review-settings > summary { cursor:pointer; font-size:11.5px; color:var(--dsw-alias-label-secondary); }
-.dc-review-settings > summary:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; border-radius:4px; }
+.dc-review-settings { font-size:11.5px; }
+.dc-review-settings-summary { cursor:pointer; color:var(--dsw-alias-label-secondary); list-style:none; }
+.dc-review-settings-summary::-webkit-details-marker { display:none; }
+.dc-review-settings-summary:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; border-radius:4px; }
+.dc-review-settings[open] > .dc-review-settings-summary { color:var(--dsw-alias-label-primary); }
 .dc-review-settings-body { display:flex; flex-direction:column; gap:8px; padding-top:8px; }
 .dc-review-settings-body label { display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--dsw-alias-label-secondary); }
-.dc-review-settings-body select, .dc-review-settings-body input { height:28px; padding:0 8px; border:1px solid var(--dsw-alias-border-l1); border-radius:6px; background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary); font:inherit; font-size:12px; }
+.dc-review-settings-body select, .dc-review-settings-body input { width:100%; height:28px; padding:0 8px; border:1px solid var(--dsw-alias-border-l1); border-radius:6px; background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary); font:inherit; font-size:12px; box-sizing:border-box; }
 .dc-review-settings-body select:focus-visible, .dc-review-settings-body input:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:1px; }
+.dc-review-settings-hint { margin:0; font-size:11px; color:var(--dsw-alias-label-secondary); overflow-wrap:anywhere; }
 .dc-review-settings-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+/* header 里的评审器菜单：贴在模式切换旁边，点开是浮层，不用滚到右栏底部 */
+.dc-review-settings-header { position:relative; }
+.dc-review-settings-header > .dc-review-settings-body {
+  position:absolute; right:0; top:calc(100% + 6px); z-index:30; width:264px;
+  padding:12px; border:1px solid var(--dsw-alias-border-l1); border-radius:10px;
+  background:var(--dsw-alias-bg-base);
+  box-shadow:0 10px 28px color-mix(in srgb, var(--dsw-alias-label-primary) 18%, transparent);
+}
 .dc-rail-stats { display:flex; gap:14px; flex-wrap:wrap; font-size:11.5px; color:var(--dsw-alias-label-secondary); margin-bottom:6px; }
 .dc-rail-num { color:var(--dsw-alias-label-primary); font-weight:600; font-variant-numeric:tabular-nums; }
 .dc-rail-severe { margin-top:8px; padding-top:8px; border-top:1px dashed var(--dsw-alias-border-l1); font-size:11.5px; min-width:0; }
@@ -3859,6 +3870,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
 
     function ReviewSettings(props) {
       const settings = props.settings || {}
+      const projectPath = typeof props.projectPath === 'string' ? props.projectPath.trim() : ''
       const [agent, setAgent] = React.useState(settings.agent === 'agy' ? 'agy' : 'claude')
       const [model, setModel] = React.useState(settings.model || '')
       const [proxy, setProxy] = React.useState(settings.agyProxy || '')
@@ -3872,12 +3884,12 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
       }, [settings.agent, settings.model, settings.agyProxy])
 
       const save = async () => {
-        if (busy) return
+        if (busy || projectPath === '') return
         setBusy(true)
         setMessage('')
         try {
           await postJson(`${API}/review-settings`, {
-            path: props.projectPath,
+            path: projectPath,
             agent,
             model: model.trim(),
             agyProxy: proxy.trim(),
@@ -3885,20 +3897,33 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           setMessage('已保存')
           if (props.onRefresh) props.onRefresh()
         } catch (error) {
-          setMessage(String(error && error.message ? error.message : error))
+          const raw = String(error && error.message ? error.message : error)
+          setMessage(explainError(raw))
         } finally {
           setBusy(false)
         }
       }
 
-      const summary = `${REVIEW_AGENT_LABELS[agent] || agent}${model.trim() ? ` · ${model.trim()}` : ' · 默认模型'}`
+      const modelText = model.trim() ? model.trim() : '默认模型'
+      const summary = `评审：${REVIEW_AGENT_LABELS[agent] || agent} · ${modelText}`
+      const header = props.variant === 'header'
       return h(
         'details',
-        { className: 'dc-review-settings' },
-        h('summary', { title: '切换 Claude Code / Gemini 评审器并设置模型' }, `评审器：${summary}`),
+        { className: `dc-review-settings${header ? ' dc-review-settings-header' : ''}` },
+        h(
+          'summary',
+          {
+            className: 'dc-review-settings-summary',
+            title: header ? '切换 Claude Code / Gemini 评审器，并设置模型与 agy 代理' : '切换评审器并设置模型',
+          },
+          header ? summary : `评审器：${REVIEW_AGENT_LABELS[agent] || agent} · ${modelText}`,
+        ),
         h(
           'div',
           { className: 'dc-review-settings-body' },
+          projectPath === ''
+            ? h('p', { className: 'dc-review-settings-hint', role: 'status' }, '这个视图拿不到项目路径，刷新面板后再改评审器。')
+            : null,
           h(
             'label',
             null,
@@ -3935,7 +3960,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                 h('input', {
                   type: 'text',
                   value: proxy,
-                  placeholder: 'http://127.0.0.1:10808',
+                  placeholder: '留空不注入；例如 http://127.0.0.1:10808',
                   onChange: (event) => setProxy(event.target.value),
                 }),
               )
@@ -3943,11 +3968,15 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           h(
             'div',
             { className: 'dc-review-settings-actions' },
-            h('button', { type: 'button', className: 'dc-btn', onClick: save, disabled: busy }, busy ? '保存中…' : '保存'),
+            h(
+              'button',
+              { type: 'button', className: 'dc-btn', onClick: save, disabled: busy || projectPath === '' },
+              busy ? '保存中…' : '保存',
+            ),
             message ? h('span', { className: 'dc-inline-msg', role: 'status' }, message) : null,
           ),
           agent === 'agy'
-            ? h('p', { className: 'dc-rail-note' }, '需要本机安装 agy 并已登录；代理只注入 agy 子进程，不影响其他请求。')
+            ? h('p', { className: 'dc-review-settings-hint' }, '需要本机安装 agy 并已登录；代理只注入 agy 子进程。')
             : null,
         ),
       )
@@ -3956,11 +3985,6 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
     function ReviewRail(props) {
       const review = props.review || {}
       const features = props.features || {}
-      const settingsNode = h(ReviewSettings, {
-        settings: review.settings || {},
-        projectPath: props.projectPath || '',
-        onRefresh: props.onRefresh,
-      })
       if (review.available === false) {
         return h(
           Module,
@@ -3970,7 +3994,6 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
             { className: 'dc-rail-note' },
             review.reason === 'no-ledger' ? '还没有接过代码检查。' : '代码检查暂时没读到。',
           ),
-          settingsNode,
         )
       }
       const blocking = Number(review.blocking) || 0
@@ -4007,7 +4030,6 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
               { className: 'dc-rail-note' },
               rounds > 0 ? `最近 ${rounds} 轮检查通过 · 没问题` : '还没做代码检查。',
             ),
-        settingsNode,
       )
     }
 
@@ -4174,7 +4196,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                 : null,
             )
           : null,
-        h(ReviewRail, { review: props.review, features: props.features, projectPath: props.projectPath, onRefresh: props.onRefresh }),
+        h(ReviewRail, { review: props.review, features: props.features }),
         h(TeamRail, { team: props.team }),
         h(ReceiptsTimeline, { ledger }),
         gapCount > 0
@@ -4296,6 +4318,8 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
     function DetailPage(props) {
       const panel = props.panel || {}
       const project = panel.project || {}
+      // 统一口径：写接口必须拿到项目路径，缺了就禁用而不是发一个 missing-path 的空请求。
+      const projectPath = project.path || props.selectedPath || ''
       const ledger = panel.ledger || {}
       const action = panel.nextAction || {}
       const degraded = Boolean(panel.degraded && panel.degraded.flag)
@@ -4353,10 +4377,16 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
           ),
           h(Chip, { tone: 'idle' }, (panel.iteration && panel.iteration.current) || '还没开始'),
           h(WorkflowControls, {
-            projectPath: project.path || props.selectedPath || '',
+            projectPath,
             workflow: project.workflow === 'light' ? 'light' : 'full',
             trellis: panel.trellis || {},
             onRefresh: props.refresh,
+          }),
+          h(ReviewSettings, {
+            settings: (panel.review && panel.review.settings) || {},
+            projectPath,
+            onRefresh: props.refresh,
+            variant: 'header',
           }),
           h('span', { className: 'dc-spacer' }),
           h(
@@ -4398,7 +4428,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
             {
               className: 'dc-btn',
               // 下载交给浏览器处理（Content-Disposition: attachment），不走 JS fetch。
-              href: `${API}/report?path=${encodeURIComponent(project.path || props.selectedPath || '')}&days=7`,
+              href: `${API}/report?path=${encodeURIComponent(projectPath)}&days=7`,
               title: '下载最近 7 天的项目周报（Markdown）',
             },
             '导出周报',
@@ -4514,7 +4544,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
                 gates: panel.gates,
                 iteration: panel.iteration,
                 progression: panel.progression,
-                projectPath: project.path || props.selectedPath,
+                projectPath,
                 onApplied: (result) => {
                   setInitResult(result)
                   props.refresh()
@@ -4536,7 +4566,7 @@ h2.dc-state-title { margin:0 0 8px; font-size:15px; font-weight:600; }
               h(AcceptancePanel, {
                 acceptance: panel.acceptance,
                 actionKind: action.kind,
-                projectPath: project.path || props.selectedPath,
+                projectPath,
                 previewUrl: project.commands && project.commands.previewUrl,
                 onRefresh: props.refresh,
               }),
