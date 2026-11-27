@@ -81,7 +81,7 @@ Delivery Cockpit 的作用是把这些步骤固定成 9 个节点，给每个节
 
 - **9 个阶段技能随插件发布**：`cockpit-bootstrap` / `cockpit-requirements` / `cockpit-architecture` / `cockpit-prototype` / `cockpit-implementation` / `cockpit-testing` / `cockpit-review` / `cockpit-acceptance` / `cockpit-release`，`cockpit_init` 会把它们装到项目 `.dsh/skills/`。
 - **每个技能都按项目形态分两种做法**：新项目从零产出；存量项目记录现状、最小改动、不重写历史、不补历史阶段。
-- **形态由驾驶舱判定**：依据工程文件、源码目录、需求文档与已有回执，给出 `new` / `existing` 和理由（面板 `project.shape`）。skill 读这个结论，不自己扫一遍再猜。
+- **形态由驾驶舱判定**：依据工程文件、源码目录、需求文档给出 new/existing；已有回执只标记 started（是否已动工），给出 `new` / `existing` 和理由（面板 `project.shape`）。skill 读这个结论，不自己扫一遍再猜。
 - **第三方只是工具**：trellis-*、frontend-design、tdd-loop、verify-claims、playwright、Context7 等放在能力列表里，有就用、没有不影响流程，更不由它们决定做哪一步。
 - **回执要报工作流**：`cockpit_report` 的 `used_skill_or_mcp` 必须包含 `cockpit-<stage>`（可以再附带实际用的工具，如 `cockpit-implementation, tdd-loop`）。
 
