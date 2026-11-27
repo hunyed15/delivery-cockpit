@@ -33,7 +33,7 @@ test('空目录 ⇒ new，并说明依据', async () => {
   })
 })
 
-test('有工程文件 / 源码目录 / PRD / 回执 ⇒ existing，并列出依据', async () => {
+test('有工程文件 / 源码目录 / PRD ⇒ existing；回执只标记 started', async () => {
   await withProject(async (dir) => {
     await touch(dir, 'package.json', '{}')
     const byManifest = await detectProjectShape(dir)
@@ -55,10 +55,11 @@ test('有工程文件 / 源码目录 / PRD / 回执 ⇒ existing，并列出依�
     assert.ok(byPrd.reasons.some((r) => r.includes('docs/prd.md')))
   })
 
+  // 回执只说明"已经动过手"，不能把新项目变成存量（新项目跑完 bootstrap 就有回执）
   await withProject(async (dir) => {
     const byReceipts = await detectProjectShape(dir, { receiptCount: 3 })
-    assert.equal(byReceipts.kind, 'existing')
-    assert.ok(byReceipts.reasons.some((r) => r.includes('3 条执行回执')))
+    assert.equal(byReceipts.kind, 'new')
+    assert.equal(byReceipts.started, true)
   })
 })
 

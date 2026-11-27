@@ -129,7 +129,7 @@
       "kit": "cockpit-review",
       "constraint": null,
       "capabilities": [
-        { "kind": "tool", "name": "claude_review", "mode": "full", "optional": true, "substitute": true, "note": "硬依赖：缺失即阻塞；作为复核阶段的方法替代记录" },
+        { "kind": "tool", "name": "claude_review", "mode": "full", "optional": true,  "note": "可选工具：复核阶段用它跑独立评审；缺失不影响流程，方法由 cockpit-review 承担" },
         { "kind": "skill", "name": "claude-code-review", "mode": "full", "note": "独立复核清单（五轴）" },
         { "kind": "inline", "name": "review-ledger", "mode": "inline", "note": "账本：.dsh/claude-review/ledger；blocking=0" }
       ],
