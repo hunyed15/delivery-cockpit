@@ -361,6 +361,7 @@ tools/preview/      本机预览
 
 ## 文档
 
+- [prd.md](prd.md)：产品需求基线（11 条 FR，可被驾驶舱解析成功能账）
 - [docs/WORKFLOW-DESIGN.md](docs/WORKFLOW-DESIGN.md)：节点/技能/产出物/进度怎么放，agent 如何自动下一步
 - [docs/VISION.md](docs/VISION.md)：产品定位、阶段和门禁的设计
 - [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)：模块、数据形状、HTTP 端点
