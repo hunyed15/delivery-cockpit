@@ -85,20 +85,19 @@ Delivery Cockpit 的作用是把这些步骤固定成 9 个节点，给每个节
 - **第三方只是工具**：trellis-*、frontend-design、tdd-loop、verify-claims、playwright、Context7 等放在能力列表里，有就用、没有不影响流程，更不由它们决定做哪一步。
 - **回执要报工作流**：`cockpit_report` 的 `used_skill_or_mcp` 必须包含 `cockpit-<stage>`（可以再附带实际用的工具，如 `cockpit-implementation, tdd-loop`）。
 
-### 驾驶舱命令（不调用 Trellis CLI）
+### 每个阶段自己驱动能力
 
-Trellis 的结构值得借鉴，但命令面属于驾驶舱自己：
+9 个阶段技能里写明「这一步调用哪个 skill / MCP / 工具、按什么顺序、产出什么、过什么门」，playbook 的 `sequence` 与面板 `stages[].sequence` 是同一份顺序：
 
-| 命令技能 | 什么时候用 |
+| 阶段 | 能力调用顺序（节选） |
 |---|---|
-| `cockpit-start` | 开工或隔几天接着做：形态、当前阶段、下一步、待拍板事项 |
-| `cockpit-continue` | 上次没做完 / 换会话：按账本恢复到断点 |
-| `cockpit-check` | 写"做完了"前、提交或发版前：测试 / 审核 / 验收 / 发布 / 规范五项自检 |
-| `cockpit-finish-work` | 收尾：任务清零、验收签核、发布清单、留痕 |
-| `cockpit-spec` | 沉淀规范（`.trellis/spec/`，没有 Trellis 就 `docs/spec/`）|
-| `cockpit-break-loop` | 修了又犯：定根因类别与防复发机制 |
+| 架构契约 | `context7` 查真实 API → ponytail 收敛 → 写 `architecture.md`/`api.md` → 人签架构 |
+| 原型设计 | `frontend-design` → `playwright` 截图 → `impeccable` 自检 → 人点通过 |
+| 测试验证 | 跑真实测试 → `webapp-testing`/`playwright` E2E → `verify-claims` → 写 `test-report.json` |
+| 代码复核 | `claude_review` → `claude_review_disposition` 逐条处置 → blocking=0 |
+| 验收确认 | 起草验收 → 截图/对比 → 人点结果 → 人签核 |
 
-Trellis 只作**数据来源**（`.trellis/tasks`、`.trellis/spec`、审核账本），直接读文件，不执行 `trellis` 命令；项目没有 Trellis 时这些命令照常工作。
+缺能力时按技能里的「失败与回退」降级并写进回执，**不允许因为缺 MCP 就跳过阶段**；需要人点的节点（签核、点通过、批准发布）写在顺序里，agent 不能代替。
 
 ## 第三方工具（可选）
 

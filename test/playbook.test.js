@@ -510,16 +510,21 @@ test('需求定义指令：说明 brief 可有可无，且不覆盖已有 prd', 
   assert.match(template, /功能范围与优先级必须由人签核/)
 })
 
-test('playbook.commands：驾驶舱自带命令面，且不再把 trellis 技能当阶段方法', async () => {
+test('playbook：没有命令层，每个阶段给出能力调用顺序且方法由自带技能承担', async () => {
   const raw = await readFile('templates/playbook.json', 'utf8')
   const builtinPlaybook = JSON.parse(raw)
-  const ids = builtinPlaybook.commands.map((item) => item.id)
-  for (const id of ['cockpit-start', 'cockpit-continue', 'cockpit-check', 'cockpit-finish-work', 'cockpit-spec', 'cockpit-break-loop']) {
-    assert.ok(ids.includes(id), `缺少命令 ${id}`)
-  }
+  assert.equal(builtinPlaybook.commands, undefined, '不该再有平行于 9 阶段的命令层')
+
   for (const [name, entry] of Object.entries(builtinPlaybook.stages)) {
     assert.match(entry.method, /^cockpit-/, `${name} 的方法应由插件自带技能承担`)
+    assert.ok(Array.isArray(entry.sequence) && entry.sequence.length >= 2, `${name} 缺少能力调用顺序`)
+    assert.equal(entry.sequence[entry.sequence.length - 1], 'cockpit_report', `${name} 的最后一步应该是写回执`)
     const names = (entry.capabilities || []).map((cap) => cap.name)
     assert.ok(!names.some((value) => value.startsWith('trellis-')), `${name} 不该再把 trellis 技能当能力`)
   }
+
+  // 关键阶段必须真的驱动 MCP / 工具
+  assert.ok(builtinPlaybook.stages['架构契约'].sequence.includes('context7'), '架构契约要驱动 context7')
+  assert.ok(builtinPlaybook.stages['原型设计'].sequence.includes('playwright'), '原型要驱动 playwright 截图')
+  assert.ok(builtinPlaybook.stages['代码复核'].sequence.includes('claude_review'), '复核要驱动 claude_review')
 })

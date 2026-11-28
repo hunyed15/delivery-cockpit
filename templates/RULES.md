@@ -35,21 +35,25 @@
   - 存量项目：**记录现状、最小改动**——不重写已有文档与实现，不补历史阶段，只处理本轮发版需要的范围。
 - 存量项目不补写历史阶段（例如不为半路接入的项目伪造 brief 或架构契约）。
 
-## 1.6 用驾驶舱命令，不调用 Trellis 命令
+## 1.6 每个阶段自己驱动能力（不调用 trellis 命令）
 
-Trellis 的**工作流结构**值得借鉴，但命令面是驾驶舱自己的：需要"开始 / 续作 / 自检 / 收尾 / 沉淀规范 / 破循环"时，用下面这些技能，而不是 `trellis` CLI。
+工作流的主轴是 **9 个阶段**，不是「会话命令集」。每个阶段技能里都写明了这一步的**能力调用顺序**（playbook 的 `sequence`，面板 `stages[].sequence`），照着调：
 
-| 命令技能 | 什么时候用 |
+| 阶段 | 典型能力顺序 |
 |---|---|
-| `cockpit-start` | 进入项目准备开工，或隔了几天接着做：给出形态、当前阶段、下一步、待拍板事项 |
-| `cockpit-continue` | 上次没做完或换了会话：按账本恢复到断点 |
-| `cockpit-check` | 写"做完了"回执前、提交或发版前：测试 / 审核 / 验收 / 发布 / 规范五项自检 |
-| `cockpit-finish-work` | 功能都验收通过：任务清零、验收签核、发布清单、留痕 |
-| `cockpit-spec` | 学到可复用约定或踩过坑：写进 `.trellis/spec/`（无 Trellis 规范则 `docs/spec/`）|
-| `cockpit-break-loop` | 同一问题修过两次还在犯：先定根因类别与防复发机制 |
+| 项目立项 | grilling → cockpit_init → 回执 |
+| 需求定义 | 写 PRD → `cockpit_acceptance` 起草 → 人签范围 → 回执 |
+| 架构契约 | `context7`（查真实 API）→ ponytail（YAGNI）→ 写契约 → 人签架构 → 回执 |
+| 原型设计 | `frontend-design` → `playwright` 截图 → `impeccable` 自检 → 人点通过 → 回执 |
+| 代码开发 | 认领任务 → `tdd-loop` → ponytail → `claude_review`(range) → 回执 |
+| 测试验证 | 跑真实测试命令 → `webapp-testing`/`playwright`(E2E) → `verify-claims` → 回执 |
+| 代码复核 | `claude_review` → 逐条 `claude_review_disposition` → blocking=0 → 回执 |
+| 验收确认 | 起草验收 → `playwright`/面板截图 → `verify-claims` → 人点结果 → 人签核 → 回执 |
+| 部署发布 | 构建 → 算 sha256 → 写 release.json → 人批准 → 回执 |
 
-- Trellis 只作为**数据来源**：`.trellis/tasks`（任务）、`.trellis/spec`（规范）、审核账本。直接读文件，**不执行 `trellis` 命令**。
-- 项目没有 Trellis 时这些命令照常工作：任务用会话任务板，规范用 `docs/spec/`。
+- **能力是可替换的工具，阶段是固定的主线**：缺某个 MCP/skill 时按技能里的「失败与回退」降级，并在回执写明；不允许因为缺能力就跳过阶段。
+- **需要人点的节点写在顺序里**（`human-scope-signoff`、`human-prototype-approval`、`human-acceptance-result`、`human-acceptance-signoff`、`human-release-approval`）：agent 不能代替人点。
+- **Trellis 只作为数据来源**：`.trellis/tasks`（任务）、`.trellis/spec`（规范）、审核账本；直接读文件，**不执行 `trellis` 命令**。
 
 ## 2. 动手前先认领
 

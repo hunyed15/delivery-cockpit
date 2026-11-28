@@ -1077,3 +1077,10 @@ features: {
 - 阶段能力里不再出现 `trellis-*` 技能：Trellis 只作数据来源（`.trellis/tasks`、`.trellis/spec`、审核账本），**不执行 `trellis` CLI**；没有 Trellis 时命令照常工作。
 - 命令与阶段技能的分工：阶段技能做"这一步的具体工作"，命令处理跨阶段动作（开工/续作/自检/收尾/沉淀/破循环）。
 
+### 3.29 撤回命令层：改回「9 阶段驱动能力」（2026-11-28）
+
+- 3.28 引入的 6 个命令技能（cockpit-start/continue/check/finish-work/spec/break-loop）是**错的主轴**：它们照搬 Trellis 的会话命令，在 9 阶段之外又开了一条平行线，把工作流拆成两套入口。已删除。
+- 现在的主轴只有 9 个**阶段**技能，每个技能内含「能力调用顺序」表（用什么、怎么调、产出什么），playbook 的 `sequence` 与面板 `stages[].sequence` 是同一份顺序；需要人点的节点（scope/prototype/acceptance/release 签核与结果）也写在这条顺序里。
+- 能力仍是可替换的工具：缺 MCP/skill 按技能里的「失败与回退」降级并在回执写明，不允许因为缺能力跳过阶段。
+- `cockpit_init` 对插件自带技能改为**可更新**：内容与插件不一致时 status=update 并覆盖（用户自建文件仍不覆盖），保证阶段技能随插件升级。
+

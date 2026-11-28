@@ -2,39 +2,6 @@
   "version": 2,
   "type": "web",
   "_comment": "9 阶段能力路由（docs/VISION.md §4 / docs/CAPABILITIES.md §2.9）。capabilities[].kind: skill | mcp | tool | inline；缺的能力用 note 写回退，不引用已移除的 superpowers skill。method / constraint / deliverables / technicalGate / decisionGate 是本轮新增的阶段元信息，原样下发给面板；下一轮再接门禁校验器。项目里的 .dsh/plugin-state/playbook.json 若 version 与内置不一致，stages 会被忽略，只覆盖 missingHints 等非 stage 字段。",
-
-  "commands": [
-    {
-      "id": "cockpit-start",
-      "title": "开始/接续一次开发会话",
-      "when": "进入项目准备开工，或隔几天接着做"
-    },
-    {
-      "id": "cockpit-continue",
-      "title": "断点续作",
-      "when": "上次没做完，或换了会话要接着做"
-    },
-    {
-      "id": "cockpit-check",
-      "title": "质量门自检",
-      "when": "写\"做完了\"回执前、提交或发版前"
-    },
-    {
-      "id": "cockpit-finish-work",
-      "title": "本轮收尾",
-      "when": "功能都验收通过，准备发布或结束这一轮"
-    },
-    {
-      "id": "cockpit-spec",
-      "title": "规范沉淀",
-      "when": "学到可复用约定、踩过坑、发现规范与实现不符"
-    },
-    {
-      "id": "cockpit-break-loop",
-      "title": "修了又犯的 bug",
-      "when": "同一问题修过两次还在犯"
-    }
-  ],
   "stages": {
     "项目立项": {
       "goal": "把想法收成一页可签核的概念，并建好项目状态目录与规则基线",
@@ -42,8 +9,19 @@
       "kit": "cockpit-bootstrap",
       "constraint": null,
       "capabilities": [
-        { "kind": "skill", "name": "grilling", "mode": "full", "optional": true, "note": "本机未安装；回退：按内置一页 brief 模板逐项追问（目标用户 / 场景 / 价值 / 约束 / 不做什么）" },
-        { "kind": "inline", "name": "plugin-init", "mode": "inline", "note": "调用 cockpit_init 释放 RULES.md / project.json / playbook.json / acceptance.json；幂等，dry-run 可预览" }
+        {
+          "kind": "skill",
+          "name": "grilling",
+          "mode": "full",
+          "optional": true,
+          "note": "本机未安装；回退：按内置一页 brief 模板逐项追问（目标用户 / 场景 / 价值 / 约束 / 不做什么）"
+        },
+        {
+          "kind": "inline",
+          "name": "plugin-init",
+          "mode": "inline",
+          "note": "调用 cockpit_init 释放 RULES.md / project.json / playbook.json / acceptance.json；幂等，dry-run 可预览"
+        }
       ],
       "deliverables": [
         "docs/brief.md",
@@ -56,72 +34,192 @@
       "decisionGate": null,
       "promptTemplate": "用 {capabilities} 把想法问清楚，产出一页 `docs/brief.md`：目标用户、场景、价值、约束、初步范围、不做什么。然后调用 `cockpit_init`（`dryRun:false`）释放 RULES.md / project.json / playbook.json / acceptance.json，确认 `.trellis/` 与 `.dsh/plugin-state/RULES.md` 都存在，最后写一条执行回执。",
       "exitGate": "`.trellis/` 与四个状态文件存在且 schema 合法；brief 写清目标用户与不做什么",
-      "redLines": ["不写任何业务代码", "不自动安装 skill / MCP", "不自动改 .gitignore，只给可复制的一行", "不跳过 brief 直接进需求定义"]
+      "redLines": [
+        "不写任何业务代码",
+        "不自动安装 skill / MCP",
+        "不自动改 .gitignore，只给可复制的一行",
+        "不跳过 brief 直接进需求定义"
+      ],
+      "sequence": [
+        "grilling",
+        "plugin-init",
+        "cockpit_report"
+      ]
     },
-
     "需求定义": {
       "goal": "把 brief 收敛为可验收的需求基线：FR 清单 + 优先级 + 验收标准",
       "method": "cockpit-requirements",
       "kit": "cockpit-requirements",
       "constraint": null,
       "capabilities": [
-        { "kind": "tool", "name": "cockpit_acceptance", "mode": "full", "note": "按 FR 起草验收条目（只追加，不改已有 result / evidence）" }
+        {
+          "kind": "tool",
+          "name": "cockpit_acceptance",
+          "mode": "full",
+          "note": "按 FR 起草验收条目（只追加，不改已有 result / evidence）"
+        }
       ],
-      "deliverables": ["docs/prd.md", ".dsh/plugin-state/acceptance.json"],
+      "deliverables": [
+        "docs/prd.md",
+        ".dsh/plugin-state/acceptance.json"
+      ],
       "technicalGate": null,
-      "decisionGate": { "title": "范围签核", "approveAction": "approve-scope" },
+      "decisionGate": {
+        "title": "范围签核",
+        "approveAction": "approve-scope"
+      },
       "promptTemplate": "先确认输入：有 `docs/brief.md` 就以它为起点；没有就直接用需求目标、用户场景与约束来写，**不要编造 brief**。已有 `docs/prd.md` 时不要重写，只补缺失的 FR 与验收标准。产出 `docs/prd.md`：`## 功能需求` 下每条用 `### FR-N 标题（P0/P1）`，每条至少一个验收标准；再用 {capabilities} 按 FR 起草验收条目：result 留空，且只追加、不覆盖人已填的结果。PRD 由你起草，但**功能范围与优先级必须由人签核**后才算数，不要替人决定优先级；确认后写回执。",
       "exitGate": "`docs/prd.md` 解析出 ≥1 个 FR，且每个 FR 至少关联 1 条验收条目；甲方确认范围",
-      "redLines": ["不写代码", "不选具体框架或技术栈", "不生成界面设计", "不自行假设未确认的需求"]
+      "redLines": [
+        "不写代码",
+        "不选具体框架或技术栈",
+        "不生成界面设计",
+        "不自行假设未确认的需求"
+      ],
+      "sequence": [
+        "cockpit_acceptance",
+        "human-scope-signoff",
+        "cockpit_report"
+      ]
     },
-
     "架构契约": {
       "goal": "在写代码前冻结组件、数据模型、接口契约与关键决策",
       "method": "cockpit-architecture",
       "kit": "cockpit-architecture",
       "constraint": "ponytail",
       "capabilities": [
-        { "kind": "skill", "name": "ponytail", "mode": "full", "note": "约束：YAGNI，只冻结本轮需要的契约，防过度设计" },
-        { "kind": "inline", "name": "architecture-template", "mode": "inline", "note": "本仓库架构模板：组件 / 数据模型 / 接口清单 / ADR（含 chosen / rejected）" },
-        { "kind": "mcp", "name": "context7", "mode": "full", "optional": true, "note": "本机未安装；回退 web_search / dsh-doc 查框架文档" }
+        {
+          "kind": "skill",
+          "name": "ponytail",
+          "mode": "full",
+          "note": "约束：YAGNI，只冻结本轮需要的契约，防过度设计"
+        },
+        {
+          "kind": "inline",
+          "name": "architecture-template",
+          "mode": "inline",
+          "note": "本仓库架构模板：组件 / 数据模型 / 接口清单 / ADR（含 chosen / rejected）"
+        },
+        {
+          "kind": "mcp",
+          "name": "context7",
+          "mode": "full",
+          "optional": true,
+          "note": "本机未安装；回退 web_search / dsh-doc 查框架文档"
+        }
       ],
-      "deliverables": ["docs/architecture.md", "docs/api.md"],
+      "deliverables": [
+        "docs/architecture.md",
+        "docs/api.md"
+      ],
       "technicalGate": "validateArchitecture",
-      "decisionGate": { "title": "架构签核", "approveAction": "approve-architecture" },
+      "decisionGate": {
+        "title": "架构签核",
+        "approveAction": "approve-architecture"
+      },
       "promptTemplate": "用 {capabilities} 产出 `docs/architecture.md`（`## 组件`、`## 数据模型`、`## 接口清单`、`## 关键决策（ADR）`）与 `docs/api.md`（每个接口 method / path / request / response / error codes）。用 ponytail 约束范围：只冻结本轮需要的契约，不做提前设计。定稿后请人签核。",
       "exitGate": "两个文件存在、必需小节齐全、接口数 ≥1、ADR ≥1（含 chosen / rejected）；甲方签核",
-      "redLines": ["不写实现代码", "不建数据库、不写接口实现", "契约冻结后偏离必须补 ADR 并重新签核"]
+      "redLines": [
+        "不写实现代码",
+        "不建数据库、不写接口实现",
+        "契约冻结后偏离必须补 ADR 并重新签核"
+      ],
+      "sequence": [
+        "context7",
+        "ponytail",
+        "architecture-template",
+        "human-architecture-signoff",
+        "cockpit_report"
+      ]
     },
-
     "原型设计": {
       "goal": "用静态原型确认交互契约与视觉方向",
       "method": "cockpit-prototype",
       "kit": "cockpit-prototype",
       "constraint": "impeccable",
       "capabilities": [
-        { "kind": "skill", "name": "frontend-design", "mode": "full", "note": "主设计方法" },
-        { "kind": "skill", "name": "ui-ux-pro-max", "mode": "full", "optional": true, "substitute": true, "note": "设计令牌库，按需加载，不重复上 frontend-design" },
-        { "kind": "skill", "name": "impeccable", "mode": "full", "note": "约束/审计：UI 质量底线与一次自检" },
-        { "kind": "mcp", "name": "playwright", "mode": "full", "optional": true, "note": "本机未安装；回退本机 Chrome CDP 截图 + 人工确认" }
+        {
+          "kind": "skill",
+          "name": "frontend-design",
+          "mode": "full",
+          "note": "主设计方法"
+        },
+        {
+          "kind": "skill",
+          "name": "ui-ux-pro-max",
+          "mode": "full",
+          "optional": true,
+          "substitute": true,
+          "note": "设计令牌库，按需加载，不重复上 frontend-design"
+        },
+        {
+          "kind": "skill",
+          "name": "impeccable",
+          "mode": "full",
+          "note": "约束/审计：UI 质量底线与一次自检"
+        },
+        {
+          "kind": "mcp",
+          "name": "playwright",
+          "mode": "full",
+          "optional": true,
+          "note": "本机未安装；回退本机 Chrome CDP 截图 + 人工确认"
+        }
       ],
-      "deliverables": ["prototype.html"],
+      "deliverables": [
+        "prototype.html"
+      ],
       "technicalGate": null,
-      "decisionGate": { "title": "原型通过", "approveAction": "approve-prototype" },
+      "decisionGate": {
+        "title": "原型通过",
+        "approveAction": "approve-prototype"
+      },
       "promptTemplate": "用 {capabilities} 生成项目根目录 `prototype.html`（纯静态、假数据），覆盖本轮核心流程；用 impeccable 做一次界面审计。产出后请人点「通过原型」，批准记录写入 `approvals.json` 才进代码开发。",
       "exitGate": "`prototype.html` 可打开且非空；甲方在面板点「通过原型」",
-      "redLines": ["不写业务逻辑", "不接真实接口、不建数据库", "不跳过甲方批准进代码开发"]
+      "redLines": [
+        "不写业务逻辑",
+        "不接真实接口、不建数据库",
+        "不跳过甲方批准进代码开发"
+      ],
+      "sequence": [
+        "frontend-design",
+        "ui-ux-pro-max",
+        "playwright",
+        "impeccable",
+        "human-prototype-approval",
+        "cockpit_report"
+      ]
     },
-
     "代码开发": {
       "goal": "按任务逐个实现，每条任务有测试、有范围、有回执",
       "method": "cockpit-implementation",
       "kit": "cockpit-implementation",
       "constraint": "ponytail",
       "capabilities": [
-        { "kind": "skill", "name": "tdd-loop", "mode": "full", "note": "先写失败测试 → 最小实现 → 通过 → 重构" },
-        { "kind": "skill", "name": "ponytail", "mode": "full", "note": "约束：YAGNI，最小改动" },
-        { "kind": "tool", "name": "claude_review", "mode": "full", "note": "每条任务完成后跑 range 审核" },
-        { "kind": "inline", "name": "task-loop", "mode": "inline", "note": "认领 → 实现 → 测试 → range 审核 → 回执；一次只做一个任务" }
+        {
+          "kind": "skill",
+          "name": "tdd-loop",
+          "mode": "full",
+          "note": "先写失败测试 → 最小实现 → 通过 → 重构"
+        },
+        {
+          "kind": "skill",
+          "name": "ponytail",
+          "mode": "full",
+          "note": "约束：YAGNI，最小改动"
+        },
+        {
+          "kind": "tool",
+          "name": "claude_review",
+          "mode": "full",
+          "note": "每条任务完成后跑 range 审核"
+        },
+        {
+          "kind": "inline",
+          "name": "task-loop",
+          "mode": "inline",
+          "note": "认领 → 实现 → 测试 → range 审核 → 回执；一次只做一个任务"
+        }
       ],
       "deliverables": [
         ".trellis/tasks/ 任务清单",
@@ -132,82 +230,214 @@
       "decisionGate": null,
       "promptTemplate": "按 `.trellis/tasks/` 里的任务逐个推进，用 {capabilities}。一次只做一个任务：先认领，写失败测试 → 最小实现 → 测试通过 → 重构；完成后跑 `claude_review(mode:\"range\", base=<本任务起始>)`，通过后写一条回执（`stage:\"implementation\"`、带 `task_ref` 与 `write_scope`）再下一个。",
       "exitGate": "任务全部 completed；每条任务有 implementation 回执且 write_scope 与任务声明一致；每条任务通过一次 range 审核",
-      "redLines": ["一次只做一个任务", "先写失败测试再实现，不先写实现再补测试", "不跨 write_scope 改文件", "不引入已移除的 superpowers 流程"]
+      "redLines": [
+        "一次只做一个任务",
+        "先写失败测试再实现，不先写实现再补测试",
+        "不跨 write_scope 改文件",
+        "不引入已移除的 superpowers 流程"
+      ],
+      "sequence": [
+        "task-loop",
+        "tdd-loop",
+        "ponytail",
+        "claude_review",
+        "cockpit_report"
+      ]
     },
-
     "测试验证": {
       "goal": "用可执行测试证明实现满足契约",
       "method": "cockpit-testing",
       "kit": "cockpit-testing",
       "constraint": null,
       "capabilities": [
-        { "kind": "skill", "name": "verify-claims", "mode": "full", "note": "无命令输出/报告不得声称通过" },
-        { "kind": "skill", "name": "webapp-testing", "mode": "full", "optional": true, "note": "Playwright 测试决策树（E2E 证据；已装全局）" },
-        { "kind": "inline", "name": "test-report", "mode": "inline", "note": "test-report.json schema：{command,scope,passed,failed,skipped,durationMs,at}" },
-        { "kind": "mcp", "name": "playwright", "mode": "full", "optional": true, "note": "本机未安装；回退本机命令 + 人工 / CDP 截图" }
+        {
+          "kind": "skill",
+          "name": "verify-claims",
+          "mode": "full",
+          "note": "无命令输出/报告不得声称通过"
+        },
+        {
+          "kind": "skill",
+          "name": "webapp-testing",
+          "mode": "full",
+          "optional": true,
+          "note": "Playwright 测试决策树（E2E 证据；已装全局）"
+        },
+        {
+          "kind": "inline",
+          "name": "test-report",
+          "mode": "inline",
+          "note": "test-report.json schema：{command,scope,passed,failed,skipped,durationMs,at}"
+        },
+        {
+          "kind": "mcp",
+          "name": "playwright",
+          "mode": "full",
+          "optional": true,
+          "note": "本机未安装；回退本机命令 + 人工 / CDP 截图"
+        }
       ],
-      "deliverables": [".dsh/plugin-state/test-report.json"],
+      "deliverables": [
+        ".dsh/plugin-state/test-report.json"
+      ],
       "technicalGate": "validateTestReport",
       "decisionGate": null,
       "promptTemplate": "用 {capabilities} 跑可执行测试，把结果写进 `.dsh/plugin-state/test-report.json`：`{command, scope, passed, failed, skipped, durationMs, at}`。`failed` 必须为 0，`command` 要能复现；非代码项目（纯文档 / 设计）用 `manual-check.json` 替代并在回执里说明。",
       "exitGate": "存在 test-report.json，failed=0，command 可复现；失败附原始输出",
-      "redLines": ["不删除测试或放宽断言来凑绿", "不把手工自测写成自动化报告", "失败必须附原始命令输出"]
+      "redLines": [
+        "不删除测试或放宽断言来凑绿",
+        "不把手工自测写成自动化报告",
+        "失败必须附原始命令输出"
+      ],
+      "sequence": [
+        "test-report",
+        "webapp-testing",
+        "playwright",
+        "verify-claims",
+        "cockpit_report"
+      ]
     },
-
     "代码复核": {
       "goal": "独立第二视角审查 diff，blocking 清零",
       "method": "cockpit-review",
       "kit": "cockpit-review",
       "constraint": null,
       "capabilities": [
-        { "kind": "tool", "name": "claude_review", "mode": "full", "optional": true,  "note": "可选工具：复核阶段用它跑独立评审；缺失不影响流程，方法由 cockpit-review 承担" },
-        { "kind": "skill", "name": "claude-code-review", "mode": "full", "note": "独立复核清单（五轴）" },
-        { "kind": "inline", "name": "review-ledger", "mode": "inline", "note": "账本：.dsh/claude-review/ledger；blocking=0" }
+        {
+          "kind": "tool",
+          "name": "claude_review",
+          "mode": "full",
+          "optional": true,
+          "note": "可选工具：复核阶段用它跑独立评审；缺失不影响流程，方法由 cockpit-review 承担"
+        },
+        {
+          "kind": "skill",
+          "name": "claude-code-review",
+          "mode": "full",
+          "note": "独立复核清单（五轴）"
+        },
+        {
+          "kind": "inline",
+          "name": "review-ledger",
+          "mode": "inline",
+          "note": "账本：.dsh/claude-review/ledger；blocking=0"
+        }
       ],
-      "deliverables": [".dsh/claude-review/ledger"],
+      "deliverables": [
+        ".dsh/claude-review/ledger"
+      ],
       "technicalGate": null,
       "decisionGate": null,
       "promptTemplate": "用 {capabilities} 对当前改动做独立复核：`claude_review(mode:\"gate\")` 出结论，只修有证据的问题，修完用 `claude_review_disposition` 标记处置再复核。复核必须独立于实现者，账本里 blocking 清零才算过。",
       "exitGate": "审核账本 blocking=0，且每轮 review 可追溯（含 disposition）",
-      "redLines": ["只修有证据的问题", "不顺手重构无关代码", "不加新需求", "不自己给自己复核盖章"]
+      "redLines": [
+        "只修有证据的问题",
+        "不顺手重构无关代码",
+        "不加新需求",
+        "不自己给自己复核盖章"
+      ],
+      "sequence": [
+        "claude_review",
+        "claude-code-review",
+        "claude_review_disposition",
+        "review-ledger",
+        "cockpit_report"
+      ]
     },
-
     "验收确认": {
       "goal": "甲方逐条验收，证据可追溯；视觉变化必须重验",
       "method": "cockpit-acceptance",
       "kit": "cockpit-acceptance",
       "constraint": null,
       "capabilities": [
-        { "kind": "skill", "name": "verify-claims", "mode": "full", "note": "没有证据不算通过" },
-        { "kind": "skill", "name": "webapp-testing", "mode": "full", "optional": true, "note": "Playwright 测试决策树（E2E 证据；已装全局）" },
-        { "kind": "inline", "name": "acceptance-gate", "mode": "inline", "note": "验收表 + 截图/diff + 失效门禁（本插件核心）" },
-        { "kind": "mcp", "name": "playwright", "mode": "full", "optional": true, "note": "本机未安装；回退面板 CDP 截图 + 人工确认" }
+        {
+          "kind": "skill",
+          "name": "verify-claims",
+          "mode": "full",
+          "note": "没有证据不算通过"
+        },
+        {
+          "kind": "skill",
+          "name": "webapp-testing",
+          "mode": "full",
+          "optional": true,
+          "note": "Playwright 测试决策树（E2E 证据；已装全局）"
+        },
+        {
+          "kind": "inline",
+          "name": "acceptance-gate",
+          "mode": "inline",
+          "note": "验收表 + 截图/diff + 失效门禁（本插件核心）"
+        },
+        {
+          "kind": "mcp",
+          "name": "playwright",
+          "mode": "full",
+          "optional": true,
+          "note": "本机未安装；回退面板 CDP 截图 + 人工确认"
+        }
       ],
-      "deliverables": [".dsh/plugin-state/acceptance.json", ".dsh/plugin-state/shots/"],
+      "deliverables": [
+        ".dsh/plugin-state/acceptance.json",
+        ".dsh/plugin-state/shots/"
+      ],
       "technicalGate": null,
-      "decisionGate": { "title": "验收签核", "approveAction": "approve-acceptance" },
+      "decisionGate": {
+        "title": "验收签核",
+        "approveAction": "approve-acceptance"
+      },
       "promptTemplate": "按 `acceptance.json` 逐条执行，用 {capabilities}：每条填 `result`（pass/fail/blocked），pass 必须附证据（截图存 `.dsh/plugin-state/shots/`），最后写一条执行回执。验收表为空时先按 `prd.md` 起草条目给我确认。复核某条验收（比如我提出疑问、或截图变了要我再看）时，用 `cockpit_report` 带 `event:\"acceptance-recheck\"` 留痕：`stage:\"acceptance\"`、`status:\"completed\"`、`feature_ids` 填对应功能、`summary_for_human` 写清复核了哪条和结论；它只进流水账，改 `result` 仍由我在面板点。",
       "exitGate": "`items` 非空、每条 result 非 null、每条 pass 都有 evidence、没有失效（stale）条目；甲方签核",
-      "redLines": ["不看代码/页面就填 pass —— 必须有截图证据", "空表不算通过", "发现 fail 不许改写期望值凑过", "失效后不重新确认就放行"]
+      "redLines": [
+        "不看代码/页面就填 pass —— 必须有截图证据",
+        "空表不算通过",
+        "发现 fail 不许改写期望值凑过",
+        "失效后不重新确认就放行"
+      ],
+      "sequence": [
+        "acceptance-gate",
+        "playwright",
+        "verify-claims",
+        "human-acceptance-result",
+        "human-acceptance-signoff",
+        "cockpit_report"
+      ]
     },
-
     "部署发布": {
       "goal": "打出可复现的发布清单，并能回滚",
       "method": "cockpit-release",
       "kit": "cockpit-release",
       "constraint": null,
       "capabilities": [
-        { "kind": "inline", "name": "release-manifest", "mode": "inline", "note": "release.json schema：{version,artifacts[{path,sha256}],url,environment,rollback,changelog,at}" }
+        {
+          "kind": "inline",
+          "name": "release-manifest",
+          "mode": "inline",
+          "note": "release.json schema：{version,artifacts[{path,sha256}],url,environment,rollback,changelog,at}"
+        }
       ],
-      "deliverables": [".dsh/plugin-state/release.json"],
+      "deliverables": [
+        ".dsh/plugin-state/release.json"
+      ],
       "technicalGate": "validateRelease",
-      "decisionGate": { "title": "发布批准", "approveAction": "approve-release" },
+      "decisionGate": {
+        "title": "发布批准",
+        "approveAction": "approve-release"
+      },
       "promptTemplate": "跑生产构建，用 {capabilities} 收尾分支；把版本号、产物与 sha256、访问链接、环境、回滚方式、变更记录写进 `.dsh/plugin-state/release.json`，然后写发布回执并请人批准。push 与上线由 DSH 的工具审批把关，不要绕过。",
       "exitGate": "release.json schema 合法；artifacts 存在且 hash 匹配；rollback 非空；甲方批准",
-      "redLines": ["不绕过 DSH 审批自动 push 或上线", "构建失败不许跳过", "发布清单缺回滚方式不算完成"]
+      "redLines": [
+        "不绕过 DSH 审批自动 push 或上线",
+        "构建失败不许跳过",
+        "发布清单缺回滚方式不算完成"
+      ],
+      "sequence": [
+        "release-manifest",
+        "human-release-approval",
+        "cockpit_report"
+      ]
     }
   },
-
   "missingHints": {
     "mcp": "该阶段需要的 MCP 未安装：{name}。装上后重新检测，或先用人工方式完成这一步。",
     "skill": "该阶段需要的技能未安装：{name}。可以从技能市场安装，或跳过它用人工方式完成。",
