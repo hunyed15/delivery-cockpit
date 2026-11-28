@@ -3,6 +3,38 @@
   "type": "web",
   "_comment": "9 阶段能力路由（docs/VISION.md §4 / docs/CAPABILITIES.md §2.9）。capabilities[].kind: skill | mcp | tool | inline；缺的能力用 note 写回退，不引用已移除的 superpowers skill。method / constraint / deliverables / technicalGate / decisionGate 是本轮新增的阶段元信息，原样下发给面板；下一轮再接门禁校验器。项目里的 .dsh/plugin-state/playbook.json 若 version 与内置不一致，stages 会被忽略，只覆盖 missingHints 等非 stage 字段。",
 
+  "commands": [
+    {
+      "id": "cockpit-start",
+      "title": "开始/接续一次开发会话",
+      "when": "进入项目准备开工，或隔几天接着做"
+    },
+    {
+      "id": "cockpit-continue",
+      "title": "断点续作",
+      "when": "上次没做完，或换了会话要接着做"
+    },
+    {
+      "id": "cockpit-check",
+      "title": "质量门自检",
+      "when": "写\"做完了\"回执前、提交或发版前"
+    },
+    {
+      "id": "cockpit-finish-work",
+      "title": "本轮收尾",
+      "when": "功能都验收通过，准备发布或结束这一轮"
+    },
+    {
+      "id": "cockpit-spec",
+      "title": "规范沉淀",
+      "when": "学到可复用约定、踩过坑、发现规范与实现不符"
+    },
+    {
+      "id": "cockpit-break-loop",
+      "title": "修了又犯的 bug",
+      "when": "同一问题修过两次还在犯"
+    }
+  ],
   "stages": {
     "项目立项": {
       "goal": "把想法收成一页可签核的概念，并建好项目状态目录与规则基线",
@@ -33,7 +65,6 @@
       "kit": "cockpit-requirements",
       "constraint": null,
       "capabilities": [
-        { "kind": "skill", "name": "trellis-brainstorm", "mode": "full", "optional": true, "note": "本机未安装；回退：内置 PRD 模板 + grilling 式逐项追问" },
         { "kind": "tool", "name": "cockpit_acceptance", "mode": "full", "note": "按 FR 起草验收条目（只追加，不改已有 result / evidence）" }
       ],
       "deliverables": ["docs/prd.md", ".dsh/plugin-state/acceptance.json"],
@@ -166,7 +197,6 @@
       "kit": "cockpit-release",
       "constraint": null,
       "capabilities": [
-        { "kind": "skill", "name": "trellis-finish-work", "mode": "full", "optional": true, "note": "本机未安装；回退原生 git 收尾 + 发布清单模板" },
         { "kind": "inline", "name": "release-manifest", "mode": "inline", "note": "release.json schema：{version,artifacts[{path,sha256}],url,environment,rollback,changelog,at}" }
       ],
       "deliverables": [".dsh/plugin-state/release.json"],

@@ -16,6 +16,7 @@ const isObject = (value) => value !== null && typeof value === 'object' && !Arra
 
 const DETAIL_KEYS = [
   'acceptance',
+  'commands',
   'dataGaps',
   'degraded',
   'features',
@@ -1169,4 +1170,15 @@ test('project.shape：新/存量形态如实投影，skill 据此选做法', () 
 
   const fresh = build(evidence())
   assert.equal(fresh.project.shape.kind, 'new')
+})
+
+test('commands：playbook 的命令面投影到面板，缺省为空数组', () => {
+  // 夹具 playbook 没有 commands ⇒ 空数组（不编造）
+  assert.deepEqual(build(evidence()).commands, [])
+
+  const withCommands = build(evidence(), {
+    playbook: { ...makePlaybook(), commands: [{ id: 'cockpit-start', title: '开工', when: '开始' }, { id: 'cockpit-check', title: '自检', when: '提交前' }] },
+  })
+  assert.deepEqual(withCommands.commands.map((item) => item.id), ['cockpit-start', 'cockpit-check'])
+  assert.equal(withCommands.commands[0].title, '开工')
 })

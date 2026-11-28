@@ -911,7 +911,7 @@ features: {
 - **workflow 开关**：`POST /delivery-cockpit/api/workflow` body `{path, workflow:'full'|'light'}`，只改 `.dsh/plugin-state/project.json` 的 `workflow` 与 `updatedAt`（`setWorkflow`，保留名片其它字段）；非法值 400，缺名片/坏名片 409。面板 header 显示「完整流程 / 轻量模式」按钮，切换后自动刷新；`panel.project.workflow` 由 model 下发。
 - **Trellis 入口**：`lib/trellis.js#initializeTrellis` 抽成 Host 共享实现（`cockpit_init {trellisInit:true}` 与 `POST /api/trellis-init` 共用）；只有 `.trellis/scripts/get_context.py` 不存在时才跑 `trellis init --dsh -y -s -u <user>`，缺 subprocess/CLI 返回 skipped 不报错；`evidence.trellis.ready` 表示运行时真的可跑。面板在 `initialized && !ready` 时显示「接通 Trellis」。
 - **线上 DORA**：可选 `.dsh/plugin-state/dora.json`，schema `{deployments:[{at, version?, success?, leadTimeHours?}], incidents:[{at, resolvedAt}]}`。`lib/dora.js` 做只读归一（坏行计数、坏 JSON 不降级）；`computeMetrics` 有线上数据时用真实发布/失败/恢复时长替换代理的发布频率、变更失败率、交付周期，并新增 `mttrHours`；`metrics.source='live'|'proxy'`，面板 meta/脚注、周报定义同步说明来源；没接线上数据时 `mttrHours=null` 并说明原因，不补 0。
-- **验证**：560 passed / 0 failed；新增 dora/project-card/route/evidence/client 用例。
+- **验证**：562 passed / 0 failed；新增 dora/project-card/route/evidence/client 用例。
 
 
 ### 3.25 评审器切换：Claude / Gemini（2026-11-27）
@@ -1069,4 +1069,11 @@ features: {
 - **指标层单独读一遍审核账本**（不跟 `evidence.review` 共用解析结果）：`evidence` 只回计数，且它把任何坏行当 `read-error` 整段降级；指标口径要求"坏行跳过、能算多少算多少"。两种失败语义不同，共用会让指标因为一行历史坏数据全部变 `null`。代价是面板刷新时账本 I/O 两次（真实项目任务目录很少，可接受）。
 - `acceptanceRate` 的 definition 写明真实分母：`通过（含证据）/（通过+没通过+卡住+需重新确认）`——`stale`（需重新确认）计入分母、`pass` 但没证据的条目不计入，文案与算法一致，避免"有结果但没证据"被误读成已计入。
 - 面板「交付指标」模块 meta 只写「代理口径」不写「近 N 天」：六项里只有发布频率（近 7 天）与返工率（近 30 天）是窗口口径，交付周期/修复时长看全部历史，一个窗口前缀会把整组指标说成同一口径；窗口细节放在每项 tooltip 与脚注。
+
+### 3.28 驾驶舱命令面（2026-11-28）
+
+- 借鉴 Trellis 的命令划分（start / continue / check / finish-work / update-spec / break-loop），但实现是自己的：`skills/cockpit-start|continue|check|finish-work|spec|break-loop`，随包发布、由 init 安装。
+- playbook 顶层新增 `commands` 元数据（id / title / when），面板投影为 `panel.commands`。
+- 阶段能力里不再出现 `trellis-*` 技能：Trellis 只作数据来源（`.trellis/tasks`、`.trellis/spec`、审核账本），**不执行 `trellis` CLI**；没有 Trellis 时命令照常工作。
+- 命令与阶段技能的分工：阶段技能做"这一步的具体工作"，命令处理跨阶段动作（开工/续作/自检/收尾/沉淀/破循环）。
 

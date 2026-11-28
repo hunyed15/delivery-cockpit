@@ -85,6 +85,21 @@ Delivery Cockpit 的作用是把这些步骤固定成 9 个节点，给每个节
 - **第三方只是工具**：trellis-*、frontend-design、tdd-loop、verify-claims、playwright、Context7 等放在能力列表里，有就用、没有不影响流程，更不由它们决定做哪一步。
 - **回执要报工作流**：`cockpit_report` 的 `used_skill_or_mcp` 必须包含 `cockpit-<stage>`（可以再附带实际用的工具，如 `cockpit-implementation, tdd-loop`）。
 
+### 驾驶舱命令（不调用 Trellis CLI）
+
+Trellis 的结构值得借鉴，但命令面属于驾驶舱自己：
+
+| 命令技能 | 什么时候用 |
+|---|---|
+| `cockpit-start` | 开工或隔几天接着做：形态、当前阶段、下一步、待拍板事项 |
+| `cockpit-continue` | 上次没做完 / 换会话：按账本恢复到断点 |
+| `cockpit-check` | 写"做完了"前、提交或发版前：测试 / 审核 / 验收 / 发布 / 规范五项自检 |
+| `cockpit-finish-work` | 收尾：任务清零、验收签核、发布清单、留痕 |
+| `cockpit-spec` | 沉淀规范（`.trellis/spec/`，没有 Trellis 就 `docs/spec/`）|
+| `cockpit-break-loop` | 修了又犯：定根因类别与防复发机制 |
+
+Trellis 只作**数据来源**（`.trellis/tasks`、`.trellis/spec`、审核账本），直接读文件，不执行 `trellis` 命令；项目没有 Trellis 时这些命令照常工作。
+
 ## 第三方工具（可选）
 
 插件不安装这些能力，只检测本机是否已安装，并在面板里提示"用哪个、缺什么、替代方案是什么"。
@@ -310,7 +325,7 @@ GET /delivery-cockpit/api/report?path=<项目路径>&days=7
 
 ```powershell
 npm install
-npm test                         # node --test "test/*.test.js"，当前 560 个用例
+npm test                         # node --test "test/*.test.js"，当前 562 个用例
 node tools/preview/server.mjs    # 本机预览面板，默认 http://127.0.0.1:4711
 ```
 

@@ -509,3 +509,17 @@ test('需求定义指令：说明 brief 可有可无，且不覆盖已有 prd', 
   assert.match(template, /\{capabilities\}/)
   assert.match(template, /功能范围与优先级必须由人签核/)
 })
+
+test('playbook.commands：驾驶舱自带命令面，且不再把 trellis 技能当阶段方法', async () => {
+  const raw = await readFile('templates/playbook.json', 'utf8')
+  const builtinPlaybook = JSON.parse(raw)
+  const ids = builtinPlaybook.commands.map((item) => item.id)
+  for (const id of ['cockpit-start', 'cockpit-continue', 'cockpit-check', 'cockpit-finish-work', 'cockpit-spec', 'cockpit-break-loop']) {
+    assert.ok(ids.includes(id), `缺少命令 ${id}`)
+  }
+  for (const [name, entry] of Object.entries(builtinPlaybook.stages)) {
+    assert.match(entry.method, /^cockpit-/, `${name} 的方法应由插件自带技能承担`)
+    const names = (entry.capabilities || []).map((cap) => cap.name)
+    assert.ok(!names.some((value) => value.startsWith('trellis-')), `${name} 不该再把 trellis 技能当能力`)
+  }
+})
