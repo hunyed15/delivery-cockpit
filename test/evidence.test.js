@@ -459,7 +459,7 @@ test('任务表：trellis 已初始化但还没有 tasks 目录 ⇒ available=tr
     await writeStateText(project, 'RULES.md', '# 规则\n')
     const evidence = await readEvidence(project)
     assert.equal(evidence.trellis.initialized, true)
-    assert.deepEqual(evidence.tasks, { available: true, total: 0, open: 0, completed: 0, items: [] })
+    assert.deepEqual(evidence.tasks, { available: true, total: 0, open: 0, completed: 0, items: [], source: 'trellis' })
     assert.equal(evidence.degraded.flag, false)
   })
 })

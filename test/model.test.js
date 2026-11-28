@@ -924,7 +924,7 @@ test('stages：9 阶段只读详情（元信息/门禁/能力/最近记录），
   const architecture = model.stages.find((stage) => stage.id === 'architecture')
   assert.equal(architecture.name, '架构契约')
   assert.equal(architecture.cycle, true)
-  assert.equal(architecture.method, 'cockpit-architecture')
+  assert.equal(architecture.method, 'cockpit-flow')
   assert.equal(architecture.constraint, 'ponytail')
   assert.deepEqual(architecture.deliverables, ['docs/architecture.md', 'docs/api.md'])
   assert.equal(architecture.technicalGate, 'validateArchitecture')

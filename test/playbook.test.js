@@ -364,11 +364,8 @@ test('resolveCapabilities：skill/tool/mcp 按 Set 判定，inline 恒 yes 且�
     missingHints: {},
   })
   const skill = allPresent.find((item) => item.name === 'grilling')
-  const inline = allPresent.find((item) => item.name === 'plugin-init')
   assert.equal(skill.present, 'yes')
-  assert.equal(inline.kind, 'inline')
-  assert.equal(inline.present, 'yes')
-  assert.equal(inline.missingMessage, null)
+  assert.equal(skill.kind, 'skill')
 })
 
 test('resolveCapabilities：读不到（null）= unknown，绝不谎报缺失', async () => {
@@ -462,7 +459,7 @@ test('renderPrompt：加工作流技能前缀，只替换 {capabilities}，其�
     .join('frontend-design, ui-ux-pro-max, impeccable')
   // 阶段工作流技能由插件自带：指令前缀会点明去读哪个 SKILL.md（第三方能力只是工具）
   const kit = builtin.stages['原型设计'].kit
-  assert.equal(kit, 'cockpit-prototype')
+  assert.equal(kit, 'cockpit-flow')
   assert.equal(rendered.text, `按技能 \`.dsh/skills/${kit}/SKILL.md\` 执行本阶段。` + expected)
   assert.equal(rendered.capabilitiesText, 'frontend-design, ui-ux-pro-max, impeccable')
 
@@ -510,21 +507,36 @@ test('需求定义指令：说明 brief 可有可无，且不覆盖已有 prd', 
   assert.match(template, /功能范围与优先级必须由人签核/)
 })
 
-test('playbook：没有命令层，每个阶段给出能力调用顺序且方法由自带技能承担', async () => {
+test('playbook：所有阶段由 cockpit-flow 编排，顺序是角色 id，能力由 roles 绑定', async () => {
   const raw = await readFile('templates/playbook.json', 'utf8')
   const builtinPlaybook = JSON.parse(raw)
-  assert.equal(builtinPlaybook.commands, undefined, '不该再有平行于 9 阶段的命令层')
+  assert.equal(builtinPlaybook.commands, undefined, '不该有平行于 9 阶段的命令层')
 
   for (const [name, entry] of Object.entries(builtinPlaybook.stages)) {
-    assert.match(entry.method, /^cockpit-/, `${name} 的方法应由插件自带技能承担`)
-    assert.ok(Array.isArray(entry.sequence) && entry.sequence.length >= 2, `${name} 缺少能力调用顺序`)
-    assert.equal(entry.sequence[entry.sequence.length - 1], 'cockpit_report', `${name} 的最后一步应该是写回执`)
+    assert.equal(entry.method, 'cockpit-flow', `${name} 的方法应该是唯一编排技能`)
+    assert.ok(Array.isArray(entry.roles) && entry.roles.length >= 2, `${name} 缺少角色定义`)
+    assert.ok(Array.isArray(entry.sequence) && entry.sequence.length >= 2, `${name} 缺少执行顺序`)
+    assert.equal(entry.sequence[0], 'read-input', `${name} 的第一步应该是读输入`)
+    assert.equal(entry.sequence[entry.sequence.length - 1], 'report', `${name} 的最后一步应该是写回执`)
+
+    const roleIds = new Set(entry.roles.map((role) => role.id))
+    for (const step of entry.sequence) {
+      assert.ok(step === 'read-input' || step === 'report' || roleIds.has(step), `${name} 的顺序里出现未定义的角色：${step}`)
+    }
+
     const names = (entry.capabilities || []).map((cap) => cap.name)
     assert.ok(!names.some((value) => value.startsWith('trellis-')), `${name} 不该再把 trellis 技能当能力`)
   }
 
-  // 关键阶段必须真的驱动 MCP / 工具
-  assert.ok(builtinPlaybook.stages['架构契约'].sequence.includes('context7'), '架构契约要驱动 context7')
-  assert.ok(builtinPlaybook.stages['原型设计'].sequence.includes('playwright'), '原型要驱动 playwright 截图')
-  assert.ok(builtinPlaybook.stages['代码复核'].sequence.includes('claude_review'), '复核要驱动 claude_review')
+  // 能力按角色绑定（不是 9 节点 1:1 技能）
+  const arch = builtinPlaybook.stages['架构契约'].roles.find((role) => role.id === 'research')
+  assert.equal(arch.primary, 'context7')
+  const proto = builtinPlaybook.stages['原型设计'].roles.find((role) => role.id === 'design-method')
+  assert.equal(proto.primary, 'frontend-design')
+  assert.deepEqual(proto.alternatives, ['ui-ux-pro-max'])
+  // 同一能力可出现在多个节点
+  const usesVerify = Object.entries(builtinPlaybook.stages).filter(([, entry]) =>
+    (entry.roles || []).some((role) => role.primary === 'verify-claims'),
+  )
+  assert.ok(usesVerify.length >= 2, 'verify-claims 应被多个节点复用（测试 + 验收）')
 })

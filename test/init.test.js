@@ -46,8 +46,8 @@ test('planInit：只读不写盘，计划描述两个目录 + 四个文件', asy
   const stateFiles = plan.files.filter((item) => item.source !== 'plugin-skill')
   assert.deepEqual(stateFiles.map((item) => item.name), INIT_FILE_NAMES)
   const skillFiles = plan.files.filter((item) => item.source === 'plugin-skill')
-  assert.ok(skillFiles.length >= 9, `插件技能至少 9 个，实际 ${skillFiles.length}`)
-  assert.ok(skillFiles.some((item) => item.name === 'skills/cockpit-requirements/SKILL.md'))
+  assert.ok(skillFiles.length >= 1, `插件技能至少 1 个，实际 ${skillFiles.length}`)
+  assert.ok(skillFiles.some((item) => item.name === 'skills/cockpit-flow/SKILL.md'), '编排技能要被释放')
   assert.ok(plan.files.every((item) => item.status === 'create'))
   assert.equal(plan.files.find((item) => item.name === 'RULES.md').bytes, (await templateBytes('RULES.md')).length)
   assert.equal(plan.files.find((item) => item.name === 'project.json').source, 'generated')
@@ -71,8 +71,8 @@ test('applyInit：只释放四个文件与两个目录，内容来自包内模�
   assert.deepEqual(result.errors, [])
   assert.ok(result.created.includes('.dsh/plugin-state/RULES.md'))
   assert.ok(result.created.includes('.dsh/plugin-state/playbook.json'))
-  assert.ok(result.created.includes('.dsh/skills/cockpit-requirements/SKILL.md'))
-  assert.ok(result.created.some((item) => item.includes('.dsh/skills/cockpit-implementation/')), '阶段技能要被释放到项目里')
+  assert.ok(result.created.includes('.dsh/skills/cockpit-flow/SKILL.md'))
+  assert.ok(result.created.some((item) => item.includes('.dsh/skills/cockpit-flow/')), '编排技能要被释放到项目里')
   assert.deepEqual(result.skipped, [], '全新项目不该有 skipped')
 
   for (const name of ['RULES.md', 'playbook.json', 'acceptance.json']) {
@@ -113,7 +113,7 @@ test('幂等：第二次 init 不写任何字节，created 为空、applied:fals
   assert.deepEqual(result.created, [])
   assert.deepEqual(result.skipped.slice(0, 3), ['.trellis', '.dsh/plugin-state', '.dsh/skills'])
   for (const name of names) assert.ok(result.skipped.includes(`.dsh/plugin-state/${name}`), `${name} 应为 skipped`)
-  assert.ok(result.skipped.some((item) => item.includes('/skills/cockpit-requirements/')), '技能已存在时应 skipped')
+  assert.ok(result.skipped.some((item) => item.includes('/skills/cockpit-flow/')), '技能已存在时应 skipped')
 
   for (const name of names) {
     assert.deepEqual(await readFile(join(dir, '.dsh', 'plugin-state', name)), before.get(name), `${name} 字节不能被改动`)

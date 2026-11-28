@@ -5,8 +5,8 @@
   "stages": {
     "项目立项": {
       "goal": "把想法收成一页可签核的概念，并建好项目状态目录与规则基线",
-      "method": "cockpit-bootstrap",
-      "kit": "cockpit-bootstrap",
+      "method": "cockpit-flow",
+      "kit": "cockpit-flow",
       "constraint": null,
       "capabilities": [
         {
@@ -14,13 +14,7 @@
           "name": "grilling",
           "mode": "full",
           "optional": true,
-          "note": "本机未安装；回退：按内置一页 brief 模板逐项追问（目标用户 / 场景 / 价值 / 约束 / 不做什么）"
-        },
-        {
-          "kind": "inline",
-          "name": "plugin-init",
-          "mode": "inline",
-          "note": "调用 cockpit_init 释放 RULES.md / project.json / playbook.json / acceptance.json；幂等，dry-run 可预览"
+          "note": "缺就用内置一页 brief 模板逐项追问（目标用户/场景/价值/约束/不做什么）"
         }
       ],
       "deliverables": [
@@ -41,24 +35,34 @@
         "不跳过 brief 直接进需求定义"
       ],
       "sequence": [
-        "grilling",
-        "plugin-init",
-        "cockpit_report"
+        "read-input",
+        "intake",
+        "init",
+        "report"
+      ],
+      "roles": [
+        {
+          "id": "intake",
+          "label": "问清目标",
+          "primary": "grilling",
+          "alternatives": [],
+          "fallback": "内置一页 brief 模板逐项追问"
+        },
+        {
+          "id": "init",
+          "label": "建项目状态",
+          "primary": "cockpit_init",
+          "alternatives": [],
+          "fallback": null
+        }
       ]
     },
     "需求定义": {
       "goal": "把 brief 收敛为可验收的需求基线：FR 清单 + 优先级 + 验收标准",
-      "method": "cockpit-requirements",
-      "kit": "cockpit-requirements",
+      "method": "cockpit-flow",
+      "kit": "cockpit-flow",
       "constraint": null,
-      "capabilities": [
-        {
-          "kind": "tool",
-          "name": "cockpit_acceptance",
-          "mode": "full",
-          "note": "按 FR 起草验收条目（只追加，不改已有 result / evidence）"
-        }
-      ],
+      "capabilities": [],
       "deliverables": [
         "docs/prd.md",
         ".dsh/plugin-state/acceptance.json"
@@ -77,35 +81,61 @@
         "不自行假设未确认的需求"
       ],
       "sequence": [
-        "cockpit_acceptance",
+        "read-input",
+        "draft",
+        "acceptance-draft",
         "human-scope-signoff",
-        "cockpit_report"
+        "report"
+      ],
+      "roles": [
+        {
+          "id": "draft",
+          "label": "写 PRD",
+          "primary": null,
+          "alternatives": [],
+          "fallback": "内置 PRD 结构（受控 FR 标题 + 验收标准）"
+        },
+        {
+          "id": "acceptance-draft",
+          "label": "起草验收",
+          "primary": "cockpit_acceptance",
+          "alternatives": [],
+          "fallback": null
+        },
+        {
+          "id": "human-scope-signoff",
+          "label": "人签范围",
+          "primary": null,
+          "alternatives": [],
+          "fallback": null
+        }
       ]
     },
     "架构契约": {
       "goal": "在写代码前冻结组件、数据模型、接口契约与关键决策",
-      "method": "cockpit-architecture",
-      "kit": "cockpit-architecture",
+      "method": "cockpit-flow",
+      "kit": "cockpit-flow",
       "constraint": "ponytail",
       "capabilities": [
-        {
-          "kind": "skill",
-          "name": "ponytail",
-          "mode": "full",
-          "note": "约束：YAGNI，只冻结本轮需要的契约，防过度设计"
-        },
-        {
-          "kind": "inline",
-          "name": "architecture-template",
-          "mode": "inline",
-          "note": "本仓库架构模板：组件 / 数据模型 / 接口清单 / ADR（含 chosen / rejected）"
-        },
         {
           "kind": "mcp",
           "name": "context7",
           "mode": "full",
           "optional": true,
-          "note": "本机未安装；回退 web_search / dsh-doc 查框架文档"
+          "note": "缺就用 web_search 或仓库内依赖与类型定义求证"
+        },
+        {
+          "kind": "skill",
+          "name": "web_search",
+          "mode": "full",
+          "optional": true
+        },
+        {
+          "kind": "skill",
+          "name": "ponytail",
+          "mode": "full",
+          "optional": true,
+          "note": "约束：YAGNI，最小改动"
         }
       ],
       "deliverables": [
@@ -125,45 +155,79 @@
         "契约冻结后偏离必须补 ADR 并重新签核"
       ],
       "sequence": [
-        "context7",
-        "ponytail",
-        "architecture-template",
+        "read-input",
+        "research",
+        "constraint",
+        "contract",
         "human-architecture-signoff",
-        "cockpit_report"
+        "report"
+      ],
+      "roles": [
+        {
+          "id": "research",
+          "label": "查真实 API",
+          "primary": "context7",
+          "alternatives": [
+            "web_search"
+          ],
+          "fallback": "读仓库内依赖与类型定义"
+        },
+        {
+          "id": "constraint",
+          "label": "收敛范围",
+          "primary": "ponytail",
+          "alternatives": [],
+          "fallback": null
+        },
+        {
+          "id": "contract",
+          "label": "写契约",
+          "primary": null,
+          "alternatives": [],
+          "fallback": "内置架构模板（组件/数据模型/接口/ADR）"
+        },
+        {
+          "id": "human-architecture-signoff",
+          "label": "人签架构",
+          "primary": null,
+          "alternatives": [],
+          "fallback": null
+        }
       ]
     },
     "原型设计": {
       "goal": "用静态原型确认交互契约与视觉方向",
-      "method": "cockpit-prototype",
-      "kit": "cockpit-prototype",
+      "method": "cockpit-flow",
+      "kit": "cockpit-flow",
       "constraint": "impeccable",
       "capabilities": [
         {
           "kind": "skill",
           "name": "frontend-design",
           "mode": "full",
-          "note": "主设计方法"
+          "optional": true,
+          "note": "缺就按内置版式与状态清单手写原型"
         },
         {
           "kind": "skill",
           "name": "ui-ux-pro-max",
           "mode": "full",
           "optional": true,
-          "substitute": true,
-          "note": "设计令牌库，按需加载，不重复上 frontend-design"
-        },
-        {
-          "kind": "skill",
-          "name": "impeccable",
-          "mode": "full",
-          "note": "约束/审计：UI 质量底线与一次自检"
+          "note": "设计令牌库，按需加载；缺则用 frontend-design 自带的令牌"
         },
         {
           "kind": "mcp",
           "name": "playwright",
           "mode": "full",
           "optional": true,
-          "note": "本机未安装；回退本机 Chrome CDP 截图 + 人工确认"
+          "note": "缺就用面板内置 CDP 截图（只允许回环地址）"
+        },
+        {
+          "kind": "skill",
+          "name": "impeccable",
+          "mode": "full",
+          "optional": true,
+          "note": "缺就用人工走查清单（对比度/溢出/焦点态）"
         }
       ],
       "deliverables": [
@@ -182,43 +246,72 @@
         "不跳过甲方批准进代码开发"
       ],
       "sequence": [
-        "frontend-design",
-        "ui-ux-pro-max",
-        "playwright",
-        "impeccable",
+        "read-input",
+        "design-method",
+        "visual-evidence",
+        "ui-audit",
         "human-prototype-approval",
-        "cockpit_report"
+        "report"
+      ],
+      "roles": [
+        {
+          "id": "design-method",
+          "label": "设计方法",
+          "primary": "frontend-design",
+          "alternatives": [
+            "ui-ux-pro-max"
+          ],
+          "fallback": "内置版式与状态清单"
+        },
+        {
+          "id": "visual-evidence",
+          "label": "视觉证据",
+          "primary": "playwright",
+          "alternatives": [],
+          "fallback": "面板内置 CDP 截图（回环地址）"
+        },
+        {
+          "id": "ui-audit",
+          "label": "界面审计",
+          "primary": "impeccable",
+          "alternatives": [],
+          "fallback": "人工走查清单"
+        },
+        {
+          "id": "human-prototype-approval",
+          "label": "人点通过",
+          "primary": null,
+          "alternatives": [],
+          "fallback": null
+        }
       ]
     },
     "代码开发": {
       "goal": "按任务逐个实现，每条任务有测试、有范围、有回执",
-      "method": "cockpit-implementation",
-      "kit": "cockpit-implementation",
+      "method": "cockpit-flow",
+      "kit": "cockpit-flow",
       "constraint": "ponytail",
       "capabilities": [
         {
           "kind": "skill",
           "name": "tdd-loop",
           "mode": "full",
-          "note": "先写失败测试 → 最小实现 → 通过 → 重构"
+          "optional": true,
+          "note": "缺就至少先补特征测试再改"
         },
         {
           "kind": "skill",
           "name": "ponytail",
           "mode": "full",
+          "optional": true,
           "note": "约束：YAGNI，最小改动"
         },
         {
-          "kind": "tool",
-          "name": "claude_review",
+          "kind": "skill",
+          "name": "claude-code-review",
           "mode": "full",
-          "note": "每条任务完成后跑 range 审核"
-        },
-        {
-          "kind": "inline",
-          "name": "task-loop",
-          "mode": "inline",
-          "note": "认领 → 实现 → 测试 → range 审核 → 回执；一次只做一个任务"
+          "optional": true,
+          "note": "缺就用人工五轴清单复核"
         }
       ],
       "deliverables": [
@@ -237,44 +330,78 @@
         "不引入已移除的 superpowers 流程"
       ],
       "sequence": [
-        "task-loop",
-        "tdd-loop",
-        "ponytail",
-        "claude_review",
-        "cockpit_report"
+        "read-input",
+        "task-claim",
+        "code-method",
+        "constraint",
+        "review",
+        "report"
+      ],
+      "roles": [
+        {
+          "id": "task-claim",
+          "label": "认领任务",
+          "primary": "cockpit_task",
+          "alternatives": [],
+          "fallback": "会话任务板"
+        },
+        {
+          "id": "code-method",
+          "label": "实现方法",
+          "primary": "tdd-loop",
+          "alternatives": [],
+          "fallback": "先补特征测试再改"
+        },
+        {
+          "id": "constraint",
+          "label": "最小改动",
+          "primary": "ponytail",
+          "alternatives": [],
+          "fallback": null
+        },
+        {
+          "id": "review",
+          "label": "改动自检",
+          "primary": "claude_review",
+          "alternatives": [
+            "claude-code-review"
+          ],
+          "fallback": "人工清单复核"
+        }
       ]
     },
     "测试验证": {
       "goal": "用可执行测试证明实现满足契约",
-      "method": "cockpit-testing",
-      "kit": "cockpit-testing",
+      "method": "cockpit-flow",
+      "kit": "cockpit-flow",
       "constraint": null,
       "capabilities": [
-        {
-          "kind": "skill",
-          "name": "verify-claims",
-          "mode": "full",
-          "note": "无命令输出/报告不得声称通过"
-        },
         {
           "kind": "skill",
           "name": "webapp-testing",
           "mode": "full",
           "optional": true,
-          "note": "Playwright 测试决策树（E2E 证据；已装全局）"
-        },
-        {
-          "kind": "inline",
-          "name": "test-report",
-          "mode": "inline",
-          "note": "test-report.json schema：{command,scope,passed,failed,skipped,durationMs,at}"
+          "note": "缺就手工走查 + 截图"
         },
         {
           "kind": "mcp",
           "name": "playwright",
           "mode": "full",
           "optional": true,
-          "note": "本机未安装；回退本机命令 + 人工 / CDP 截图"
+          "note": "缺就用面板内置 CDP 截图（只允许回环地址）"
+        },
+        {
+          "kind": "skill",
+          "name": "test-report",
+          "mode": "full",
+          "optional": true
+        },
+        {
+          "kind": "skill",
+          "name": "verify-claims",
+          "mode": "full",
+          "optional": true,
+          "note": "没有命令输出/报告不得声称通过"
         }
       ],
       "deliverables": [
@@ -290,37 +417,58 @@
         "失败必须附原始命令输出"
       ],
       "sequence": [
-        "test-report",
-        "webapp-testing",
-        "playwright",
-        "verify-claims",
-        "cockpit_report"
+        "read-input",
+        "test-run",
+        "e2e",
+        "evidence",
+        "verify",
+        "report"
+      ],
+      "roles": [
+        {
+          "id": "test-run",
+          "label": "跑真实测试",
+          "primary": null,
+          "alternatives": [],
+          "fallback": "项目真实测试命令（package.json / Cargo.toml）"
+        },
+        {
+          "id": "e2e",
+          "label": "端到端",
+          "primary": "webapp-testing",
+          "alternatives": [
+            "playwright"
+          ],
+          "fallback": "手工走查 + 截图"
+        },
+        {
+          "id": "evidence",
+          "label": "写报告",
+          "primary": "test-report",
+          "alternatives": [],
+          "fallback": "manual-check.json（非代码项目）"
+        },
+        {
+          "id": "verify",
+          "label": "核对结论",
+          "primary": "verify-claims",
+          "alternatives": [],
+          "fallback": null
+        }
       ]
     },
     "代码复核": {
       "goal": "独立第二视角审查 diff，blocking 清零",
-      "method": "cockpit-review",
-      "kit": "cockpit-review",
+      "method": "cockpit-flow",
+      "kit": "cockpit-flow",
       "constraint": null,
       "capabilities": [
-        {
-          "kind": "tool",
-          "name": "claude_review",
-          "mode": "full",
-          "optional": true,
-          "note": "可选工具：复核阶段用它跑独立评审；缺失不影响流程，方法由 cockpit-review 承担"
-        },
         {
           "kind": "skill",
           "name": "claude-code-review",
           "mode": "full",
-          "note": "独立复核清单（五轴）"
-        },
-        {
-          "kind": "inline",
-          "name": "review-ledger",
-          "mode": "inline",
-          "note": "账本：.dsh/claude-review/ledger；blocking=0"
+          "optional": true,
+          "note": "缺就用人工五轴清单复核"
         }
       ],
       "deliverables": [
@@ -337,44 +485,55 @@
         "不自己给自己复核盖章"
       ],
       "sequence": [
-        "claude_review",
-        "claude-code-review",
-        "claude_review_disposition",
-        "review-ledger",
-        "cockpit_report"
+        "read-input",
+        "review",
+        "disposition",
+        "report"
+      ],
+      "roles": [
+        {
+          "id": "review",
+          "label": "独立评审",
+          "primary": "claude_review",
+          "alternatives": [
+            "claude-code-review"
+          ],
+          "fallback": "人工清单复核"
+        },
+        {
+          "id": "disposition",
+          "label": "逐条处置",
+          "primary": "claude_review_disposition",
+          "alternatives": [],
+          "fallback": "报告里写明未处置原因"
+        }
       ]
     },
     "验收确认": {
       "goal": "甲方逐条验收，证据可追溯；视觉变化必须重验",
-      "method": "cockpit-acceptance",
-      "kit": "cockpit-acceptance",
+      "method": "cockpit-flow",
+      "kit": "cockpit-flow",
       "constraint": null,
       "capabilities": [
         {
           "kind": "skill",
-          "name": "verify-claims",
-          "mode": "full",
-          "note": "没有证据不算通过"
-        },
-        {
-          "kind": "skill",
-          "name": "webapp-testing",
-          "mode": "full",
-          "optional": true,
-          "note": "Playwright 测试决策树（E2E 证据；已装全局）"
-        },
-        {
-          "kind": "inline",
           "name": "acceptance-gate",
-          "mode": "inline",
-          "note": "验收表 + 截图/diff + 失效门禁（本插件核心）"
+          "mode": "full",
+          "optional": true
         },
         {
           "kind": "mcp",
           "name": "playwright",
           "mode": "full",
           "optional": true,
-          "note": "本机未安装；回退面板 CDP 截图 + 人工确认"
+          "note": "缺就用面板内置 CDP 截图（只允许回环地址）"
+        },
+        {
+          "kind": "skill",
+          "name": "verify-claims",
+          "mode": "full",
+          "optional": true,
+          "note": "没有命令输出/报告不得声称通过"
         }
       ],
       "deliverables": [
@@ -395,25 +554,63 @@
         "失效后不重新确认就放行"
       ],
       "sequence": [
-        "acceptance-gate",
-        "playwright",
-        "verify-claims",
-        "human-acceptance-result",
-        "human-acceptance-signoff",
-        "cockpit_report"
+        "read-input",
+        "acceptance-draft",
+        "capture",
+        "verify",
+        "human-result",
+        "human-signoff",
+        "report"
+      ],
+      "roles": [
+        {
+          "id": "acceptance-draft",
+          "label": "验收清单",
+          "primary": "acceptance-gate",
+          "alternatives": [],
+          "fallback": "按 PRD 的 FR 逐条列"
+        },
+        {
+          "id": "capture",
+          "label": "采证据",
+          "primary": "playwright",
+          "alternatives": [],
+          "fallback": "面板内置 CDP 截图"
+        },
+        {
+          "id": "verify",
+          "label": "证据核对",
+          "primary": "verify-claims",
+          "alternatives": [],
+          "fallback": null
+        },
+        {
+          "id": "human-result",
+          "label": "人点结果",
+          "primary": null,
+          "alternatives": [],
+          "fallback": null
+        },
+        {
+          "id": "human-signoff",
+          "label": "人签验收",
+          "primary": null,
+          "alternatives": [],
+          "fallback": null
+        }
       ]
     },
     "部署发布": {
       "goal": "打出可复现的发布清单，并能回滚",
-      "method": "cockpit-release",
-      "kit": "cockpit-release",
+      "method": "cockpit-flow",
+      "kit": "cockpit-flow",
       "constraint": null,
       "capabilities": [
         {
-          "kind": "inline",
+          "kind": "skill",
           "name": "release-manifest",
-          "mode": "inline",
-          "note": "release.json schema：{version,artifacts[{path,sha256}],url,environment,rollback,changelog,at}"
+          "mode": "full",
+          "optional": true
         }
       ],
       "deliverables": [
@@ -432,9 +629,34 @@
         "发布清单缺回滚方式不算完成"
       ],
       "sequence": [
-        "release-manifest",
+        "read-input",
+        "build",
+        "manifest",
         "human-release-approval",
-        "cockpit_report"
+        "report"
+      ],
+      "roles": [
+        {
+          "id": "build",
+          "label": "构建产物",
+          "primary": null,
+          "alternatives": [],
+          "fallback": "项目真实构建命令"
+        },
+        {
+          "id": "manifest",
+          "label": "发布清单",
+          "primary": "release-manifest",
+          "alternatives": [],
+          "fallback": "内置 release.json schema"
+        },
+        {
+          "id": "human-release-approval",
+          "label": "人批发布",
+          "primary": null,
+          "alternatives": [],
+          "fallback": null
+        }
       ]
     }
   },

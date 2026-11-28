@@ -85,6 +85,13 @@ Delivery Cockpit 的作用是把这些步骤固定成 9 个节点，给每个节
 - **第三方只是工具**：trellis-*、frontend-design、tdd-loop、verify-claims、playwright、Context7 等放在能力列表里，有就用、没有不影响流程，更不由它们决定做哪一步。
 - **回执要报工作流**：`cockpit_report` 的 `used_skill_or_mcp` 必须包含 `cockpit-<stage>`（可以再附带实际用的工具，如 `cockpit-implementation, tdd-loop`）。
 
+### 一个编排 + 角色路由（不是 9 个技能）
+
+- **9 个节点是流程**，不是技能。节点声明角色（如设计方法 / 视觉证据 / 界面审计），角色绑定能力（首选 → 替代 → 回退）。
+- **唯一编排技能** `cockpit-flow`：读 `cockpit_next` 的契约，按计划执行，在人点节点停下，最后写回执。
+- **能力可跨节点复用**：`verify-claims` 服务测试与验收，`claude_review` 服务开发与复核。
+- **任务归驾驶舱**：`.dsh/plugin-state/tasks.json` 由 `cockpit_task` 维护；`.trellis/tasks` 只在初始化时只读导入一次。
+
 ### 每个阶段自己驱动能力
 
 9 个阶段技能里写明「这一步调用哪个 skill / MCP / 工具、按什么顺序、产出什么、过什么门」，playbook 的 `sequence` 与面板 `stages[].sequence` 是同一份顺序：
@@ -324,7 +331,7 @@ GET /delivery-cockpit/api/report?path=<项目路径>&days=7
 
 ```powershell
 npm install
-npm test                         # node --test "test/*.test.js"，当前 562 个用例
+npm test                         # node --test "test/*.test.js"，当前 572 个用例
 node tools/preview/server.mjs    # 本机预览面板，默认 http://127.0.0.1:4711
 ```
 

@@ -20,6 +20,7 @@ import { applyInit, planInit } from './lib/init.js'
 import { readDoraData } from './lib/dora.js'
 import { computeMetrics, readMetricLedger } from './lib/metrics.js'
 import { buildDetailModel, buildOverviewRow } from './lib/model.js'
+import { nextContract } from './lib/next.js'
 import { entryForStage, loadPlaybook, resolveCapabilities, STAGE_DEFS } from './lib/playbook.js'
 import { readProjectCard, setWorkflow } from './lib/project-card.js'
 import { mergeReviewProfile, readReviewProfile, writeReviewProfile } from './lib/review/profile.js'
@@ -29,6 +30,7 @@ import { buildWeeklyReport, REPORT_DAYS, reportFileName } from './lib/report.js'
 import { REVIEW_DEFAULT_CONFIG, createReviewToolDefinitions } from './lib/review/index.js'
 import { createAcceptanceResultHandler, createAcceptanceScreenshotHandler, createApproveHandler, createDecisionHandler, createInitHandler, createReviewSettingsHandler, createRoutes, createTrellisHandler, createWorkflowHandler } from './lib/route.js'
 import { captureScreenshot, writeScreenshot } from './lib/screenshot.js'
+import { addTask, claimTask, completeTask, importTrellisTasks, readTaskStore } from './lib/tasks.js'
 import { readTeam } from './lib/team.js'
 import { compareScreenshots, pickBaselineEvidence, renderDiffPng } from './lib/visual-diff.js'
 
@@ -88,6 +90,83 @@ const DEFAULT_CONFIG = {
 const REPORT_STAGES = STAGES
 const REPORT_STATUSES = ['in_progress', 'completed', 'blocked', 'failed', 'dropped']
 
+const NEXT_OUTPUT = {
+  schema: {
+    type: 'object',
+    properties: {
+      stageId: { type: ['string', 'null'] },
+      stageName: { type: ['string', 'null'] },
+      kind: { type: ['string', 'null'] },
+      title: { type: ['string', 'null'] },
+      reason: { type: ['string', 'null'] },
+      skill: { type: 'string' },
+      instruction: { type: ['string', 'null'] },
+      plan: { type: 'array', items: { type: 'object' } },
+      needsHuman: { type: 'array', items: { type: 'string' } },
+      blockedBy: { type: 'array', items: { type: 'string' } },
+      gates: { type: ['object', 'null'] },
+    },
+    required: ['skill', 'plan'],
+  },
+  render(_args, value) {
+    const title = typeof value?.title === 'string' && value.title !== '' ? value.title : '没有下一步'
+    const human = Array.isArray(value?.needsHuman) && value.needsHuman.length > 0 ? `（需要人：${value.needsHuman.join('、')}）` : ''
+    return [{ type: 'text', text: `下一步：${title}${human}` }]
+  },
+}
+
+const COCKPIT_NEXT = {
+  name: 'cockpit_next',
+  description:
+    'Where the project stands and what to do next: stage, the one action, the orchestration skill, and the resolved capability plan ' +
+    '(role → primary/alternative/fallback), plus which steps need a human. Read-only.',
+  parameters: {
+    type: 'object',
+    properties: { cwd: { type: 'string', description: 'Project root; defaults to the session working directory' } },
+    additionalProperties: false,
+  },
+  output: NEXT_OUTPUT,
+}
+
+const COCKPIT_TASK = {
+  name: 'cockpit_task',
+  description:
+    'Maintain the cockpit-owned task list (.dsh/plugin-state/tasks.json): list, import once from .trellis/tasks (read-only), add, claim, complete. ' +
+    'Trellis files are never modified.',
+  parameters: {
+    type: 'object',
+    required: ['action'],
+    properties: {
+      action: { type: 'string', enum: ['list', 'import', 'add', 'claim', 'complete'] },
+      id: { type: 'string', description: 'Task id for claim/complete' },
+      title: { type: 'string', description: 'Task title for add' },
+      scope: { type: 'array', items: { type: 'string' }, description: 'write_scope for add' },
+      owner: { type: 'string', description: 'Who claims it (defaults to the session agent)' },
+    },
+    additionalProperties: false,
+  },
+  output: {
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        action: { type: 'string' },
+        task: { type: ['object', 'null'] },
+        tasks: { type: 'array', items: { type: 'object' } },
+        imported: { type: 'integer' },
+        skipped: { type: 'integer' },
+        error: { type: 'string' },
+      },
+      required: ['ok', 'action'],
+    },
+    render(_args, value) {
+      if (value?.ok === false) return [{ type: 'text', text: `任务操作失败：${value.error || '未知原因'}` }]
+      const count = Array.isArray(value?.tasks) ? value.tasks.length : value?.task ? 1 : 0
+      return [{ type: 'text', text: `任务${value.action}：${count} 项` }]
+    },
+  },
+}
+
 const COCKPIT_REPORT = {
   name: 'cockpit_report',
   description:
@@ -139,6 +218,7 @@ const COCKPIT_REPORT = {
         at: { type: 'string' },
         // 可选能力阶段用了回退方法时带出来：不阻断写入，只提醒这一阶段不是首选方法。
         capabilityWarning: { type: 'string' },
+        next: NEXT_OUTPUT.schema,
       },
       required: ['ok', 'receiptId'],
     },
@@ -179,6 +259,7 @@ const COCKPIT_INIT = {
         skipped: { type: 'array', items: { type: 'string' } },
         errors: { type: 'array', items: { type: 'string' } },
         gitignoreHint: { type: 'string' },
+        tasksImported: { type: 'integer' },
         trellisInit: {
           type: 'object',
           properties: {
@@ -274,12 +355,62 @@ export function createToolDefinitions(ctx, options = {}) {
         const result = await appendReceipt(projectPath, args)
         // 写失败必须让调用方看见：静默丢数据比报错更糟（面板会显示"没发生过"）。
         if (!result.ok) throw new Error(`cockpit_report: ${result.error}`)
+        // 写完立刻把「下一步」算出来一起返回：agent 一次调用就能继续，不必再问人。
+        let next = null
+        try {
+          next = nextContract(await readDetail(projectPath))
+        } catch {
+          next = null
+        }
         return {
           ok: true,
           receiptId: result.receipt.id,
           at: result.receipt.at,
+          ...(next !== null ? { next } : {}),
           ...(typeof check.warning === 'string' && check.warning !== '' ? { capabilityWarning: check.warning } : {}),
         }
+      },
+    },
+    {
+      ...COCKPIT_NEXT,
+      async execute(args, exec) {
+        const options = args ?? {}
+        const explicit = typeof options.cwd === 'string' && options.cwd.trim() !== '' ? options.cwd : null
+        const projectPath = requireCwd(agentCwd(ctx, exec, explicit ?? undefined), 'cockpit_next')
+        return nextContract(await readDetail(projectPath))
+      },
+    },
+    {
+      ...COCKPIT_TASK,
+      async execute(args, exec) {
+        const action = typeof args?.action === 'string' ? args.action.trim() : ''
+        const projectPath = requireCwd(agentCwd(ctx, exec), 'cockpit_task')
+        if (action === 'list') {
+          const current = await readTaskStore(projectPath)
+          if (current.error === 'bad-json') return { ok: false, action, error: 'tasks-broken', tasks: [] }
+          return { ok: true, action, tasks: current.store.items }
+        }
+        if (action === 'import') {
+          const result = await importTrellisTasks(projectPath)
+          if (!result.ok) return { ok: false, action, error: result.error ?? 'import-failed' }
+          return { ok: true, action, imported: result.imported ?? 0, skipped: result.skipped ?? 0 }
+        }
+        if (action === 'add') {
+          const result = await addTask(projectPath, { title: args?.title, scope: args?.scope })
+          if (!result.ok) return { ok: false, action, error: result.error, task: null }
+          return { ok: true, action, task: result.task }
+        }
+        if (action === 'claim') {
+          const result = await claimTask(projectPath, { id: args?.id, owner: args?.owner ?? exec?.agent?.id })
+          if (!result.ok) return { ok: false, action, error: result.error, task: null }
+          return { ok: true, action, task: result.task }
+        }
+        if (action === 'complete') {
+          const result = await completeTask(projectPath, { id: args?.id })
+          if (!result.ok) return { ok: false, action, error: result.error, task: null }
+          return { ok: true, action, task: result.task }
+        }
+        return { ok: false, action, error: 'bad-action' }
       },
     },
     {
@@ -321,6 +452,7 @@ export function createToolDefinitions(ctx, options = {}) {
           skipped: applied.skipped ?? [],
           errors: applied.errors ?? [],
           gitignoreHint: applied.gitignoreHint ?? '',
+          ...(typeof applied.tasksImported === 'number' ? { tasksImported: applied.tasksImported } : {}),
           ...(trellisInit !== null ? { trellisInit } : {}),
         }
       },

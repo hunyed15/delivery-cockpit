@@ -182,7 +182,7 @@ test('claude_review 命令行：-Command + UTF-8 前置段、参数名裸写、�
   assert.equal(result.engineSource, 'bundled')
 })
 
-test('apply 在没有 subprocess 服务时仍注册全部六个工具（subprocess 不是硬依赖）', async () => {
+test('apply 在没有 subprocess 服务时仍注册全部八个工具（subprocess 不是硬依赖）', async () => {
   const registered = new Map()
   const ctx = {
     effect(fn) {
@@ -202,13 +202,15 @@ test('apply 在没有 subprocess 服务时仍注册全部六个工具（subproce
   apply(ctx, { panelRetryAttempts: 1, panelRetryMs: 5, panelWatchdogMs: 20 })
   for (const name of [
     'cockpit_report',
+    'cockpit_next',
+    'cockpit_task',
     'cockpit_init',
     'cockpit_acceptance',
     ...REVIEW_TOOL_NAMES,
   ]) {
     assert.ok(registered.has(name), `缺 subprocess 时也应注册 ${name}`)
   }
-  assert.equal(registered.size, 6)
+  assert.equal(registered.size, 8)
 })
 
 test('claude_review 透传 range/profile 参数，并遵守 reviewStorage 配置', async () => {

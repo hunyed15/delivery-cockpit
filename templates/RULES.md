@@ -20,8 +20,9 @@
 | 部署发布 | `release` | 发布清单 + 人批准 |
 
 - 走到哪一步、下一步做什么，**以驾驶舱面板的「下一步」为准**。
-- 每个阶段的流程由**插件自带的阶段技能** `cockpit-<stage>` 承担（装在 `.dsh/skills/`）：`cockpit-bootstrap`、`cockpit-requirements`、`cockpit-architecture`、`cockpit-prototype`、`cockpit-implementation`、`cockpit-testing`、`cockpit-review`、`cockpit-acceptance`、`cockpit-release`。
-- 第三方 skill / MCP（trellis-*、frontend-design、tdd-loop、verify-claims、playwright…）是**可选工具**：有就用，没有不影响流程，也不由它们决定做哪一步。
+- 流程由**唯一编排技能** `cockpit-flow` 承担（装在 `.dsh/skills/`）：它读 `cockpit_next` 的契约，按「角色 → 能力」解析出的顺序执行。
+- **9 个节点不等于 9 个技能**：节点只声明需要哪些角色；能力（skill / MCP / 工具）由角色绑定，可替换、可跨节点复用（`verify-claims` 服务测试与验收，`claude_review` 服务开发与复核）。
+- 第三方 skill / MCP（trellis-*、frontend-design、tdd-loop、verify-claims、playwright…）是**可选工具**：有就用，没有按角色回退，不影响流程，也不由它们决定做哪一步。
 - 技能（skill）只决定"这一步**怎么做**"，**不得改变"做哪一步"**。
 - 若某个 skill 的流程与本规则冲突，**以本规则为准**，并在回执里说明"我偏离了哪个 skill 的哪一条"。
 - 历史账本里的旧 stage id（`init`/`scaffold`/`brainstorm`/`coding`/`code_review`/`verification`）会被自动归一，不影响既有记录。
@@ -57,7 +58,7 @@
 
 ## 2. 动手前先认领
 
-- 任何会改代码的工作，**先认领**：在 Agent Teams 任务板（同会话）或 trellis task（跨会话/跨天）里领一条，并声明 `write_scope`（要改哪些目录）。
+- 任何会改代码的工作，**先认领**：用 `cockpit_task({action:"claim", id})` 领一条驾驶舱任务，并声明 `write_scope`（要改哪些目录）。Trellis 任务只做一次性导入，不直接改。
 - 没认领就动手 = 面板看不见谁在做什么，等价于没做记录。
 - **一次只做一个任务**；做完再领下一个。
 
