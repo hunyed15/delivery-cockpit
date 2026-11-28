@@ -1183,3 +1183,28 @@ test('stages.sequence：阶段详情带出能力调用顺序', () => {
   const others = model.stages.find((stage) => stage.id === 'bootstrap')
   assert.deepEqual(others.sequence, [], '没有声明就是空数组，不编造')
 })
+
+test('plan：阶段详情把角色解析成实际能力（首选/替代/回退/人点）', () => {
+  const base = makePlaybook()
+  const entry = base.stages['原型设计']
+  const withRoles = {
+    ...base,
+    stages: {
+      ...base.stages,
+      原型设计: {
+        ...entry,
+        roles: [
+          { id: 'design-method', label: '设计方法', primary: 'frontend-design', alternatives: ['ui-ux-pro-max'], fallback: '内置版式' },
+          { id: 'human-prototype-approval', label: '人点通过', primary: null, alternatives: [], fallback: null },
+        ],
+        sequence: ['read-input', 'design-method', 'human-prototype-approval', 'report'],
+      },
+    },
+  }
+  const model = build(evidence(), { playbook: withRoles })
+  const stage = model.stages.find((item) => item.id === 'prototype')
+  const design = stage.plan.find((item) => item.step === 'design-method')
+  assert.equal(design.chosen, 'frontend-design')
+  assert.deepEqual(stage.needsHuman, ['human-prototype-approval'])
+  assert.equal(stage.plan[0].kind, 'step')
+})

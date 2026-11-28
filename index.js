@@ -94,17 +94,17 @@ const NEXT_OUTPUT = {
   schema: {
     type: 'object',
     properties: {
-      stageId: { type: ['string', 'null'] },
-      stageName: { type: ['string', 'null'] },
-      kind: { type: ['string', 'null'] },
-      title: { type: ['string', 'null'] },
-      reason: { type: ['string', 'null'] },
+      stageId: { type: 'string' },
+      stageName: { type: 'string' },
+      kind: { type: 'string' },
+      title: { type: 'string' },
+      reason: { type: 'string' },
       skill: { type: 'string' },
-      instruction: { type: ['string', 'null'] },
+      instruction: { type: 'string' },
       plan: { type: 'array', items: { type: 'object' } },
       needsHuman: { type: 'array', items: { type: 'string' } },
       blockedBy: { type: 'array', items: { type: 'string' } },
-      gates: { type: ['object', 'null'] },
+      gates: { type: 'object' },
     },
     required: ['skill', 'plan'],
   },
@@ -151,7 +151,7 @@ const COCKPIT_TASK = {
       properties: {
         ok: { type: 'boolean' },
         action: { type: 'string' },
-        task: { type: ['object', 'null'] },
+        task: { type: 'object' },
         tasks: { type: 'array', items: { type: 'object' } },
         imported: { type: 'integer' },
         skipped: { type: 'integer' },
@@ -339,6 +339,8 @@ const COCKPIT_ACCEPTANCE = {
 }
 
 export function createToolDefinitions(ctx, options = {}) {
+  // readDetail 定义在 apply() 作用域里：工具通过注入拿到"下一步"，避免复制读盘链。
+  const nextFor = typeof options.nextFor === 'function' ? options.nextFor : null
   const authorizeWrite = typeof options.authorizeWrite === 'function' ? options.authorizeWrite : async (path) => path
   const cockpitTools = [
     {
@@ -357,10 +359,12 @@ export function createToolDefinitions(ctx, options = {}) {
         if (!result.ok) throw new Error(`cockpit_report: ${result.error}`)
         // 写完立刻把「下一步」算出来一起返回：agent 一次调用就能继续，不必再问人。
         let next = null
-        try {
-          next = nextContract(await readDetail(projectPath))
-        } catch {
-          next = null
+        if (nextFor !== null) {
+          try {
+            next = await nextFor(projectPath)
+          } catch {
+            next = null
+          }
         }
         return {
           ok: true,
@@ -377,7 +381,8 @@ export function createToolDefinitions(ctx, options = {}) {
         const options = args ?? {}
         const explicit = typeof options.cwd === 'string' && options.cwd.trim() !== '' ? options.cwd : null
         const projectPath = requireCwd(agentCwd(ctx, exec, explicit ?? undefined), 'cockpit_next')
-        return nextContract(await readDetail(projectPath))
+        if (nextFor === null) throw new Error('cockpit_next: 面板服务未就绪，暂时拿不到下一步')
+        return nextFor(projectPath)
       },
     },
     {
@@ -959,7 +964,12 @@ export function apply(ctx, config = {}) {
   }
 
   // ---- 工具 ----
-  for (const definition of createToolDefinitions(ctx, { authorizeWrite, reviewSettings: settings })) {
+  for (const definition of createToolDefinitions(ctx, {
+    authorizeWrite,
+    reviewSettings: settings,
+    // 下一步与 report 的返回值必须和面板同源：直接复用 readDetail。
+    nextFor: async (projectPath) => nextContract(await readDetail(projectPath)),
+  })) {
     ctx.effect(() => ctx.tools.register(definition))
   }
 

@@ -577,3 +577,18 @@ test('cockpit_init trellisInit:true 对已初始化项目也生效（applied=fal
     await rm(project, { recursive: true, force: true })
   }
 })
+test('所有工具 schema 只用单类型（DSH 不支持 type 数组，否则整个插件激活失败）', () => {
+  const walk = (node, path) => {
+    if (node === null || typeof node !== 'object') return
+    if (Array.isArray(node)) {
+      node.forEach((item, index) => walk(item, path + '[' + index + ']'))
+      return
+    }
+    if (Array.isArray(node.type)) throw new Error(path + '.type 不允许联合类型：' + JSON.stringify(node.type))
+    for (const [key, value] of Object.entries(node)) walk(value, path + '.' + key)
+  }
+  for (const tool of TOOL_DEFINITIONS) {
+    walk(tool.parameters, tool.name + '.parameters')
+    walk(tool.output?.schema, tool.name + '.output.schema')
+  }
+})
