@@ -361,6 +361,7 @@ tools/preview/      本机预览
 
 ## 文档
 
+- [docs/WORKFLOW-DESIGN.md](docs/WORKFLOW-DESIGN.md)：节点/技能/产出物/进度怎么放，agent 如何自动下一步
 - [docs/VISION.md](docs/VISION.md)：产品定位、阶段和门禁的设计
 - [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)：模块、数据形状、HTTP 端点
 - [docs/CAPABILITIES.md](docs/CAPABILITIES.md)：能力路由和 skills/MCP 说明

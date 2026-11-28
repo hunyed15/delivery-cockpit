@@ -1,3 +1,5 @@
+> 结构落地看 [WORKFLOW-DESIGN.md](WORKFLOW-DESIGN.md)：目录树、四类东西的摆放、agent 驱动回路。
+
 # VISION — Delivery Cockpit：AI-native SDLC 的编排层
 
 > 状态：草案（供评审）。本文定义"从脑洞到上线"的阶段模型、交付物契约与门禁。
